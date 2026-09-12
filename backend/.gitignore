@@ -1,0 +1,43 @@
+# Dependencies
+node_modules/
+
+# Environment — ignore all real env files, keep *.example templates.
+# The DB password lives in these; nothing here may ever be committed.
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Logs
+logs/
+*.log
+
+# Uploads
+uploads/
+
+# Build
+dist/
+build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Prisma
+# NOTE: PEA is SQL-first. A prisma/migrations/ folder must never exist here —
+# see prisma/ddl/2026-09-12-pea-core.README.md. Ignored so an accidental
+# `prisma migrate` cannot commit one and make it look sanctioned.
+prisma/migrations/
+
+# Test coverage
+coverage/
+
+# Temp
+tmp/
+temp/

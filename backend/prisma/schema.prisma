@@ -1,0 +1,305 @@
+// ═══════════════════════════════════════════════════════════════════════════
+//  PEA — Prisma schema
+//
+//  🚨 THIS FILE IS HAND-WRITTEN. DO NOT RUN `prisma db pull`.
+//
+//  PEA's pea_ tables share the `public` schema with 48 ATS rpa_ tables, and the
+//  app connects as `appuser`, which OWNS those ATS tables.
+//
+//    • `prisma db pull` has NO table filter. It would overwrite this file with
+//      all 48 rpa_ models, after which PEA's client could read and write every
+//      ATS table — and a later "tidy up" of those models sets up the next one:
+//    • `prisma migrate dev` / `prisma db push` diff this file against the whole
+//      schema, see the 48 ATS tables as drift, and emit DROP TABLE for each.
+//      appuser owns them, so the drops SUCCEED.
+//
+//  Schema changes are made by writing a reviewed .sql file in prisma/ddl/,
+//  applying it via pgAdmin, and hand-editing the models below to match.
+//  package.json intentionally contains no migrate/push/pull script.
+//
+//  Source of truth for the physical schema:
+//    prisma/ddl/2026-09-12-pea-core.sql
+// ═══════════════════════════════════════════════════════════════════════════
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Authentication — PEA's own, deliberately not rpa_users.
+// ATS login writes to rpa_sessions/rpa_users and an ATS logout deletes all of
+// a user's sessions, which would silently log them out of PEA too. Plan §5.4.
+// ───────────────────────────────────────────────────────────────────────────
+
+model pea_users {
+  id              Int            @id @default(autoincrement())
+  username        String         @unique @db.VarChar(100)
+  email           String         @unique @db.VarChar(255)
+  password_hash   String
+  first_name      String?        @db.VarChar(100)
+  last_name       String?        @db.VarChar(100)
+  role            String         @default("hr") @db.VarChar(50) // admin | hr | viewer
+  is_active       Boolean        @default(true)
+  azure_object_id String?        @db.VarChar(100) // Phase 2: Microsoft SSO
+  last_login_at   DateTime?      @db.Timestamptz(6)
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  modified_at     DateTime       @default(now()) @db.Timestamptz(6)
+  sessions        pea_sessions[]
+
+  // NOTE: the database enforces uniqueness on lower(username) / lower(email)
+  // via expression indexes, which Prisma cannot express. Always lowercase
+  // before querying so the index is used and the semantics match.
+  @@map("pea_users")
+}
+
+model pea_sessions {
+  id         Int        @id @default(autoincrement())
+  token      String     @unique
+  user_id    Int?
+  role       String?    @db.VarChar(50)
+  expires_at DateTime   @db.Timestamptz(6)
+  created_at DateTime   @default(now()) @db.Timestamptz(6)
+  user       pea_users? @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id], map: "idx_pea_sessions_user")
+  @@index([expires_at], map: "idx_pea_sessions_expires")
+  @@map("pea_sessions")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// The master record — replaces Excel Sheet1 columns A–H.
+// ───────────────────────────────────────────────────────────────────────────
+
+model pea_employees {
+  id             BigInt  @id @default(autoincrement())
+  full_name      String  @db.VarChar(150)
+  office_email   String  @db.VarChar(255)
+  /// Personal (CV) email. ATS stores ONLY this kind — it has no office-email
+  /// column anywhere — so this is what makes an ATS link possible. Plan R4.
+  personal_email String? @db.VarChar(255)
+
+  /// Excel "Experience": Yes = true. Drives the 30-day vs 60-day cadence.
+  is_experienced Boolean  @default(false)
+  /// A real DATE, which is what kills the dd-MM-yyyy format bug. Plan §3.2.
+  doj            DateTime @db.Date
+
+  rm_name  String @db.VarChar(150)
+  rm_email String @db.VarChar(255)
+  pl_email String @db.VarChar(255)
+
+  /// Excel "Halt_Process" — pauses all evaluations for this person.
+  halt_process        Boolean @default(false)
+  /// NULL = still in probation. Confirmed | Not Confirmed |
+  /// Extend for 1 month | Extend for 2 months (CHECK-constrained in the DB).
+  confirmation_status String? @db.VarChar(50)
+  employment_status   String  @default("active") @db.VarChar(20) // active | left
+
+  source String @default("manual") @db.VarChar(20) // manual | excel | ats | azure
+  /// Soft link to rpa_candidate_pipeline.id. Deliberately NO foreign key — a FK
+  /// into an ATS table would couple the two systems' lifecycles. Plan R4.
+  ats_pipeline_id  BigInt?
+  azure_user_id    String?  @db.VarChar(100)
+  license_assigned Boolean?
+  /// Fields HR has explicitly corrected; the Azure sync must never overwrite
+  /// these. Plan §6.5 ("what if the AD data is wrong?").
+  locked_fields    String[]
+
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  modified_at DateTime @default(now()) @db.Timestamptz(6)
+
+  cycles pea_evaluation_cycles[]
+  audit  pea_employee_audit[]
+  emails pea_email_log[]
+
+  // office_email is unique on lower(trim(...)) in the DB — an expression index
+  // Prisma cannot model, so there is no @unique here. Use findFirst with a
+  // normalised value rather than findUnique.
+  @@index([employment_status, halt_process], map: "idx_pea_employees_sweep")
+  @@index([ats_pipeline_id], map: "idx_pea_employees_ats")
+  @@map("pea_employees")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// One row per employee per evaluation (1..8).
+// Replaces the "Evaluation N" / "EN Status" column pairs in Excel Sheet1.
+// ───────────────────────────────────────────────────────────────────────────
+
+model pea_evaluation_cycles {
+  id           BigInt  @id @default(autoincrement())
+  employee_id  BigInt
+  seq_no       Int     @db.SmallInt
+  is_extension Boolean @default(false)
+
+  /// The sweep matches due_date <= CURRENT_DATE. The Power Automate original
+  /// matched an EXACT day count (== 30), so one failed run skipped that
+  /// evaluation permanently and silently. Plan §3.1.
+  due_date    DateTime  @db.Date
+  period_from DateTime? @db.Date
+  period_to   DateTime? @db.Date
+
+  /// pending | email_sent | opened | completed | skipped
+  status String @default("pending") @db.VarChar(20)
+
+  /// The manager's credential for the form. No login required — this mirrors
+  /// the ATS interviewer-scorecard pattern that replaces MS Forms.
+  token            String    @unique @default(uuid()) @db.Uuid
+  token_expires_at DateTime? @db.Timestamptz(6)
+
+  sent_at            DateTime? @db.Timestamptz(6)
+  opened_at          DateTime? @db.Timestamptz(6)
+  submitted_at       DateTime? @db.Timestamptz(6)
+  submitted_by_email String?   @db.VarChar(255)
+  submitted_ip       String?   @db.VarChar(64)
+
+  /// Two reminders per cycle at due_date +2 and +4 days. Reconstructed from the
+  /// PPT user guide because the reminder flow was never exported. Plan §2.3b.
+  reminder_count   Int       @default(0) @db.SmallInt
+  last_reminded_at DateTime? @db.Timestamptz(6)
+
+  avg_rating          Decimal? @db.Decimal(3, 2)
+  remarks             String?
+  /// Captured on the final cycle only.
+  confirmation_status String?  @db.VarChar(50)
+
+  /// Verbatim pre-migration text for legacy rows we deliberately do NOT parse
+  /// (Sheet1 free-text blobs, Sheet3's 4-parameter scale). Plan R5, tier 3.
+  legacy_raw    String?
+  legacy_format String? @db.VarChar(30)
+
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  modified_at DateTime @default(now()) @db.Timestamptz(6)
+
+  employee pea_employees           @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  scores   pea_evaluation_scores[]
+  emails   pea_email_log[]
+
+  @@unique([employee_id, seq_no], map: "uq_pea_evaluation_cycles_emp_seq")
+  @@index([due_date, status], map: "idx_pea_evaluation_cycles_due")
+  @@index([status, reminder_count, due_date], map: "idx_pea_evaluation_cycles_reminder")
+  @@map("pea_evaluation_cycles")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Per-parameter ratings. Mirrors rpa_interview_scorecard_skill.
+// ───────────────────────────────────────────────────────────────────────────
+
+model pea_evaluation_scores {
+  id        BigInt @id @default(autoincrement())
+  cycle_id  BigInt
+  param_key String @db.VarChar(60)
+  /// Snapshotted at submit time so renaming a question later never rewrites
+  /// what a manager actually saw and answered.
+  param_label String   @db.VarChar(150)
+  rating      Decimal? @db.Decimal(2, 1)
+  comments    String?
+  sort_order  Int      @default(0) @db.SmallInt
+
+  cycle pea_evaluation_cycles @relation(fields: [cycle_id], references: [id], onDelete: Cascade)
+
+  @@unique([cycle_id, param_key], map: "uq_pea_evaluation_scores_cycle_param")
+  @@index([cycle_id], map: "idx_pea_evaluation_scores_cycle")
+  @@map("pea_evaluation_scores")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// The form definition as DATA, so HR can change questions without a deploy.
+// ───────────────────────────────────────────────────────────────────────────
+
+model pea_evaluation_params {
+  id          BigInt  @id @default(autoincrement())
+  template    String  @db.VarChar(20) // fresher | experienced | legacy_4param
+  param_key   String  @db.VarChar(60)
+  param_label String  @db.VarChar(150)
+  sort_order  Int     @default(0) @db.SmallInt
+  is_active   Boolean @default(true)
+
+  @@unique([template, param_key], map: "uq_pea_evaluation_params_tmpl_key")
+  @@map("pea_evaluation_params")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Audit of every send. Nothing equivalent exists in the Excel system.
+// ───────────────────────────────────────────────────────────────────────────
+
+model pea_email_log {
+  id              BigInt  @id @default(autoincrement())
+  cycle_id        BigInt?
+  employee_id     BigInt?
+  /// evaluation_link | reminder | acknowledgement | extend_alert | hr_notification
+  email_type      String  @db.VarChar(50)
+  recipient_email String  @db.VarChar(255)
+  cc_emails       String?
+  subject         String? @db.VarChar(500)
+  /// sent | failed | suppressed. 'suppressed' is what shadow mode writes
+  /// instead of sending, so PEA's "would have sent" list can be diffed against
+  /// Power Automate's actual sends before cutover. Plan R6, stage 1.
+  status          String  @db.VarChar(20)
+  error_message   String?
+  sent_at         DateTime @default(now()) @db.Timestamptz(6)
+
+  cycle    pea_evaluation_cycles? @relation(fields: [cycle_id], references: [id])
+  employee pea_employees?         @relation(fields: [employee_id], references: [id])
+
+  @@index([cycle_id], map: "idx_pea_email_log_cycle")
+  @@index([sent_at(sort: Desc)], map: "idx_pea_email_log_sent")
+  @@map("pea_email_log")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Config — everything the Power Automate flows hardcoded.
+// ───────────────────────────────────────────────────────────────────────────
+
+model pea_settings {
+  id            BigInt   @id @default(autoincrement())
+  setting_key   String   @unique @db.VarChar(100)
+  setting_value String?
+  description   String?
+  modified_at   DateTime @default(now()) @db.Timestamptz(6)
+
+  @@map("pea_settings")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Who changed what, when, from which source. The concrete answer to
+// "what if the AD data is wrong?" — corrections are attributable and
+// reversible, which the Excel file never was. Plan §6.5.
+// ───────────────────────────────────────────────────────────────────────────
+
+model pea_employee_audit {
+  id          BigInt  @id @default(autoincrement())
+  employee_id BigInt
+  field_name  String  @db.VarChar(60)
+  old_value   String?
+  new_value   String?
+  /// PEA username, or 'azure-sync' / 'system' for automated changes.
+  changed_by  String? @db.VarChar(255)
+  /// manual | azure | excel_import | ats | system
+  change_source String   @db.VarChar(20)
+  changed_at    DateTime @default(now()) @db.Timestamptz(6)
+
+  employee pea_employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+
+  @@index([employee_id, changed_at(sort: Desc)], map: "idx_pea_employee_audit_employee")
+  @@map("pea_employee_audit")
+}
+
+// ───────────────────────────────────────────────────────────────────────────
+// Phase 2 — Azure/Entra sync run log.
+// ───────────────────────────────────────────────────────────────────────────
+
+model pea_azure_sync_log {
+  id                 BigInt   @id @default(autoincrement())
+  run_at             DateTime @default(now()) @db.Timestamptz(6)
+  users_fetched      Int?
+  users_created      Int?
+  users_flagged_left Int?
+  status             String?  @db.VarChar(20)
+  error_message      String?
+
+  @@map("pea_azure_sync_log")
+}
