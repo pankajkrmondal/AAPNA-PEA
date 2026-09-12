@@ -3,12 +3,17 @@ import app from './app.js';
 import config from './config/index.js';
 import logger from './config/logger.js';
 import { connectDatabase, disconnectDatabase } from './config/database.js';
+import { startScheduler, stopScheduler } from './jobs/evaluationScheduler.js';
 
 const server = http.createServer(app);
 
 async function startServer() {
   try {
     await connectDatabase();
+
+    // Self-gated: logs a warning and does nothing when
+    // PEA_SCHEDULER_ENABLED is false.
+    await startScheduler();
 
     server.listen(config.port, () => {
       logger.info(`🚀 PEA Backend listening on port ${config.port} [${config.env}]`);
@@ -24,9 +29,6 @@ async function startServer() {
           }`
         );
       }
-      if (!config.scheduler.enabled) {
-        logger.warn('⏰ Scheduler DISABLED (PEA_SCHEDULER_ENABLED=false) — no evaluations will be sent');
-      }
     });
   } catch (error) {
     logger.error('💥 Failed to start server', { error: error.message });
@@ -40,6 +42,8 @@ const SHUTDOWN_TIMEOUT_MS = 10_000;
 
 async function gracefulShutdown(signal) {
   logger.info(`\n${signal} received — shutting down gracefully…`);
+
+  stopScheduler();
 
   server.close(async () => {
     logger.info('HTTP server closed');

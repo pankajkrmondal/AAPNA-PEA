@@ -7,6 +7,7 @@ import authRoutes from './auth.routes.js';
 import employeeRoutes from './employee.routes.js';
 import importRoutes from './import.routes.js';
 import evaluationRoutes from './evaluation.routes.js';
+import adminRoutes from './admin.routes.js';
 
 const router = Router();
 
@@ -56,6 +57,7 @@ router.get(
 router.use('/auth', authRoutes);
 router.use('/employees', employeeRoutes);
 router.use('/import', importRoutes);
+router.use('/admin', adminRoutes);
 
 // PUBLIC — no authenticate middleware. The token in the URL is the credential;
 // reporting managers have no PEA account. See evaluation.routes.js.

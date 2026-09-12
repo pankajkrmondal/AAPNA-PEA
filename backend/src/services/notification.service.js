@@ -1,24 +1,28 @@
 /**
  * notification.service.js — the single choke point for outbound mail.
  *
- * Day 3 records what WOULD be sent into pea_email_log. Day 4 adds the Microsoft
- * Graph transport behind the same function, so no caller changes.
- *
- * Splitting it this way is deliberate rather than incidental: it means the
- * shadow-mode comparison from plan R6 stage 1 works from the very first day.
- * PEA can run alongside Power Automate producing its "would have sent" list,
- * and if that list matches what the flows actually sent for three consecutive
- * days, the logic is proven before a single real email is at stake.
+ * Every message PEA sends passes through queueEmail(). Nothing calls the Graph
+ * transport directly, so the decision about whether a send may happen is made
+ * in exactly one place and cannot be sidestepped by reaching for a different
+ * helper.
  *
  * THREE INDEPENDENT BRAKES stand between this function and a real mailbox:
  *   1. pea_settings.shadow_mode = 'true'  → nothing is sent at all
  *   2. EMAIL_REDIRECT_TO_TEST=true        → recipients rewritten to the test inbox
  *   3. PEA_SCHEDULER_ENABLED=false        → the sweep never runs
  * All three are reported by GET /api/health.
+ *
+ * Shadow mode is not just a safety catch — it is the R6 stage-1 cutover
+ * evidence. PEA runs beside Power Automate writing its "would have sent" list
+ * to pea_email_log; if that list matches what the flows actually sent for three
+ * consecutive days, the migrated logic is proven before a single real email is
+ * at stake.
  */
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
+import { sendMail } from './graphMailer.service.js';
+import { render, buildVars } from './emailTemplate.service.js';
 
 /** Read a setting, falling back when the row is absent. */
 async function setting(key, fallback = null) {
@@ -91,58 +95,144 @@ export function applyRedirect({ to, cc }) {
 }
 
 /**
- * Record (and, from Day 4, send) a notification.
+ * Render, guard and send one notification.
+ *
+ * Never throws on a send failure. A cycle's row is recorded as `failed` and the
+ * caller continues — one manager's unreachable mailbox must not stop the sweep
+ * for everyone else, and a mail failure must never roll back a submission that
+ * was already committed.
  *
  * @param {object} params
  * @param {string} params.type - evaluation_link | reminder | acknowledgement | extend_alert | hr_notification
+ * @param {object} [params.cycle] - cycle with `employee` included; required for templated types
  * @param {bigint} [params.cycleId]
  * @param {bigint} [params.employeeId]
- * @param {string} params.subject
- * @param {object} [params.context] - extra detail for the log line
- * @returns {Promise<{status: string, to: string[], redirected: boolean}>}
+ * @param {string} [params.subject] - overrides the template subject
+ * @param {object} [params.context] - extra template variables
+ * @returns {Promise<{status: string, to: string[], redirected: boolean, error?: string}>}
  */
-export async function queueEmail({ type, cycleId, employeeId, subject, context = {} }) {
-  const employee = employeeId
-    ? await prisma.pea_employees.findUnique({ where: { id: employeeId } })
-    : null;
+export async function queueEmail({ type, cycle, cycleId, employeeId, subject, context = {} }) {
+  const resolvedCycleId = cycleId ?? cycle?.id ?? null;
+  const resolvedEmployeeId = employeeId ?? cycle?.employee_id ?? null;
+
+  // Load what the template needs if the caller passed only ids.
+  const full =
+    cycle ||
+    (resolvedCycleId
+      ? await prisma.pea_evaluation_cycles.findUnique({
+          where: { id: resolvedCycleId },
+          include: { employee: true },
+        })
+      : null);
+
+  const employee =
+    full?.employee ||
+    (resolvedEmployeeId
+      ? await prisma.pea_employees.findUnique({ where: { id: resolvedEmployeeId } })
+      : null);
 
   const real = await resolveRecipients(type, employee || {});
-  const { to, cc, redirected } = applyRedirect(real);
+
+  let to;
+  let cc;
+  let redirected = false;
+  try {
+    ({ to, cc, redirected } = applyRedirect(real));
+  } catch (err) {
+    // applyRedirect fails closed. Record the refusal rather than sending.
+    await logRow({ type, resolvedCycleId, resolvedEmployeeId, to: [], cc: [], subject, status: 'failed', error: err.message });
+    logger.error(`✋ ${type} refused: ${err.message}`);
+    return { status: 'failed', to: [], redirected: false, error: err.message };
+  }
+
+  // Render the body. Templated types need a cycle; hr_notification does not.
+  let rendered = { subject: subject || 'Performance Evaluation notification', body: '' };
+  try {
+    const vars = full ? buildVars(full, context) : context;
+    rendered = await render(type, vars);
+    if (subject) rendered.subject = subject;
+  } catch (err) {
+    logger.warn(`Template "${type}" could not be rendered: ${err.message}`);
+  }
 
   const shadow = await isShadowMode();
-  // 'suppressed' is the shadow-mode marker the R6 stage-1 diff reads.
-  const status = shadow ? 'suppressed' : 'sent';
 
+  if (shadow) {
+    // 'suppressed' is the marker the R6 stage-1 diff reads.
+    await logRow({
+      type,
+      resolvedCycleId,
+      resolvedEmployeeId,
+      to,
+      cc,
+      subject: rendered.subject,
+      status: 'suppressed',
+      error:
+        `SHADOW MODE — not sent. Would have gone to: ${real.to.join(', ') || '(none)'}` +
+        (real.cc.length ? ` cc ${real.cc.join(', ')}` : ''),
+    });
+
+    logger.info(
+      `📭 [shadow] ${type} NOT sent — would have gone to ${real.to.join(', ') || '(none)'} · "${rendered.subject}"`
+    );
+    return { status: 'suppressed', to, redirected };
+  }
+
+  try {
+    await sendMail({
+      to,
+      cc,
+      subject: rendered.subject,
+      html: rendered.body,
+      replyTo: config.microsoft.replyTo || undefined,
+    });
+
+    await logRow({
+      type,
+      resolvedCycleId,
+      resolvedEmployeeId,
+      to,
+      cc,
+      subject: rendered.subject,
+      status: 'sent',
+      error: redirected ? `Redirected from: ${real.to.join(', ')}` : null,
+    });
+
+    logger.info(
+      `📧 ${type} → ${to.join(', ')}${redirected ? ' [REDIRECTED to test inbox]' : ''} · "${rendered.subject}"`
+    );
+    return { status: 'sent', to, redirected };
+  } catch (err) {
+    await logRow({
+      type,
+      resolvedCycleId,
+      resolvedEmployeeId,
+      to,
+      cc,
+      subject: rendered.subject,
+      status: 'failed',
+      error: err.message,
+    });
+
+    logger.error(`💥 ${type} failed for ${to.join(', ')}: ${err.message}`);
+    return { status: 'failed', to, redirected, error: err.message };
+  }
+}
+
+/** Write one pea_email_log row. */
+async function logRow({ type, resolvedCycleId, resolvedEmployeeId, to, cc, subject, status, error }) {
   await prisma.pea_email_log.create({
     data: {
-      cycle_id: cycleId ?? null,
-      employee_id: employeeId ?? null,
+      cycle_id: resolvedCycleId,
+      employee_id: resolvedEmployeeId,
       email_type: type,
       recipient_email: to.join(', ') || '(none resolved)',
       cc_emails: cc.join(', ') || null,
       subject,
       status,
-      error_message: shadow
-        ? `SHADOW MODE — not sent. Would have gone to: ${real.to.join(', ') || '(none)'}` +
-          (real.cc.length ? ` cc ${real.cc.join(', ')}` : '')
-        : null,
+      error_message: error || null,
     },
   });
-
-  if (shadow) {
-    logger.info(
-      `📭 [shadow] ${type} NOT sent — would have gone to ${real.to.join(', ') || '(none)'}` +
-        ` · "${subject}"` +
-        (Object.keys(context).length ? ` · ${JSON.stringify(context)}` : '')
-    );
-  } else {
-    // Day 4 replaces this branch with the Graph send.
-    logger.info(
-      `📧 ${type} → ${to.join(', ')}${redirected ? ' [REDIRECTED to test inbox]' : ''} · "${subject}"`
-    );
-  }
-
-  return { status, to, redirected };
 }
 
 /**
