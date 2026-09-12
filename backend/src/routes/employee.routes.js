@@ -7,6 +7,7 @@ import {
   setHalt,
   previewSchedule,
 } from '../controllers/employee.controller.js';
+import { atsHistory, employeeFull, linkAts } from '../controllers/dashboard.controller.js';
 import { authenticate, requireMinRole } from '../middleware/auth.js';
 
 const router = Router();
@@ -17,6 +18,9 @@ router.use(authenticate);
 
 router.get('/', list);
 router.get('/:id', getOne);
+router.get('/:id/full', employeeFull);
+router.get('/:id/ats-history', atsHistory);
+router.post('/:id/link-ats', requireMinRole('hr'), linkAts);
 
 // Writes need hr-tier or above; `viewer` is read-only reporting.
 router.post('/preview-schedule', requireMinRole('hr'), previewSchedule);
