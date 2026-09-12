@@ -4,6 +4,8 @@ import config from '../config/index.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
 import authRoutes from './auth.routes.js';
+import employeeRoutes from './employee.routes.js';
+import importRoutes from './import.routes.js';
 
 const router = Router();
 
@@ -51,5 +53,7 @@ router.get(
 );
 
 router.use('/auth', authRoutes);
+router.use('/employees', employeeRoutes);
+router.use('/import', importRoutes);
 
 export default router;

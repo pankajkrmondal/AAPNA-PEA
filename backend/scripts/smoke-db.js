@@ -30,10 +30,24 @@ async function main() {
   pass(`connected as ${usr}`);
 
   console.log('\n── 2. PEA models readable ───────────────────────────────────');
+  // Reference data must match the seed exactly.
   eq('pea_evaluation_params rows', await prisma.pea_evaluation_params.count(), 18);
-  eq('pea_settings rows',          await prisma.pea_settings.count(), 17);
-  eq('pea_employees rows',         await prisma.pea_employees.count(), 0);
-  eq('pea_evaluation_cycles rows', await prisma.pea_evaluation_cycles.count(), 0);
+  eq('pea_settings rows', await prisma.pea_settings.count(), 17);
+
+  // Employee data is informational — it varies with whatever has been imported.
+  const employees = await prisma.pea_employees.count();
+  const cycles = await prisma.pea_evaluation_cycles.count();
+  pass(`pea_employees rows: ${employees}`);
+  pass(`pea_evaluation_cycles rows: ${cycles}`);
+
+  // Every employee must have a schedule. A zero-cycle employee means the
+  // generator was skipped, and nobody would ever be asked to rate them.
+  if (employees > 0) {
+    const orphans = await prisma.$queryRaw`
+      SELECT count(*)::int AS n FROM pea_employees e
+       WHERE NOT EXISTS (SELECT 1 FROM pea_evaluation_cycles c WHERE c.employee_id = e.id)`;
+    eq('employees with no schedule', orphans[0].n, 0);
+  }
 
   const shadow = await prisma.pea_settings.findUnique({
     where: { setting_key: 'shadow_mode' },

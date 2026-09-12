@@ -62,12 +62,15 @@ const config = {
   },
 
   email: {
-    // Hard guard: outside production every recipient is rewritten to the test
-    // inbox and CC is cleared. This is what stops a half-tested build emailing
-    // 130 real managers. Plan R8.
+    // Hard guard, mirroring ATS staging: outside production every recipient is
+    // rewritten to testRecipients and CC is cleared. This is what stops a
+    // half-tested build emailing 130 real reporting managers. Plan R8.
+    //
+    // PEA applies this with NO exceptions. ATS exempts internal alerts and
+    // operator-typed addresses; PEA has no equivalent case — every recipient
+    // here is a colleague who never asked to be mailed from a test system.
     redirectInNonProd: bool(process.env.EMAIL_REDIRECT_TO_TEST, true) && NODE_ENV !== 'production',
     testRecipients: list(process.env.EMAIL_STAGING_RECIPIENTS),
-    uatAllowlist: list(process.env.EMAIL_UAT_ALLOWLIST),
   },
 
   scheduler: {
@@ -89,6 +92,21 @@ if (missing.length) {
 
 if (config.isProduction && config.jwt.secret.includes('change-me')) {
   console.error('💥 JWT_SECRET is still the development placeholder. Refusing to start in production.');
+  process.exit(1);
+}
+
+// ── FAIL CLOSED on the email guard ───────────────────────────────────────
+// If the redirect is ON but no substitute inbox is configured, there is no safe
+// address to send to — and treating an empty list as "no redirect needed" would
+// do precisely what the guard exists to prevent, silently. Refusing to boot is
+// recoverable; a real reporting manager emailed from staging is not.
+if (config.email.redirectInNonProd && config.email.testRecipients.length === 0) {
+  console.error(
+    '💥 EMAIL_REDIRECT_TO_TEST is on but EMAIL_STAGING_RECIPIENTS is empty.\n' +
+      '   There is no safe address to divert mail to, so PEA will not start.\n' +
+      `   Set EMAIL_STAGING_RECIPIENTS in .env.${NODE_ENV}, or set ` +
+      'EMAIL_REDIRECT_TO_TEST=false if you genuinely intend to mail real people.'
+  );
   process.exit(1);
 }
 
