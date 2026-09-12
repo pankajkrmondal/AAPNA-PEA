@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import compression from 'compression';
 import morgan from 'morgan';
+import crypto from 'crypto';
 
 import config from './config/index.js';
 import { morganStream } from './config/logger.js';
@@ -21,7 +22,34 @@ app.set('json replacer', bigIntSafe);
 // rate limiter and in pea_evaluation_cycles.submitted_ip.
 app.set('trust proxy', 1);
 
-app.use(helmet());
+// A per-request nonce for the server-rendered evaluation form. That page ships
+// its own <style> and one small <script>, and helmet's default CSP blocks
+// inline content — so rather than weaken the policy with 'unsafe-inline' for
+// scripts, each response gets a nonce the page echoes back. This page is
+// public and unauthenticated, which is exactly where a strict CSP earns its
+// keep.
+app.use((_req, res, next) => {
+  res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+  next();
+});
+
+app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        'script-src': ["'self'", (_req, res) => `'nonce-${res.locals.cspNonce}'`],
+        // Styles are inline in the form's <style> block and contain nothing
+        // user-controlled; script injection is the risk worth being strict about.
+        'style-src': ["'self'", "'unsafe-inline'"],
+        // The form posts to this origin only.
+        'form-action': ["'self'"],
+        'frame-ancestors': ["'none'"],
+      },
+    },
+  })
+);
+
 app.use(
   cors({
     origin: config.frontendUrl,
