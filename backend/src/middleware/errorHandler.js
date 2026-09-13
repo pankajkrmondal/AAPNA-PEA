@@ -11,9 +11,9 @@ export function notFound(req, _res, next) {
  * Global error handler.
  *
  * Operational errors keep their message. Programming errors are masked in
- * production so a stack trace or SQL fragment never reaches a client — note
- * the evaluation form routes are PUBLIC, so "a client" can be anyone holding
- * a token link.
+ * production, and stack traces are sent only in development, so a stack trace
+ * or SQL fragment never reaches a client — note the evaluation form routes are
+ * PUBLIC, so "a client" can be anyone holding a token link.
  */
 // eslint-disable-next-line no-unused-vars -- Express needs the 4-arg signature
 export function errorHandler(err, req, res, _next) {
@@ -33,8 +33,9 @@ export function errorHandler(err, req, res, _next) {
     message = 'Related record not found';
   } else if (err.code === 'P2021' || err.code === 'P2022') {
     // Table or column missing — almost always a DDL file not applied to this
-    // environment. Say so, because the raw Prisma text is cryptic.
-    statusCode = 500;
+    // environment. Say so, because the raw Prisma text is cryptic. 503, not
+    // 500: the feature is not available here yet, which is not a code fault.
+    statusCode = 503;
     message = 'Database schema is out of date — a DDL file may not have been applied';
   }
 
@@ -65,7 +66,8 @@ export function errorHandler(err, req, res, _next) {
     message: config.isProduction && !isOperational ? 'Something went wrong' : message,
   };
 
-  if (!config.isProduction) body.stack = err.stack;
+  // Development only: staging is internet-facing too, and must not leak stacks.
+  if (config.isDevelopment) body.stack = err.stack;
 
   res.status(statusCode).json(body);
 }

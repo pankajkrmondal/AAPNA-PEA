@@ -5,7 +5,7 @@ import {
   Card, Table, Tag, Input, Select, Space, Button, Typography, Modal, Form, DatePicker,
   Switch, App, Progress, Alert, Descriptions,
 } from 'antd';
-import { PlusOutlined, ImportOutlined, SearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api, { unwrap } from '../api.js';
 
@@ -20,7 +20,6 @@ export default function Employees() {
   const [status, setStatus] = useState();
   const [page, setPage] = useState(1);
   const [addOpen, setAddOpen] = useState(false);
-  const [handoffOpen, setHandoffOpen] = useState(false);
   const [preview, setPreview] = useState(null);
   const [form] = Form.useForm();
 
@@ -32,10 +31,6 @@ export default function Employees() {
         .then((r) => r.data),
   });
 
-  const { data: handoffs } = useQuery({
-    queryKey: ['handoffs'],
-    queryFn: () => api.get('/ats/handoffs').then(unwrap),
-  });
 
   const create = useMutation({
     mutationFn: (values) => api.post('/employees', values).then(unwrap),
@@ -46,7 +41,7 @@ export default function Employees() {
       form.resetFields();
       qc.invalidateQueries({ queryKey: ['employees'] });
     },
-    onError: (err) => message.error(err.friendlyMessage),
+    onError: (err) => { message.error(err.friendlyMessage); },
   });
 
   // Shows the exact dates before saving. The cadence rule was previously
@@ -124,20 +119,18 @@ export default function Employees() {
   ];
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Space style={{ width: '100%', justifyContent: 'space-between' }} wrap>
-        <Typography.Title level={4} style={{ margin: 0 }}>Employees</Typography.Title>
+    <>
+      <div className="pea-page-head">
+        <div>
+          <h2>Employees</h2>
+          <p>Everyone on a probation schedule, and where each one has got to</p>
+        </div>
         <Space wrap>
-          {handoffs?.length > 0 && (
-            <Button icon={<ImportOutlined />} onClick={() => setHandoffOpen(true)}>
-              {handoffs.length} from ATS
-            </Button>
-          )}
           <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>Add employee</Button>
         </Space>
-      </Space>
+      </div>
 
-      <Card size="small">
+      <Card className="pea-card" size="small">
         <Space wrap style={{ marginBottom: 12 }}>
           <Input
             placeholder="Search name, email or manager"
@@ -236,34 +229,6 @@ export default function Employees() {
         </Form>
       </Modal>
 
-      {/* ATS handoffs */}
-      <Modal
-        title="Accepted ATS offers not yet tracked here"
-        open={handoffOpen}
-        onCancel={() => setHandoffOpen(false)}
-        footer={null}
-        width={780}
-      >
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message="The joining date comes from the ATS offer"
-          description="ATS holds the personal email and the agreed joining date; the office email, reporting manager and project leader are not in ATS and still need entering here."
-        />
-        <Table
-          size="small"
-          rowKey="pipeline_id"
-          dataSource={handoffs || []}
-          pagination={{ pageSize: 8 }}
-          columns={[
-            { title: 'Candidate', dataIndex: 'candidate_name' },
-            { title: 'Personal email', dataIndex: 'candidate_email' },
-            { title: 'Role', dataIndex: 'position_applied', render: (v) => v || '—' },
-            { title: 'Joining', dataIndex: 'joining_date', width: 110 },
-          ]}
-        />
-      </Modal>
-    </Space>
+    </>
   );
 }

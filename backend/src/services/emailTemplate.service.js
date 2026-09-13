@@ -149,7 +149,81 @@ const TEMPLATES = {
     subject: v.subject || 'Performance Evaluation notification',
     body: shell(`<p>Hello,</p><p>${v.message || ''}</p>`),
   }),
+
+  /**
+   * "Report to IT" — Entra holds a wrong value. Plan §6.5 Part 3: HR fixes it
+   * locally in PEA, and this asks IT to fix it at source so every other
+   * Microsoft-connected system is corrected too.
+   */
+  it_report: (v) => ({
+    subject: `Directory correction requested — ${v.employeeName}`,
+    body: shell(`
+      <p>Hello IT team,</p>
+      <p>HR has found a value in Microsoft Entra that appears to be wrong, and has
+         corrected it locally in the Performance Evaluation system. Please update the
+         directory so other systems pick up the correct value as well.</p>
+      <table class="r">
+        <tr><th>Employee</th><td>${esc(v.employeeName)}</td></tr>
+        <tr><th>Account</th><td>${esc(v.accountEmail)}</td></tr>
+        <tr><th>Field</th><td>${esc(v.fieldLabel)}</td></tr>
+        <tr><th>Entra currently holds</th><td>${esc(v.azureValue) || '<em>(blank)</em>'}</td></tr>
+        <tr><th>Correct value</th><td><strong>${esc(v.correctValue)}</strong></td></tr>
+        <tr><th>Reported by</th><td>${esc(v.reportedBy)}</td></tr>
+      </table>
+      ${v.note ? `<p><strong>Note:</strong><br>${esc(v.note)}</p>` : ''}
+      <p class="muted">Once the directory is updated, HR can unlock the field in PEA and it
+         will follow Entra again.</p>`),
+  }),
+
+  /** A reporting manager's "my team" link. */
+  manager_portal: (v) => ({
+    subject: 'Your team’s performance evaluations',
+    body: shell(`
+      <p>Hello ${esc(v.rmName) || ''},</p>
+      <p>You can now see every performance evaluation for the people who report to you in
+         one place — what is due, what is waiting for you, and what you have already
+         submitted.</p>
+      <p style="margin:22px 0"><a class="btn" href="${v.portalUrl}">Open my team</a></p>
+      <p class="muted" style="font-size:13px">
+        If the button does not work, paste this link into your browser:<br>${v.portalUrl}
+      </p>
+      <p class="muted">No login is needed. The link is personal to you and expires on
+         ${esc(v.expiresLabel)}.</p>`),
+  }),
+
+  /** Daily HR digest of probations past their confirmation deadline. Plan §2.7. */
+  deadline_alert: (v) => ({
+    subject: `${(v.overdue || []).length} probation(s) past the confirmation deadline`,
+    body: shell(`
+      <p>Hello,</p>
+      <p>The following probations have passed their confirmation deadline — 6 months from
+         the date of joining, or 8 once extended — with no final decision recorded.</p>
+      <table class="r">
+        <tr><th>Employee</th><th>Joined</th><th>Deadline</th><th>Days overdue</th><th>Manager</th></tr>
+        ${(v.overdue || [])
+          .map(
+            (e) => `<tr><td>${esc(e.full_name)}</td><td>${e.doj}</td><td>${e.deadline}</td>
+                        <td style="text-align:center"><strong>${e.daysOverdue}</strong></td>
+                        <td>${esc(e.rm_name)}</td></tr>`
+          )
+          .join('')}
+      </table>
+      ${
+        (v.dueSoon || []).length
+          ? `<p>A further <strong>${v.dueSoon.length}</strong> reach their deadline within two weeks.</p>`
+          : ''
+      }`),
+  }),
 };
+
+/** Escape a value for HTML. Several of the new templates carry HR-typed text. */
+function esc(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
 
 /**
  * Substitute {{placeholders}} in an HR-supplied override.
@@ -224,3 +298,97 @@ export async function render(key, vars) {
 
 /** Template keys, for the admin screen. */
 export const TEMPLATE_KEYS = Object.keys(TEMPLATES);
+
+/**
+ * What each template is, which {{variables}} an override may use, and whether
+ * it can be overridden at all.
+ *
+ * deadline_alert is not overridable: its body is a table built from a list, and
+ * the {{placeholder}} syntax has no loops — an override could only ever drop
+ * the list, which is the whole message.
+ */
+export const TEMPLATE_CATALOG = Object.freeze({
+  evaluation_link: {
+    label: 'Evaluation request (to reporting manager)',
+    editable: true,
+    variables: ['employeeName', 'firstName', 'officeEmail', 'dojLabel', 'rmName', 'seqNo', 'periodLabel', 'dueLabel', 'formUrl'],
+  },
+  reminder: {
+    label: 'Reminder (to reporting manager)',
+    editable: true,
+    variables: ['employeeName', 'rmName', 'seqNo', 'periodLabel', 'sentLabel', 'reminderNumber', 'formUrl'],
+  },
+  acknowledgement: {
+    label: 'Evaluation submitted (to HR)',
+    editable: true,
+    variables: ['employeeName', 'seqNo', 'periodLabel', 'average', 'confirmation', 'remarks', 'submittedBy', 'rmName'],
+  },
+  extend_alert: {
+    label: 'Probation extended (to HR)',
+    editable: true,
+    variables: ['employeeName', 'confirmation', 'extensionCycles', 'submittedBy', 'rmName'],
+  },
+  hr_notification: { label: 'General HR notice', editable: true, variables: ['subject', 'message'] },
+  it_report: {
+    label: 'Report to IT',
+    editable: true,
+    variables: ['employeeName', 'accountEmail', 'fieldLabel', 'azureValue', 'correctValue', 'reportedBy', 'note'],
+  },
+  manager_portal: {
+    label: 'Manager portal link (to reporting manager)',
+    editable: true,
+    variables: ['rmName', 'portalUrl', 'expiresLabel'],
+  },
+  deadline_alert: { label: 'Confirmation deadline digest (to HR)', editable: false, variables: [] },
+});
+
+/** Realistic sample values, so a preview reads like the real thing. */
+const SAMPLE_VARS = {
+  employeeName: 'Priya Sharma',
+  firstName: 'Priya',
+  officeEmail: 'psharma@aapnainfotech.com',
+  dojLabel: '01-Jul-2026',
+  rmName: 'Chhavi Verma',
+  rmEmail: 'cverma@aapnainfotech.com',
+  seqNo: 2,
+  periodLabel: '31-Jul-2026 to 30-Aug-2026',
+  dueLabel: '31-Aug-2026',
+  sentLabel: '31-Aug-2026',
+  reminderNumber: 1,
+  formUrl: 'https://pea-staging.aapnainfotech.com/api/evaluation/00000000-0000-0000-0000-000000000000',
+  average: '3.71',
+  confirmation: 'Extend for 1 month',
+  remarks: 'Strong progress on delivery; communication with the client still developing.',
+  submittedBy: 'cverma@aapnainfotech.com',
+  extensionCycles: 1,
+  subject: 'Sample notice',
+  message: 'This is how a general HR notice will look.',
+  accountEmail: 'psharma@aapnainfotech.com',
+  fieldLabel: 'Display name',
+  azureValue: 'Priya S',
+  correctValue: 'Priya Sharma',
+  reportedBy: 'pankaj',
+  note: 'Surname missing in Entra.',
+  portalUrl: 'https://pea-staging.aapnainfotech.com/manager/00000000-0000-0000-0000-000000000000',
+  expiresLabel: '13-Oct-2026',
+  overdue: [
+    { full_name: 'Pooja Goel', doj: '2022-09-20', deadline: '2023-03-20', daysOverdue: 1272, rm_name: 'Aroy' },
+  ],
+  dueSoon: [],
+};
+
+/**
+ * Render a template for preview, with an unsaved override applied.
+ * @param {string} key
+ * @param {{subject?: string, body?: string}} [draft] - blank fields fall back to the built-in
+ * @returns {{subject: string, body: string}}
+ */
+export function renderPreview(key, draft = {}) {
+  const builder = TEMPLATES[key];
+  if (!builder) throw new Error(`Unknown email template "${key}"`);
+  const built = builder(SAMPLE_VARS);
+  return {
+    subject: draft.subject ? interpolate(draft.subject, SAMPLE_VARS) : built.subject,
+    body: draft.body ? shell(interpolate(draft.body, SAMPLE_VARS)) : built.body,
+  };
+}

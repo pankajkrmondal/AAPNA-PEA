@@ -8,7 +8,14 @@ import employeeRoutes from './employee.routes.js';
 import importRoutes from './import.routes.js';
 import evaluationRoutes from './evaluation.routes.js';
 import adminRoutes from './admin.routes.js';
-import dashboardRoutes, { atsRouter } from './dashboard.routes.js';
+import intakeRoutes from './intake.routes.js';
+import notificationRoutes from './notification.routes.js';
+import analyticsRoutes from './analytics.routes.js';
+import settingsRoutes from './settings.routes.js';
+import usersRoutes from './users.routes.js';
+import { selfViewLinksRouter, selfViewPublicRouter } from './selfView.routes.js';
+import { managerLinksRouter, managerPublicRouter } from './managerPortal.routes.js';
+import dashboardRoutes from './dashboard.routes.js';
 
 const router = Router();
 
@@ -59,11 +66,20 @@ router.use('/auth', authRoutes);
 router.use('/employees', employeeRoutes);
 router.use('/import', importRoutes);
 router.use('/admin', adminRoutes);
+router.use('/intake', intakeRoutes);
+router.use('/notifications', notificationRoutes);
+router.use('/analytics', analyticsRoutes);
+router.use('/settings', settingsRoutes);
+router.use('/users', usersRoutes);
+router.use('/self-view-links', selfViewLinksRouter);
+router.use('/manager-links', managerLinksRouter);
 router.use('/dashboard', dashboardRoutes);
-router.use('/ats', atsRouter);
 
 // PUBLIC — no authenticate middleware. The token in the URL is the credential;
-// reporting managers have no PEA account. See evaluation.routes.js.
+// reporting managers have no PEA account. See evaluation.routes.js and
+// managerPortal.routes.js.
 router.use('/evaluation', evaluationRoutes);
+router.use('/manager', managerPublicRouter);
+router.use('/self-view', selfViewPublicRouter);
 
 export default router;

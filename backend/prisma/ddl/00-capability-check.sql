@@ -1,6 +1,10 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 --  PEA — capability check
 --
+--  ⚠️ OBSOLETE (decision D5, 13 Sep 2026): checked the temporary setup where
+--     PEA sat inside the ATS database. PEA now has its own database — see
+--     pea-dedicated-database.sql.
+--
 --  READ-ONLY. Creates nothing. Changes nothing. Drops nothing.
 --  Safe to run any time, including working hours.
 --

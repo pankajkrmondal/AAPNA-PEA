@@ -1,5 +1,5 @@
 /**
- * e2e-dashboard.js — dashboard, data quality, ATS history and Excel export.
+ * e2e-dashboard.js — dashboard, data quality, no-ATS check and Excel export.
  *
  * Usage:  node scripts/e2e-dashboard.js
  */
@@ -8,7 +8,8 @@ import { PrismaClient } from '@prisma/client';
 
 const BASE = process.env.PEA_BASE || 'http://localhost:5002/api';
 const USER = process.env.PEA_ADMIN_USERNAME || 'pankaj';
-const PASS = process.env.PEA_ADMIN_PASSWORD || 'PeaAdmin@2026';
+const PASS = process.env.PEA_ADMIN_PASSWORD;
+if (!PASS) { console.error('Set PEA_ADMIN_PASSWORD to run this suite (no default).'); process.exit(1); }
 
 const prisma = new PrismaClient();
 const h = (s) => console.log(`\n${'─'.repeat(72)}\n${s}\n${'─'.repeat(72)}`);
@@ -67,83 +68,20 @@ async function main() {
     }
   }
 
-  // ── ATS handoffs ────────────────────────────────────────────────────────
-  h('3. ATS HANDOFFS — accepted offers not yet tracked in PEA');
-  const { json: ho } = await api('/ats/handoffs', { token });
-  console.log(`  ${ho.message}`);
-  if (ho.data.length) {
-    console.table(
-      ho.data.slice(0, 8).map((r) => ({
-        name: r.candidate_name,
-        email: r.candidate_email,
-        role: r.position_applied || '—',
-        joining: r.joining_date,
-      }))
-    );
-    ok('DOJ comes from the ATS offer — no manual date entry, so no format bug');
-  } else {
-    ok('none outstanding');
-  }
-
-  // ── ATS search ──────────────────────────────────────────────────────────
-  h('4. ATS CANDIDATE SEARCH — for linking an existing employee by hand');
-  const { json: search } = await api('/ats/search?q=gmail.com', { token });
-  console.log(`  ${search.data.length} match(es)`);
-  if (search.data.length) {
-    console.table(
-      search.data.slice(0, 5).map((r) => ({
-        name: r.candidate_name, email: r.candidate_email, outcome: r.final_outcome || '—',
-      }))
-    );
-  }
-  ok('search works (name or personal email only — never fuzzy name matching, plan R4)');
-
-  // ── ATS history for a linked employee ───────────────────────────────────
-  h('5. ATS RECRUITMENT HISTORY');
-  const linkable = ho.data[0];
+  // ── No ATS coupling ─────────────────────────────────────────────────────
+  // PEA and ATS are separate projects with separate databases (decision D5).
+  // The ATS endpoints that once read recruitment data must not exist.
+  h('3. NO ATS ENDPOINTS — PEA reads no ATS data');
   const anyEmployee = await prisma.pea_employees.findFirst({ orderBy: { id: 'asc' } });
-
-  if (anyEmployee && linkable) {
-    await api(`/employees/${anyEmployee.id}/link-ats`, {
-      method: 'POST', token, body: { pipeline_id: linkable.pipeline_id },
-    });
-    const { json: hist } = await api(`/employees/${anyEmployee.id}/ats-history`, { token });
-    const hd = hist.data;
-
-    if (hd.linked && !hd.unavailable) {
-      ok(`linked: ${hd.candidate.candidate_name} <${hd.candidate.candidate_email}>`);
-      console.log(`     position     : ${hd.candidate.position_applied || '—'}`);
-      console.log(`     final outcome: ${hd.candidate.final_outcome || '—'}`);
-      console.log(`     joining date : ${hd.offer?.joining_date?.slice?.(0, 10) || '—'}`);
-      console.log(`     interviews   : ${hd.summary.interviewRounds}, avg ${hd.summary.averageInterviewRating ?? '—'}`);
-      for (const sc of hd.scorecards.slice(0, 3)) {
-        console.log(`       · ${sc.stage_key}: rating ${sc.final_rating ?? sc.avg_score ?? '—'}, ${sc.recommendation || 'no recommendation'}`);
-      }
-      ok('interview history read from ATS in one join — the shared-DB payoff');
-    } else {
-      console.log(`     ${hd.unavailable ? hd.reason : 'no history returned'}`);
-    }
-
-    // Unlink so the run leaves nothing behind.
-    await prisma.pea_employees.update({
-      where: { id: anyEmployee.id }, data: { ats_pipeline_id: null },
-    });
-  } else {
-    console.log('  (no employee or no handoff available to link)');
-  }
-
-  // ── Unlinked employee must say so clearly ───────────────────────────────
-  h('6. UNLINKED EMPLOYEE — must not read as "had no interviews"');
-  if (anyEmployee) {
-    const { json: none } = await api(`/employees/${anyEmployee.id}/ats-history`, { token });
-    none.data.linked === false ? ok('reports linked:false') : bad('unlinked state unclear');
-    none.data.reason?.includes('office email')
-      ? ok('explains why there is no automatic match')
-      : bad('no explanation given');
+  const probes = ['/ats/handoffs', '/ats/search?q=x'];
+  if (anyEmployee) probes.push(`/employees/${anyEmployee.id}/ats-history`);
+  for (const p of probes) {
+    const { status: s } = await api(p, { token });
+    s === 404 ? ok(`${p} → 404`) : bad(`${p} → ${s} (expected 404)`);
   }
 
   // ── Excel export ────────────────────────────────────────────────────────
-  h('7. EXCEL EXPORT — same layout HR already reads');
+  h('4. EXCEL EXPORT — same layout HR already reads');
   const { status, buffer, headers } = await api('/dashboard/export', { token, raw: true });
   status === 200 ? ok(`HTTP 200, ${buffer.length} bytes`) : bad(`export failed (${status})`);
   console.log(`     ${headers.get('content-disposition')}`);

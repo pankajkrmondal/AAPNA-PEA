@@ -2,6 +2,7 @@ import * as authService from '../services/auth.service.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
 import AppError from '../utils/AppError.js';
+import { changeOwnPassword } from '../services/users.service.js';
 
 /** POST /api/auth/login  { identifier, password } */
 export const login = catchAsync(async (req, res) => {
@@ -23,6 +24,17 @@ export const logout = catchAsync(async (req, res) => {
     await authService.logout(header.slice(7));
   }
   return success(res, null, 'Signed out');
+});
+
+/** POST /api/auth/change-password  { current_password, new_password } */
+export const changePassword = catchAsync(async (req, res) => {
+  const token = (req.headers.authorization || '').slice(7);
+  const r = await changeOwnPassword(req.user, req.body?.current_password, req.body?.new_password, token);
+  return success(
+    res,
+    r,
+    r.otherSessionsEnded ? `Password changed — signed out of ${r.otherSessionsEnded} other session(s)` : 'Password changed'
+  );
 });
 
 /** GET /api/auth/me */

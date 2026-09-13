@@ -25,8 +25,8 @@
 
 const PATHS = {
   development: __dirname,
-  staging: '/var/www/html/pea-platform-staging/backend',
-  production: '/var/www/html/pea-platform-production/backend',
+  staging: '/var/www/html/pea-staging-aapnainfotech/backend',
+  production: '/var/www/html/pea-production-aapnainfotech/backend',
 };
 
 const common = {

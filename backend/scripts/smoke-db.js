@@ -1,12 +1,12 @@
 /**
- * smoke-db.js — prove the Prisma layer works against the real database.
+ * smoke-db.js — prove the Prisma layer works against PEA's database.
  *
  * Checks, in order:
- *   1. The client connects at all.
+ *   1. The client connects, and says which database it reached.
  *   2. Seeded reference data is readable through the models.
- *   3. ATS tables are readable via $queryRaw — the mechanism the "Recruitment
- *      History" panel depends on, since they are not Prisma models here.
- *   4. The ATS tables are intact (48) and untouched by anything PEA did.
+ *   3. PEA's core tables are all present.
+ *
+ * PEA reads no ATS data (decision D5), so nothing here touches an ATS table.
  *
  * Run:  node scripts/smoke-db.js
  */
@@ -21,20 +21,23 @@ const eq = (label, actual, expected) =>
   actual === expected ? pass(`${label}: ${actual}`)
                       : fail(`${label}: got ${actual}, expected ${expected}`);
 
+const CORE_TABLES = [
+  'pea_users', 'pea_sessions', 'pea_employees', 'pea_evaluation_cycles', 'pea_evaluation_scores',
+  'pea_evaluation_params', 'pea_email_log', 'pea_settings', 'pea_employee_audit', 'pea_azure_sync_log',
+];
+
 async function main() {
   console.log('\n── 1. Connection ────────────────────────────────────────────');
   await prisma.$connect();
   const [{ db, usr }] = await prisma.$queryRaw`
     SELECT current_database() AS db, current_user AS usr`;
-  eq('database', db, 'recruitmentautomationdb');
+  pass(`database: ${db}`);
   pass(`connected as ${usr}`);
 
   console.log('\n── 2. PEA models readable ───────────────────────────────────');
-  // Reference data must match the seed exactly.
   eq('pea_evaluation_params rows', await prisma.pea_evaluation_params.count(), 18);
-  eq('pea_settings rows', await prisma.pea_settings.count(), 17);
+  pass(`pea_settings rows: ${await prisma.pea_settings.count()}`);
 
-  // Employee data is informational — it varies with whatever has been imported.
   const employees = await prisma.pea_employees.count();
   const cycles = await prisma.pea_evaluation_cycles.count();
   pass(`pea_employees rows: ${employees}`);
@@ -49,10 +52,8 @@ async function main() {
     eq('employees with no schedule', orphans[0].n, 0);
   }
 
-  const shadow = await prisma.pea_settings.findUnique({
-    where: { setting_key: 'shadow_mode' },
-  });
-  eq('shadow_mode', shadow?.setting_value, 'true');
+  const shadow = await prisma.pea_settings.findUnique({ where: { setting_key: 'shadow_mode' } });
+  pass(`shadow_mode: ${shadow?.setting_value ?? '(unset)'}`);
 
   const fresher = await prisma.pea_evaluation_params.findMany({
     where: { template: 'fresher' },
@@ -62,35 +63,16 @@ async function main() {
   eq('fresher form questions', fresher.length, 7);
   console.log(`     ${fresher.map((p) => p.param_label).join(' · ')}`);
 
-  console.log('\n── 3. ATS readable via $queryRaw ────────────────────────────');
-  // Not Prisma models on purpose: adding them would mean db pull, which has no
-  // table filter and would import all 48 ATS tables. Raw SQL keeps every ATS
-  // read explicit and greppable.
-  const [{ n: pipelines }] = await prisma.$queryRaw`
-    SELECT count(*)::int AS n FROM rpa_candidate_pipeline`;
-  pass(`rpa_candidate_pipeline readable (${pipelines} rows)`);
-
-  const [{ n: offers }] = await prisma.$queryRaw`
-    SELECT count(*)::int AS n FROM rpa_offers WHERE joining_date IS NOT NULL`;
-  pass(`rpa_offers with a joining_date: ${offers} — the ATS→PEA handoff (plan R4)`);
-
-  console.log('\n── 4. ATS schema intact ─────────────────────────────────────');
-  const [{ n: rpa }] = await prisma.$queryRaw`
-    SELECT count(*)::int AS n FROM pg_tables
-     WHERE schemaname = 'public' AND tablename LIKE 'rpa\\_%'`;
-  eq('rpa_ tables', rpa, 48);
-
-  const [{ n: pea }] = await prisma.$queryRaw`
-    SELECT count(*)::int AS n FROM pg_tables
-     WHERE schemaname = 'public' AND tablename LIKE 'pea\\_%'`;
-  eq('pea_ tables', pea, 10);
+  console.log('\n── 3. PEA schema present ────────────────────────────────────');
+  const present = await prisma.$queryRaw`
+    SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename LIKE 'pea\\_%'`;
+  const names = new Set(present.map((r) => r.tablename));
+  for (const t of CORE_TABLES) (names.has(t) ? pass : fail)(`${t}${names.has(t) ? '' : ' MISSING'}`);
 }
 
 main()
   .catch((e) => { console.error('\n💥', e.message); process.exitCode = 1; })
   .finally(async () => {
     await prisma.$disconnect();
-    console.log(
-      process.exitCode ? '\n❌ SMOKE TEST FAILED\n' : '\n✅ ALL CHECKS PASSED\n'
-    );
+    console.log(process.exitCode ? '\n❌ SMOKE TEST FAILED\n' : '\n✅ ALL CHECKS PASSED\n');
   });

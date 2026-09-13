@@ -69,8 +69,20 @@ const config = {
     // PEA applies this with NO exceptions. ATS exempts internal alerts and
     // operator-typed addresses; PEA has no equivalent case — every recipient
     // here is a colleague who never asked to be mailed from a test system.
-    redirectInNonProd: bool(process.env.EMAIL_REDIRECT_TO_TEST, true) && NODE_ENV !== 'production',
+    //
+    // MANDATORY outside production (13 Sep 2026). It used to follow
+    // EMAIL_REDIRECT_TO_TEST, so one mistyped line in .env.staging could email
+    // real managers and candidates. It is now tied to NODE_ENV alone, and the
+    // boot check below refuses to start if anyone tries to switch it off.
+    redirectInNonProd: NODE_ENV !== 'production',
     testRecipients: list(process.env.EMAIL_STAGING_RECIPIENTS),
+  },
+
+  // Microsoft sign-in. Off unless explicitly enabled AND a redirect URI that IT
+  // has registered on the app registration is configured. Plan §5.4 Option 3.
+  sso: {
+    enabled: bool(process.env.SSO_ENABLED, false),
+    redirectUri: process.env.SSO_REDIRECT_URI || '',
   },
 
   scheduler: {
@@ -102,10 +114,23 @@ if (config.isProduction && config.jwt.secret.includes('change-me')) {
 // recoverable; a real reporting manager emailed from staging is not.
 if (config.email.redirectInNonProd && config.email.testRecipients.length === 0) {
   console.error(
-    '💥 EMAIL_REDIRECT_TO_TEST is on but EMAIL_STAGING_RECIPIENTS is empty.\n' +
+    `💥 NODE_ENV is "${NODE_ENV}", so every email must be redirected — but EMAIL_STAGING_RECIPIENTS is empty.\n` +
       '   There is no safe address to divert mail to, so PEA will not start.\n' +
-      `   Set EMAIL_STAGING_RECIPIENTS in .env.${NODE_ENV}, or set ` +
-      'EMAIL_REDIRECT_TO_TEST=false if you genuinely intend to mail real people.'
+      `   Set EMAIL_STAGING_RECIPIENTS in .env.${NODE_ENV}.`
+  );
+  process.exit(1);
+}
+
+// Refuse rather than silently ignore: someone who writes
+// EMAIL_REDIRECT_TO_TEST=false on staging believes real people will be mailed.
+// Starting anyway would leave them debugging "why did nobody get it", and
+// honouring it would mail real managers from a test system. Neither is safe.
+if (config.email.redirectInNonProd && process.env.EMAIL_REDIRECT_TO_TEST !== undefined
+    && !bool(process.env.EMAIL_REDIRECT_TO_TEST, true)) {
+  console.error(
+    `💥 EMAIL_REDIRECT_TO_TEST=false is not allowed when NODE_ENV is "${NODE_ENV}".\n` +
+      '   Outside production every email is redirected to EMAIL_STAGING_RECIPIENTS, always.\n' +
+      '   Real recipients are only ever mailed with NODE_ENV=production.'
   );
   process.exit(1);
 }

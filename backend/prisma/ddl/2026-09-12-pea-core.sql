@@ -1,6 +1,11 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 --  PEA — Performance Evaluation Automation: core tables
 --
+--  ⚠️ INTERIM (decision D5, 13 Sep 2026). Applied to recruitmentautomationdb, where
+--     PEA runs until it gets its own database. PEA reads no ATS data. For PEA's
+--     own database later, use pea-dedicated-database.sql instead. Section 12's
+--     ATS read-grants are obsolete.
+--
 --  File     : 2026-09-12-pea-core.sql
 --  Author   : (dev)                          Reviewed by: ____________________
 --  Run as   : appuser        (no superuser required — verified 2026-09-12)
@@ -435,7 +440,7 @@ ON CONFLICT (setting_key) DO NOTHING;
 --
 --     Someone with CREATEROLE runs, once:
 --
---         CREATE ROLE peauser WITH LOGIN PASSWORD 'Pea9kQm4vXt7bLzR2nWsYd6H'
+--         CREATE ROLE peauser WITH LOGIN PASSWORD '<generate a strong one>'
 --           NOSUPERUSER NOCREATEDB NOCREATEROLE;
 --         GRANT CONNECT ON DATABASE recruitmentautomationdb TO peauser;
 --

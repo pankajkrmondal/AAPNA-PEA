@@ -4,6 +4,7 @@ import config from './config/index.js';
 import logger from './config/logger.js';
 import { connectDatabase, disconnectDatabase } from './config/database.js';
 import { startScheduler, stopScheduler } from './jobs/evaluationScheduler.js';
+import { startIntakeScanner, stopIntakeScanner } from './jobs/intakeScanner.js';
 
 const server = http.createServer(app);
 
@@ -11,9 +12,11 @@ async function startServer() {
   try {
     await connectDatabase();
 
-    // Self-gated: logs a warning and does nothing when
-    // PEA_SCHEDULER_ENABLED is false.
+    // Both self-gated: they log a warning and do nothing when
+    // PEA_SCHEDULER_ENABLED is false. The intake scan has a second switch of
+    // its own (pea_settings.azure_scan_enabled), off by default.
     await startScheduler();
+    await startIntakeScanner();
 
     server.listen(config.port, () => {
       logger.info(`🚀 PEA Backend listening on port ${config.port} [${config.env}]`);
@@ -44,6 +47,7 @@ async function gracefulShutdown(signal) {
   logger.info(`\n${signal} received — shutting down gracefully…`);
 
   stopScheduler();
+  stopIntakeScanner();
 
   server.close(async () => {
     logger.info('HTTP server closed');

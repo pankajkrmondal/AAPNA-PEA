@@ -13,7 +13,8 @@ import path from 'path';
 
 const BASE = process.env.PEA_BASE || 'http://localhost:5002/api';
 const USER = process.env.PEA_ADMIN_USERNAME || 'pankaj';
-const PASS = process.env.PEA_ADMIN_PASSWORD || 'PeaAdmin@2026';
+const PASS = process.env.PEA_ADMIN_PASSWORD;
+if (!PASS) { console.error('Set PEA_ADMIN_PASSWORD to run this suite (no default).'); process.exit(1); }
 
 const file =
   process.argv[2] ||

@@ -5,7 +5,7 @@
  * cascade). Leaves pea_users, pea_settings and pea_evaluation_params alone.
  *
  * Development helper. It refuses to run in production, and it names every
- * table it touches explicitly so it can never reach an ATS table.
+ * table it touches explicitly, so it can never reach anything that is not PEA's.
  *
  * Usage:  node scripts/reset-employees.js --yes
  */
@@ -31,11 +31,6 @@ const main = async () => {
   // from pea_employees, so one delete is enough.
   const { count } = await prisma.pea_employees.deleteMany({});
   console.log(`✅ Deleted ${count} employee(s) (was ${before}); cycles and audit cascaded.`);
-
-  const [{ n }] = await prisma.$queryRaw`
-    SELECT count(*)::int AS n FROM pg_tables
-     WHERE schemaname = 'public' AND tablename LIKE 'rpa\\_%'`;
-  console.log(`   ATS tables still intact: ${n}`);
 };
 
 main()

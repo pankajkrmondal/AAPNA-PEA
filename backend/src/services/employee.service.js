@@ -14,7 +14,10 @@
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
+import config from '../config/index.js';
 import { generateCycles, regenerateCycles } from './cycleGenerator.service.js';
+import { queueEmail } from './notification.service.js';
+import { hasPhase2Features } from '../utils/schemaCapabilities.js';
 import { toUtcMidnight, toDateString } from '../utils/dateUtils.js';
 
 /** Fields a user may set. Anything else in a request body is ignored. */
@@ -30,11 +33,22 @@ const WRITABLE = [
   'halt_process',
   'confirmation_status',
   'employment_status',
-  'ats_pipeline_id',
 ];
 
 /** Changing either of these invalidates the schedule. */
 const SCHEDULE_FIELDS = ['doj', 'is_experienced'];
+
+/**
+ * Fields Entra supplies and the sync may overwrite — so the only ones where a
+ * lock means anything. Plan §6.5 Part 2.
+ *
+ * employment_status is deliberately absent even though Entra informs it: the
+ * scan never writes it (a leaver is only ever a suggestion — §13.9), so there
+ * is nothing to lock it against.
+ */
+export const LOCKABLE_FIELDS = Object.freeze(['full_name', 'office_email']);
+
+const FIELD_LABELS = { full_name: 'Display name', office_email: 'Email address' };
 
 export const CONFIRMATION_STATUSES = Object.freeze([
   'Confirmed',
@@ -106,10 +120,6 @@ function sanitize(input, isCreate) {
         data.employment_status = v;
         break;
       }
-
-      case 'ats_pipeline_id':
-        data.ats_pipeline_id = input.ats_pipeline_id ? BigInt(input.ats_pipeline_id) : null;
-        break;
 
       default:
         data[key] = input[key];
@@ -225,6 +235,30 @@ export async function updateEmployee(id, input, actor, source = 'manual') {
   if (!before) throw new AppError('Employee not found', 404);
 
   const data = sanitize(input, false);
+
+  // ── Field locks (plan §6.5 Part 2) ──────────────────────────────────────
+  // lock_fields:   "Keep my value" — the Azure sync must never overwrite these.
+  // unlock_fields: "Unlock / resync from Azure" — follow Entra again, and take
+  //                its latest value now rather than waiting for the next scan.
+  const toLock = pickLockable(input.lock_fields);
+  const toUnlock = pickLockable(input.unlock_fields);
+
+  if (toLock.length || toUnlock.length) {
+    const current = before.locked_fields || [];
+    const next = [...new Set([...current, ...toLock])].filter((f) => !toUnlock.includes(f)).sort();
+
+    if (next.join(',') !== [...current].sort().join(',')) data.locked_fields = next;
+
+    if (toUnlock.length) {
+      const snapshot = await azureSnapshot(employeeId);
+      if (toUnlock.includes('full_name') && snapshot?.azure_display_name && data.full_name === undefined) {
+        data.full_name = snapshot.azure_display_name.replace(/\s+/g, ' ').trim();
+      }
+      if (toUnlock.includes('office_email') && snapshot?.azure_mail && data.office_email === undefined) {
+        data.office_email = normEmail(snapshot.azure_mail);
+      }
+    }
+  }
 
   if (data.office_email && data.office_email !== before.office_email) {
     const clash = await findByOfficeEmail(data.office_email);
@@ -365,7 +399,125 @@ export async function getEmployee(id) {
   });
 
   if (!employee) throw new AppError('Employee not found', 404);
-  return withProgress(employee);
+
+  const snapshot = await azureSnapshot(employee.id);
+
+  return {
+    ...withProgress(employee),
+    // Per-field Azure provenance for the detail screen: where the value came
+    // from, whether HR has locked it, and whether Entra currently disagrees.
+    azure: {
+      linked: !!employee.azure_user_id,
+      snapshotAvailable: snapshot !== null,
+      fields: Object.fromEntries(
+        LOCKABLE_FIELDS.map((f) => {
+          const azureValue = f === 'full_name' ? snapshot?.azure_display_name : snapshot?.azure_mail;
+          const ours = f === 'office_email' ? normEmail(employee[f]) : employee[f];
+          const theirs = f === 'office_email' ? normEmail(azureValue) : azureValue?.replace(/\s+/g, ' ').trim();
+          return [
+            f,
+            {
+              label: FIELD_LABELS[f],
+              locked: (employee.locked_fields || []).includes(f),
+              azureValue: azureValue ?? null,
+              differs: !!theirs && theirs !== ours,
+            },
+          ];
+        })
+      ),
+    },
+  };
+}
+
+/** Only real, lockable field names survive — anything else in a request is ignored. */
+function pickLockable(value) {
+  const arr = Array.isArray(value) ? value : value ? [value] : [];
+  return arr.map(String).filter((f) => LOCKABLE_FIELDS.includes(f));
+}
+
+/**
+ * Entra's last-seen values for an employee, or null when the 2026-09-13 DDL is
+ * not applied here yet. Raw SQL on purpose — see the note in schema.prisma.
+ * @param {bigint} employeeId
+ * @returns {Promise<{azure_display_name: string|null, azure_mail: string|null}|null>}
+ */
+async function azureSnapshot(employeeId) {
+  if (!(await hasPhase2Features())) return null;
+  const [row] = await prisma.$queryRaw`
+    SELECT azure_display_name, azure_mail FROM pea_employees WHERE id = ${BigInt(employeeId)}`;
+  return row || null;
+}
+
+/**
+ * "Report to IT" — Entra holds a wrong value. Plan §6.5 Part 3.
+ *
+ * Fixing a value only in PEA leaves every other Microsoft-connected system
+ * wrong, so this sends IT the field, what Entra holds and what is correct.
+ *
+ * Server-side on purpose rather than a mailto: link. A mailto opens the user's
+ * own Outlook and would reach the real IT team from staging; going through
+ * queueEmail means the non-production redirect applies like every other send.
+ *
+ * @param {bigint|number|string} id
+ * @param {{field: string, correct_value: string, note?: string}} input
+ * @param {string} actor
+ * @returns {Promise<object>}
+ */
+export async function reportToIt(id, input, actor) {
+  const employeeId = BigInt(id);
+  const employee = await prisma.pea_employees.findUnique({ where: { id: employeeId } });
+  if (!employee) throw new AppError('Employee not found', 404);
+
+  const field = String(input.field || '');
+  if (!LOCKABLE_FIELDS.includes(field)) {
+    throw new AppError(`Only Entra-sourced fields can be reported: ${LOCKABLE_FIELDS.join(', ')}`, 400);
+  }
+
+  const correct = String(input.correct_value || '').trim();
+  if (!correct) throw new AppError('Say what the correct value is', 400);
+
+  const snapshot = await azureSnapshot(employeeId);
+  const azureValue =
+    (field === 'full_name' ? snapshot?.azure_display_name : snapshot?.azure_mail) ?? input.azure_value ?? null;
+
+  // In production an empty IT list would resolve to no recipients and fail
+  // quietly in the log. Say so up front instead. Outside production the
+  // redirect supplies the test inbox, so this cannot block testing.
+  if (!config.email.redirectInNonProd) {
+    const row = await prisma.pea_settings.findUnique({ where: { setting_key: 'it_report_emails' } });
+    if (!String(row?.setting_value || '').trim()) {
+      throw new AppError('No IT address is configured. Set it_report_emails in settings first.', 400);
+    }
+  }
+
+  const result = await queueEmail({
+    type: 'it_report',
+    employeeId,
+    context: {
+      employeeName: employee.full_name,
+      accountEmail: snapshot?.azure_mail || employee.office_email,
+      fieldLabel: FIELD_LABELS[field],
+      azureValue,
+      correctValue: correct,
+      reportedBy: actor,
+      note: input.note ? String(input.note).slice(0, 2000) : null,
+    },
+  });
+
+  await prisma.pea_employee_audit.create({
+    data: {
+      employee_id: employeeId,
+      field_name: '*',
+      new_value:
+        `Reported to IT: ${FIELD_LABELS[field]} in Entra is "${azureValue ?? '(blank)'}", ` +
+        `should be "${correct}" (${result.status}).`,
+      changed_by: actor,
+      change_source: 'manual',
+    },
+  });
+
+  logger.info(`Report to IT by ${actor}: ${employee.office_email} ${field} → ${result.status}`);
+  return { status: result.status, redirected: result.redirected, sentTo: result.to, error: result.error };
 }
 
 /**

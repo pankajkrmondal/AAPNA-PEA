@@ -18,6 +18,7 @@
 import prisma from '../config/database.js';
 import config from '../config/index.js';
 import { todayIn, toDateString, addDays } from '../utils/dateUtils.js';
+import { findDeadlineBreaches } from './confirmationDeadline.service.js';
 
 /**
  * Headline counts plus the lists HR needs to act on.
@@ -237,6 +238,15 @@ export async function getDataQuality() {
        LIMIT 50`,
   ]);
 
+  // On the calendar, whatever state the cycles are in — the check that would
+  // have caught the 15 stale rows the day each went stale. Plan §2.7.
+  let deadlines = { overdue: [], dueSoon: [] };
+  try {
+    deadlines = await findDeadlineBreaches();
+  } catch {
+    /* a reporting check must never take the dashboard down */
+  }
+
   return {
     today: toDateString(today),
     issues: {
@@ -244,7 +254,10 @@ export async function getDataQuality() {
       noScheduleGenerated: noSchedule.length,
       noResponseAfterTwoReminders: stuckAwaiting.length,
       finishedWithoutDecision: noConfirmationPastDue.length,
+      confirmationOverdue: deadlines.overdue.length,
     },
+    confirmationOverdue: deadlines.overdue,
+    confirmationDueSoon: deadlines.dueSoon,
     missingContactDetails: missingContacts,
     noScheduleGenerated: noSchedule,
     noResponseAfterTwoReminders: stuckAwaiting.map((c) => ({

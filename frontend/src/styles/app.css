@@ -1,0 +1,579 @@
+/**
+ * app.css — the PEA visual language, matched to the AAPNA ATS platform.
+ *
+ * Everything is driven by the custom properties below, so the two products stay
+ * in step: change a token here and every surface follows. Dark values are
+ * redefined in one block at the bottom rather than sprinkled through the file.
+ */
+
+:root {
+  /* Brand green — the ATS olive, from the darkest heading to the lightest wash */
+  --pea-green-900: #22340f;
+  --pea-green-800: #2f4715;
+  --pea-green-700: #47691f;
+  --pea-green-600: #5c8727;
+  --pea-green-500: #74a534;
+  --pea-green-200: #d3e4b3;
+  --pea-green-100: #e8f1d7;
+  --pea-green-50: #f2f7e8;
+
+  /* Accents used by the statistic cards */
+  --pea-blue: #2563eb;
+  --pea-blue-soft: #e8effd;
+  --pea-orange: #e08113;
+  --pea-orange-soft: #fdefdd;
+  --pea-red: #dc2626;
+  --pea-red-soft: #fde9e9;
+  --pea-emerald: #0d9f6e;
+  --pea-emerald-soft: #e0f5ed;
+  --pea-violet: #7c3aed;
+  --pea-violet-soft: #f0e9fd;
+
+  /* Surfaces */
+  --pea-bg: #f5f8ee;
+  --pea-surface: #ffffff;
+  --pea-surface-2: #fbfcf7;
+  --pea-border: #e6ebdb;
+  --pea-border-strong: #d6ddc6;
+
+  /* Type */
+  --pea-text: #1f2a17;
+  --pea-text-muted: #6b7566;
+  --pea-text-faint: #9aa393;
+
+  --pea-radius: 16px;
+  --pea-radius-sm: 10px;
+  --pea-shadow: 0 1px 2px rgba(34, 52, 15, .04), 0 8px 24px -12px rgba(34, 52, 15, .12);
+  --pea-shadow-lift: 0 2px 4px rgba(34, 52, 15, .05), 0 16px 32px -16px rgba(34, 52, 15, .22);
+  --pea-sider-width: 248px;
+}
+
+:root[data-theme='dark'] {
+  --pea-green-900: #d7e8bb;
+  --pea-green-800: #c3dc9d;
+  --pea-green-700: #a6c974;
+  --pea-green-600: #8cb551;
+  --pea-green-500: #74a534;
+  --pea-green-200: #35471d;
+  --pea-green-100: #2a3a17;
+  --pea-green-50: #202d13;
+
+  --pea-blue-soft: #16243f;
+  --pea-orange-soft: #3a2710;
+  --pea-red-soft: #3a1717;
+  --pea-emerald-soft: #0e2c22;
+  --pea-violet-soft: #251840;
+
+  --pea-bg: #12170e;
+  --pea-surface: #1a2014;
+  --pea-surface-2: #1f2718;
+  --pea-border: #2c3722;
+  --pea-border-strong: #3c4a2f;
+
+  --pea-text: #e7eddf;
+  --pea-text-muted: #9aa891;
+  --pea-text-faint: #77856f;
+
+  --pea-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .5);
+  --pea-shadow-lift: 0 2px 4px rgba(0, 0, 0, .35), 0 16px 32px -16px rgba(0, 0, 0, .6);
+}
+
+body {
+  background: var(--pea-bg);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------------------------------------------------------- shell -- */
+
+.pea-layout {
+  min-height: 100vh;
+}
+
+.pea-sider {
+  border-right: 1px solid var(--pea-border);
+  position: sticky !important;
+  top: 0;
+  height: 100vh;
+  overflow: auto;
+}
+
+.pea-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 68px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--pea-border);
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.pea-brand-mark {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: .02em;
+  background: linear-gradient(145deg, var(--pea-green-500), var(--pea-green-700));
+  box-shadow: 0 4px 12px -4px rgba(92, 135, 39, .6);
+}
+
+.pea-brand-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.2;
+  min-width: 0;
+}
+
+.pea-brand-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: var(--pea-text);
+}
+
+.pea-brand-sub {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--pea-text-faint);
+}
+
+.pea-nav {
+  padding: 14px 12px;
+  border-inline-end: none !important;
+  background: transparent !important;
+}
+
+.pea-nav .ant-menu-item {
+  height: 46px;
+  line-height: 46px;
+  margin-inline: 0;
+  margin-block: 4px;
+  font-weight: 500;
+  color: var(--pea-text-muted);
+}
+
+.pea-nav .ant-menu-item .anticon {
+  font-size: 17px;
+}
+
+.pea-nav .ant-menu-item-selected {
+  font-weight: 600;
+}
+
+.pea-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 68px;
+  padding: 0 22px !important;
+  border-bottom: 1px solid var(--pea-border);
+  backdrop-filter: saturate(180%) blur(8px);
+}
+
+.pea-header-title {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--pea-text);
+  margin: 0;
+}
+
+.pea-icon-btn {
+  width: 38px;
+  height: 38px;
+  display: grid !important;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--pea-text-muted) !important;
+}
+
+.pea-icon-btn:hover {
+  background: var(--pea-green-50) !important;
+  color: var(--pea-green-600) !important;
+}
+
+/* The signed-in user chip, mirroring the ATS "Admin Portal" pill + avatar. */
+.pea-user-chip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 38px;
+  padding: 0 5px 0 13px;
+  border: 1px solid var(--pea-border-strong);
+  border-radius: 999px;
+  background: var(--pea-surface);
+}
+
+.pea-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pea-text);
+  line-height: 1.1;
+}
+
+.pea-user-role {
+  font-size: 10.5px;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--pea-text-faint);
+  line-height: 1.1;
+}
+
+.pea-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(145deg, var(--pea-green-500), var(--pea-green-700));
+}
+
+.pea-content {
+  padding: 22px;
+}
+
+.pea-page {
+  max-width: 1560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+/* ------------------------------------------------------------ hero card -- */
+
+.pea-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--pea-border);
+  border-radius: var(--pea-radius);
+  background:
+    radial-gradient(1100px 260px at 88% -40%, var(--pea-green-100), transparent 70%),
+    linear-gradient(115deg, var(--pea-green-50), var(--pea-surface) 62%);
+  padding: 24px 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* The leaf motif the ATS hero carries in its bottom-right corner. */
+.pea-hero::after {
+  content: '';
+  position: absolute;
+  right: -60px;
+  bottom: -110px;
+  width: 300px;
+  height: 300px;
+  border-radius: 50% 12% 50% 50%;
+  background: var(--pea-green-500);
+  opacity: .06;
+  pointer-events: none;
+}
+
+.pea-hero-main {
+  position: relative;
+  min-width: 260px;
+}
+
+.pea-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 26px;
+  padding: 0 13px;
+  border: 1px solid var(--pea-green-200);
+  border-radius: 999px;
+  background: var(--pea-surface);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .11em;
+  text-transform: uppercase;
+  color: var(--pea-green-700);
+}
+
+.pea-pill-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--pea-green-500);
+  box-shadow: 0 0 0 3px rgba(116, 165, 52, .2);
+}
+
+.pea-hero-title {
+  margin: 14px 0 6px;
+  font-size: clamp(26px, 3.2vw, 40px);
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.12;
+  color: var(--pea-green-800);
+}
+
+.pea-hero-sub {
+  margin: 0;
+  font-size: 14px;
+  color: var(--pea-text-muted);
+}
+
+.pea-clock {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 13px;
+  color: var(--pea-text-muted);
+}
+
+.pea-hero-actions {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+/* ------------------------------------------------------------ stat card -- */
+
+.pea-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(215px, 1fr));
+  gap: 16px;
+}
+
+.pea-stat {
+  position: relative;
+  overflow: hidden;
+  padding: 18px 18px 16px;
+  border: 1px solid var(--pea-border);
+  border-radius: var(--pea-radius);
+  background: linear-gradient(180deg, var(--pea-accent-soft), var(--pea-surface) 78%);
+  transition: transform .18s ease, box-shadow .18s ease;
+}
+
+.pea-stat::before {
+  content: '';
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--pea-accent);
+}
+
+.pea-stat:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--pea-shadow-lift);
+}
+
+.pea-stat-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  color: #fff;
+  background: var(--pea-accent);
+  box-shadow: 0 6px 14px -6px var(--pea-accent);
+}
+
+.pea-stat-label {
+  margin-top: 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--pea-text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pea-stat-value {
+  margin-top: 4px;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -.02em;
+  line-height: 1.1;
+  color: var(--pea-text);
+}
+
+.pea-stat-value small {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--pea-text-faint);
+}
+
+.pea-stat-foot {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--pea-text-muted);
+}
+
+/* A real proportion, never decoration — see the comment in Dashboard.jsx. */
+.pea-stat-bar {
+  margin-top: 12px;
+  height: 5px;
+  border-radius: 999px;
+  background: var(--pea-border);
+  overflow: hidden;
+}
+
+.pea-stat-bar span {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--pea-accent);
+}
+
+/* --------------------------------------------------------------- cards --- */
+
+.pea-card.ant-card {
+  border-radius: var(--pea-radius);
+  border-color: var(--pea-border);
+  box-shadow: var(--pea-shadow);
+}
+
+.pea-card.ant-card > .ant-card-head {
+  border-bottom: 1px solid var(--pea-border);
+  padding-inline: 18px;
+  min-height: 52px;
+}
+
+.pea-card.ant-card > .ant-card-head .ant-card-head-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* The green rule the ATS puts to the left of a section heading. */
+.pea-section-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.pea-section-title::before {
+  content: '';
+  width: 3px;
+  height: 15px;
+  border-radius: 2px;
+  background: var(--pea-green-600);
+}
+
+.pea-page-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pea-page-head h2 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -.01em;
+  color: var(--pea-text);
+}
+
+.pea-page-head p {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--pea-text-muted);
+}
+
+/* The round count badges in the ATS role-summary table. */
+.pea-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--pea-green-600);
+}
+
+.pea-count-muted {
+  background: var(--pea-border-strong);
+  color: var(--pea-text-muted);
+}
+
+/* --------------------------------------------------------------- table --- */
+
+.pea-card .ant-table-thead > tr > th {
+  background: var(--pea-surface-2);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--pea-text-muted);
+  border-bottom: 1px solid var(--pea-border) !important;
+}
+
+.pea-card .ant-table-thead > tr > th::before {
+  display: none !important;
+}
+
+.pea-card .ant-table-tbody > tr > td {
+  border-bottom: 1px solid var(--pea-border);
+}
+
+.pea-card .ant-table-tbody > tr:hover > td {
+  background: var(--pea-green-50) !important;
+}
+
+.ant-tag {
+  border-radius: 999px;
+  padding-inline: 9px;
+  font-weight: 500;
+}
+
+/* --------------------------------------------------------------- login --- */
+
+.pea-login {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background:
+    radial-gradient(900px 460px at 12% 10%, rgba(116, 165, 52, .28), transparent 62%),
+    radial-gradient(760px 420px at 88% 88%, rgba(47, 71, 21, .45), transparent 60%),
+    linear-gradient(140deg, #2f4715, #1c2a0d);
+}
+
+.pea-login-card {
+  width: 400px;
+  max-width: 100%;
+  padding: 30px;
+  border-radius: 20px;
+  background: var(--pea-surface);
+  box-shadow: 0 30px 70px -30px rgba(0, 0, 0, .6);
+}
+
+.pea-login-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-bottom: 20px;
+}
+
+/* -------------------------------------------------------------- mobile --- */
+
+@media (max-width: 720px) {
+  .pea-content { padding: 14px; }
+  .pea-header { padding: 0 14px !important; }
+  .pea-hero { padding: 20px; }
+  .pea-user-role, .pea-user-name { display: none; }
+  .pea-user-chip { padding: 0 5px; border: none; }
+}

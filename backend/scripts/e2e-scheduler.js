@@ -11,7 +11,8 @@ import { PrismaClient } from '@prisma/client';
 
 const BASE = process.env.PEA_BASE || 'http://localhost:5002/api';
 const USER = process.env.PEA_ADMIN_USERNAME || 'pankaj';
-const PASS = process.env.PEA_ADMIN_PASSWORD || 'PeaAdmin@2026';
+const PASS = process.env.PEA_ADMIN_PASSWORD;
+if (!PASS) { console.error('Set PEA_ADMIN_PASSWORD to run this suite (no default).'); process.exit(1); }
 
 const prisma = new PrismaClient();
 const h = (s) => console.log(`\n${'─'.repeat(72)}\n${s}\n${'─'.repeat(72)}`);

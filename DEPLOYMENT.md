@@ -3,7 +3,9 @@
 Everything here is prepared but **not yet run**, because it needs server access
 that the build did not have. Hand this to whoever administers the box.
 
-Target server: the same one that already runs ATS (`20.207.205.137`).
+Target server: the same application server that already runs ATS
+(`20.207.205.137`). Sharing the server is fine — PEA is a separate application
+on its own ports with its **own database**; it shares no data with ATS.
 
 ---
 
@@ -13,14 +15,29 @@ Target server: the same one that already runs ATS (`20.207.205.137`).
 **5002** (staging) and **5003** (production). Binding 5000 or 5001 fails with
 `EADDRINUSE` and would not touch ATS, but the deploy would simply not start.
 
-**Two databases exist**, differing only by name:
+**PEA is a separate project from ATS (decision D5, 13 Sep 2026).** ATS covers
+hiring; PEA covers probation after joining. PEA reads no ATS data.
 
-| Environment | Database |
-|---|---|
-| ATS + PEA staging | `recruitmentautomationdb` |
-| ATS + PEA production | `recruitmentautomationdbProd` |
+#### Database — interim now, PEA's own later
 
-The PEA DDL has been applied to **staging only**. Production is step 7.
+| Phase | Database | Login | Schema created by |
+|---|---|---|---|
+| **Now — interim** (IT/DBA not available) | `recruitmentautomationdb` | `appuser` | The 3 dated DDL files — **already applied** |
+| **Later — target** | PEA's own (`pea_staging` / `pea_production`, names to confirm) | `peauser` | `prisma/ddl/pea-dedicated-database.sql` |
+
+- **Interim:** PEA's `pea_` tables sit in the same database as the ATS `rpa_`
+  tables, but PEA never queries them. `.env.development` and `.env.staging`
+  already point here — **nothing to create or run for the Monday deployment.**
+- **Later:** when the DBA is available, follow step 2b. PEA is not live, so the
+  new database can start clean and the real sheet is imported into it.
+- ⚠️ **While on the interim database**, `prisma migrate` / `db push` / `db pull`
+  remain genuinely dangerous: `appuser` owns the ATS tables, and Prisma would
+  treat them as drift and drop them. Never run those commands.
+
+📧 **Outside production every email goes to `EMAIL_STAGING_RECIPIENTS`, always.**
+Since 13 Sep this no longer depends on `EMAIL_REDIRECT_TO_TEST`: the server
+refuses to start if that is set to `false` on staging, and the mail transport
+itself refuses any other recipient.
 
 ---
 
@@ -40,8 +57,8 @@ The PEA DDL has been applied to **staging only**. Production is step 7.
 Matching the ATS convention (`/var/www/html/ats-platform-staging`):
 
 ```bash
-sudo mkdir -p /var/www/html/pea-platform-staging/{backend,frontend}
-sudo chown -R atsuser:atsuser /var/www/html/pea-platform-staging
+sudo mkdir -p /var/www/html/pea-staging-aapnainfotech/{backend,frontend}
+sudo chown -R atsuser:atsuser /var/www/html/pea-staging-aapnainfotech
 ```
 
 Copy `PEA-Local/backend` and `PEA-Local/frontend` into place (excluding
@@ -49,21 +66,49 @@ Copy `PEA-Local/backend` and `PEA-Local/frontend` into place (excluding
 
 ---
 
+## 2b. Create PEA's own database — LATER, not for the interim deployment
+
+> ⏭️ **Skip this step for now.** The interim deployment uses
+> `recruitmentautomationdb`, which already has PEA's tables. Do this when the
+> DBA is available and PEA moves to its own database. Note the DDL below
+> **refuses** to run inside `recruitmentautomationdb` — by design.
+
+Someone with `CREATEDB` (the DBA):
+
+```sql
+CREATE DATABASE pea_staging;
+
+-- Recommended: a login that can only touch PEA's database.
+CREATE ROLE peauser WITH LOGIN PASSWORD '<generate a strong one>'
+  NOSUPERUSER NOCREATEDB NOCREATEROLE;
+GRANT CONNECT ON DATABASE pea_staging TO peauser;
+```
+
+Then connect pgAdmin **to `pea_staging`** and run the whole of
+`prisma/ddl/pea-dedicated-database.sql` (Ctrl+A, F5). It creates all 14 tables,
+seeds the evaluation questions and settings, grants `peauser` its rights, and
+**refuses to run if it finds ATS tables** — so it cannot be applied to the
+wrong database by mistake. The verification grid at the end should show
+14 PEA tables, 0 ATS tables, 18 parameters, 18 settings.
+
+---
+
 ## 3. Backend
 
 ```bash
-cd /var/www/html/pea-platform-staging/backend
+cd /var/www/html/pea-staging-aapnainfotech/backend
 npm ci --omit=dev
 npx prisma generate          # NOT db pull, NOT migrate — see below
 ```
 
-Create `.env.staging` from `.env.example`. The values are in the repo's
-`.env.staging`; the ones that matter:
+Create `.env.staging` from `.env.example`. The ones that matter:
 
 ```bash
 NODE_ENV=staging
 PORT=5002
-DATABASE_URL="postgresql://appuser:Hbg%23bs%40m%40kdirbA@20.244.34.176:5432/recruitmentautomationdb?schema=public&connection_limit=5&pool_timeout=10&connect_timeout=10"
+# INTERIM: the same value as the repo's .env.staging. Percent-encode the password (# → %23, @ → %40).
+DATABASE_URL="postgresql://appuser:<password>@20.244.34.176:5432/recruitmentautomationdb?schema=public&connection_limit=5&pool_timeout=10&connect_timeout=10"
+# LATER (after step 2b): postgresql://peauser:<password>@<db-host>:5432/pea_staging?...
 JWT_SECRET=<generate a new one, do NOT reuse the dev placeholder>
 FRONTEND_URL=https://pea-staging.aapnainfotech.com
 EMAIL_REDIRECT_TO_TEST=true
@@ -73,11 +118,9 @@ TZ=Asia/Kolkata
 ```
 
 > 🚨 **Never run `prisma migrate`, `prisma db push`, or `prisma db pull` here.**
-> PEA's `pea_` tables share the `public` schema with 48 ATS `rpa_` tables, and
-> the app connects as `appuser`, which **owns** them. Prisma would read those 48
-> tables as drift and emit `DROP TABLE` for each — successfully.
-> `schema.prisma` is hand-written; schema changes go through a reviewed file in
-> `prisma/ddl/`. `package.json` deliberately has no migrate script.
+> On the interim database `appuser` owns the ATS tables; Prisma would read them
+> as drift and emit `DROP TABLE` for each — successfully. `schema.prisma` is
+> hand-written; schema changes go through a reviewed `.sql` file in `prisma/ddl/`.
 
 The app refuses to start if `JWT_SECRET` is still the dev placeholder, or if the
 email redirect is on with no recipient configured.
@@ -87,7 +130,7 @@ email redirect is on with no recipient configured.
 ## 4. Frontend
 
 ```bash
-cd /var/www/html/pea-platform-staging/frontend
+cd /var/www/html/pea-staging-aapnainfotech/frontend
 npm ci
 npm run build:staging        # → dist/
 ```
@@ -115,7 +158,7 @@ server {
     ssl_certificate     /etc/letsencrypt/live/pea-staging.aapnainfotech.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/pea-staging.aapnainfotech.com/privkey.pem;
 
-    root  /var/www/html/pea-platform-staging/frontend/dist;
+    root  /var/www/html/pea-staging-aapnainfotech/frontend/dist;
     index index.html;
 
     location / {
@@ -146,7 +189,7 @@ records the submitter's IP.
 ## 6. Start
 
 ```bash
-cd /var/www/html/pea-platform-staging/backend
+cd /var/www/html/pea-staging-aapnainfotech/backend
 pm2 start ecosystem.config.cjs --only pea-staging-backend
 pm2 save
 pm2 logs pea-staging-backend --lines 50
@@ -155,7 +198,7 @@ pm2 logs pea-staging-backend --lines 50
 Expected on boot:
 
 ```
-✅ Database connected (48 ATS tables intact)
+✅ Database connected: "recruitmentautomationdb" (14 PEA tables)
 🚀 PEA Backend listening on port 5002 [staging]
 📧 Non-prod email guard ACTIVE — all mail redirected to: aiautomationn8nuser@gmail.com
 ⏰ Scheduler started — "0 11 * * *" (Asia/Kolkata)
@@ -171,10 +214,13 @@ PEA_ADMIN_PASSWORD='<something strong>' npm run seed:admin
 
 ## 7. Production (at cutover, not now)
 
-1. Apply `prisma/ddl/2026-09-12-pea-core.sql` to **`recruitmentautomationdbProd`**.
-   The script's own guard accepts both database names and aborts on anything else.
-2. `.env.production` — `PORT=5003`, the Prod database, `EMAIL_REDIRECT_TO_TEST=false`,
-   a distinct `JWT_SECRET`.
+1. **Decide the production database before cutover:**
+   - **Preferred:** PEA's own `pea_production` — `CREATE DATABASE`, then
+     `prisma/ddl/pea-dedicated-database.sql`, as step 2b.
+   - **Interim fallback, if the DBA is still unavailable:** the three dated DDL
+     files, in order, against `recruitmentautomationdbProd` — as was done for staging.
+2. `.env.production` — `PORT=5003`, `DATABASE_URL` for the chosen database,
+   `EMAIL_REDIRECT_TO_TEST=false`, a distinct `JWT_SECRET`.
 3. nginx block for `pea.aapnainfotech.com` → `localhost:5003`.
 4. `pm2 start ecosystem.config.cjs --only pea-prod-backend`.
 
@@ -232,5 +278,6 @@ stage 3.
 | Confirm reminder timing (+2 / +4 days). The reminder flow was never exported, so this is reconstructed from the PPT user guide. | HR |
 | Confirm the CC list `sroy@, rsomani@, sshukla@, smaiti@` — lifted verbatim from the hardcoded flow value and editable for the first time. | HR |
 | Confirm which rating labels go on the form. The email says "Satisfied (Sometimes Exceeds Expectation)"; the old MS Form said "3- Satisfactory to above average". They drifted apart. | HR |
-| Import the real master sheet (the demo file has 3 rows). Use `POST /api/import/preview` first and sign off the reconciliation report. | HR + dev |
+| Import the real master sheet — **Import sheet** screen: preview → dry run → import, and sign off the reconciliation report. (If PEA moves database afterwards, import again there.) | HR + admin |
+| Move PEA to its own database (step 2b) — names `pea_staging` / `pea_production` proposed. Interim: `recruitmentautomationdb`. | DBA |
 | Review the 45-day stale-cycle cutoff against the real sheet — it decides how many historical cycles go live vs are closed. | HR + dev |

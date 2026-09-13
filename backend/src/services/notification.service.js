@@ -41,14 +41,23 @@ export async function isShadowMode() {
  * @param {object} employee
  * @returns {Promise<{to: string[], cc: string[]}>}
  */
-async function resolveRecipients(type, employee) {
-  const ccList = (await setting('cc_emails', '')).split(/[;,]/).map((s) => s.trim()).filter(Boolean);
-  const hrList = (await setting('hr_notification_emails', ''))
-    .split(/[;,]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+async function resolveRecipients(type, employee, context = {}) {
+  const split = (v) => String(v || '').split(/[;,]/).map((s) => s.trim()).filter(Boolean);
+  const ccList = split(await setting('cc_emails', ''));
+  const hrList = split(await setting('hr_notification_emails', ''));
 
   switch (type) {
+    case 'it_report':
+      // To IT, cc HR so the correction is visible to the team that raised it.
+      return { to: split(await setting('it_report_emails', '')), cc: hrList };
+
+    case 'manager_portal':
+      // A manager's own "my team" link goes to that manager and nobody else.
+      return { to: [context.rmEmail].filter(Boolean), cc: [] };
+
+    case 'deadline_alert':
+      return { to: hrList, cc: [] };
+
     case 'evaluation_link':
     case 'reminder':
       // To the reporting manager, cc the project leader plus the standing list.
@@ -103,7 +112,8 @@ export function applyRedirect({ to, cc }) {
  * was already committed.
  *
  * @param {object} params
- * @param {string} params.type - evaluation_link | reminder | acknowledgement | extend_alert | hr_notification
+ * @param {string} params.type - evaluation_link | reminder | acknowledgement | extend_alert |
+ *   hr_notification | it_report | manager_portal | deadline_alert
  * @param {object} [params.cycle] - cycle with `employee` included; required for templated types
  * @param {bigint} [params.cycleId]
  * @param {bigint} [params.employeeId]
@@ -131,7 +141,7 @@ export async function queueEmail({ type, cycle, cycleId, employeeId, subject, co
       ? await prisma.pea_employees.findUnique({ where: { id: resolvedEmployeeId } })
       : null);
 
-  const real = await resolveRecipients(type, employee || {});
+  const real = await resolveRecipients(type, employee || {}, context);
 
   let to;
   let cc;

@@ -1,19 +1,39 @@
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Row, Col, Card, Statistic, Table, Tag, Typography, Space, Button, Alert, Spin, App, Tooltip,
+  Row, Col, Card, Table, Tag, Space, Button, Alert, Spin, App,
 } from 'antd';
 import {
   WarningOutlined, ClockCircleOutlined, CheckCircleOutlined, DownloadOutlined,
-  SyncOutlined, TeamOutlined,
+  SyncOutlined, TeamOutlined, CalendarOutlined, SolutionOutlined, EyeOutlined,
 } from '@ant-design/icons';
-import api, { unwrap, TOKEN_KEY } from '../api.js';
+import api, { unwrap, TOKEN_KEY, USER_KEY } from '../api.js';
+import StatCard from '../components/StatCard.jsx';
 
 const fmt = (d) => (d ? String(d).slice(0, 10) : '—');
+
+const greeting = (h) => (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening');
+
+const ratio = (part, whole) => (whole ? part / whole : 0);
+
+function Clock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <span className="pea-clock">
+      {now.toLocaleTimeString('en-GB', { hour12: true }).toUpperCase()}
+    </span>
+  );
+}
 
 export default function Dashboard() {
   const { message } = App.useApp();
   const qc = useQueryClient();
+  const user = JSON.parse(localStorage.getItem(USER_KEY) || '{}');
 
   const { data, isLoading } = useQuery({
     queryKey: ['dashboard'],
@@ -32,7 +52,7 @@ export default function Dashboard() {
       message.success(res.message);
       qc.invalidateQueries({ queryKey: ['dashboard'] });
     },
-    onError: (err) => message.error(err.friendlyMessage),
+    onError: (err) => { message.error(err.friendlyMessage); },
   });
 
   const download = async () => {
@@ -59,76 +79,102 @@ export default function Dashboard() {
   const issueCount = Object.values(issues).reduce((a, b) => a + b, 0);
 
   return (
-    <Space direction="vertical" size={16} style={{ width: '100%' }}>
-      <Row justify="space-between" align="middle">
-        <Typography.Title level={4} style={{ margin: 0 }}>
-          Overview <Typography.Text type="secondary" style={{ fontSize: 14, fontWeight: 400 }}>
-            as at {data.today} ({data.timezone})
-          </Typography.Text>
-        </Typography.Title>
-        <Space>
+    <>
+      <section className="pea-hero">
+        <div className="pea-hero-main">
+          <span className="pea-pill">
+            <span className="pea-pill-dot" />
+            AAPNA PEA Platform
+          </span>
+          <h2 className="pea-hero-title">
+            {greeting(new Date().getHours())}, {user.first_name || user.username} 👋
+          </h2>
+          <p className="pea-hero-sub">
+            Here&apos;s what&apos;s happening across your evaluation pipeline · <Clock />
+            <br />
+            As at {data.today} ({data.timezone})
+          </p>
+        </div>
+
+        <div className="pea-hero-actions">
           <Button icon={<DownloadOutlined />} onClick={download}>Export to Excel</Button>
-          <Button onClick={() => sweep.mutate(true)} loading={sweep.isPending}>Preview sweep</Button>
-          <Button type="primary" icon={<SyncOutlined />} onClick={() => sweep.mutate(false)} loading={sweep.isPending}>
+          <Button icon={<EyeOutlined />} onClick={() => sweep.mutate(true)} loading={sweep.isPending}>
+            Preview sweep
+          </Button>
+          <Button
+            type="primary"
+            icon={<SyncOutlined />}
+            onClick={() => sweep.mutate(false)}
+            loading={sweep.isPending}
+          >
             Run sweep now
           </Button>
-        </Space>
-      </Row>
+        </div>
+      </section>
 
-      <Row gutter={[16, 16]}>
-        <Col xs={12} sm={8} lg={4}>
-          <Card size="small">
-            <Statistic title="Active employees" value={emp.active} prefix={<TeamOutlined />} />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} lg={4}>
-          <Card size="small"><Statistic title="In probation" value={emp.inProbation} /></Card>
-        </Col>
-        <Col xs={12} sm={8} lg={4}>
-          <Card size="small">
-            <Tooltip title="Due, and nobody has been asked yet. The spreadsheet could not show this at all.">
-              <Statistic
-                title="Overdue"
-                value={ev.overdue}
-                valueStyle={{ color: ev.overdue ? '#cf1322' : undefined }}
-                prefix={<WarningOutlined />}
-              />
-            </Tooltip>
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} lg={4}>
-          <Card size="small">
-            <Tooltip title="Link sent, manager has not responded. Previously indistinguishable from 'not sent'.">
-              <Statistic
-                title="Awaiting response"
-                value={ev.awaitingResponse}
-                valueStyle={{ color: ev.awaitingResponse ? '#d46b08' : undefined }}
-                prefix={<ClockCircleOutlined />}
-              />
-            </Tooltip>
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} lg={4}>
-          <Card size="small">
-            <Statistic title="Due in 14 days" value={ev.dueInNext14Days} />
-          </Card>
-        </Col>
-        <Col xs={12} sm={8} lg={4}>
-          <Card size="small">
-            <Statistic
-              title="Completed"
-              value={ev.completed}
-              suffix={`/ ${ev.total}`}
-              prefix={<CheckCircleOutlined />}
-            />
-          </Card>
-        </Col>
-      </Row>
+      <div className="pea-stats">
+        <StatCard
+          label="Active employees"
+          value={emp.active}
+          icon={<TeamOutlined />}
+          accent="green"
+          foot={`${emp.total} on record · ${emp.left} left`}
+          share={ratio(emp.active, emp.total)}
+        />
+        <StatCard
+          label="In probation"
+          value={emp.inProbation}
+          icon={<SolutionOutlined />}
+          accent="blue"
+          foot={`${emp.confirmed} confirmed · ${emp.extended} extended`}
+          share={ratio(emp.inProbation, emp.active)}
+        />
+        <StatCard
+          label="Overdue"
+          value={ev.overdue}
+          icon={<WarningOutlined />}
+          accent="red"
+          hint="Due, and nobody has been asked yet. The spreadsheet could not show this at all."
+          foot="Nobody has been asked yet"
+          share={ratio(ev.overdue, ev.total)}
+        />
+        <StatCard
+          label="Awaiting response"
+          value={ev.awaitingResponse}
+          icon={<ClockCircleOutlined />}
+          accent="orange"
+          hint="Link sent, manager has not responded. Previously indistinguishable from 'not sent'."
+          foot="Sent, no reply from the manager"
+          share={ratio(ev.awaitingResponse, ev.total)}
+        />
+        <StatCard
+          label="Due in 14 days"
+          value={ev.dueInNext14Days}
+          icon={<CalendarOutlined />}
+          accent="violet"
+          foot="Coming up in the next fortnight"
+          share={ratio(ev.dueInNext14Days, ev.total)}
+        />
+        <StatCard
+          label="Completed"
+          value={ev.completed}
+          suffix={`/ ${ev.total}`}
+          icon={<CheckCircleOutlined />}
+          accent="emerald"
+          foot={
+            ev.averageRating != null
+              ? `Average rating ${ev.averageRating.toFixed(2)}`
+              : 'No ratings submitted yet'
+          }
+          share={ratio(ev.completed, ev.total)}
+        />
+      </div>
 
       {issueCount > 0 && (
         <Alert
           type="warning"
           showIcon
+          style={{ borderRadius: 'var(--pea-radius)' }}
           message={`${issueCount} record(s) need attention`}
           description={
             <Space direction="vertical" size={2}>
@@ -144,14 +190,73 @@ export default function Dashboard() {
               {issues.finishedWithoutDecision > 0 && (
                 <span>{issues.finishedWithoutDecision} finished every evaluation but have no confirmation decision recorded.</span>
               )}
+              {issues.confirmationOverdue > 0 && (
+                <span>{issues.confirmationOverdue} past the confirmation deadline (6 months from joining, 8 if extended) — listed below.</span>
+              )}
             </Space>
           }
         />
       )}
 
+      {(dq?.confirmationOverdue?.length > 0 || dq?.confirmationDueSoon?.length > 0) && (
+        <Card
+          className="pea-card"
+          size="small"
+          title={<span className="pea-section-title">Confirmation deadline — a decision is due</span>}
+          extra={
+            <Space size={6}>
+              <Tag color="red">{dq.confirmationOverdue.length} overdue</Tag>
+              <Tag color="gold">{dq.confirmationDueSoon.length} within 14 days</Tag>
+            </Space>
+          }
+        >
+          <Table
+            size="small"
+            rowKey="id"
+            pagination={{ pageSize: 8, hideOnSinglePage: true }}
+            dataSource={[...dq.confirmationOverdue, ...dq.confirmationDueSoon]}
+            scroll={{ x: 760 }}
+            columns={[
+              {
+                title: 'Employee',
+                dataIndex: 'full_name',
+                render: (v, r) => <Link to={`/employees/${r.id}`}>{v}</Link>,
+              },
+              { title: 'Type', dataIndex: 'type', width: 110, render: (v) => <Tag>{v}</Tag> },
+              { title: 'Joined', dataIndex: 'doj', width: 110 },
+              {
+                title: 'Deadline',
+                dataIndex: 'deadline',
+                width: 150,
+                render: (v, r) => (
+                  <Space size={4}>{v}{r.extended && <Tag color="purple">extended</Tag>}</Space>
+                ),
+              },
+              {
+                title: 'Status',
+                dataIndex: 'daysOverdue',
+                width: 150,
+                render: (v) =>
+                  v > 0 ? (
+                    <Tag color={v > 60 ? 'red' : 'orange'}>{v} days overdue</Tag>
+                  ) : (
+                    <Tag color="gold">due in {Math.abs(v)} days</Tag>
+                  ),
+              },
+              { title: 'Manager', dataIndex: 'rm_name' },
+            ]}
+          />
+        </Card>
+      )}
+
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>
-          <Card size="small" title={<><WarningOutlined /> Overdue — nobody has been asked</>}>
+          <Card
+            className="pea-card"
+            size="small"
+            title={<span className="pea-section-title">Overdue — nobody has been asked</span>}
+            extra={<span className="pea-count">{data.overdueList.length}</span>}
+          >
             <Table
               size="small"
               rowKey="cycleId"
@@ -179,7 +284,12 @@ export default function Dashboard() {
         </Col>
 
         <Col xs={24} xl={12}>
-          <Card size="small" title={<><ClockCircleOutlined /> Awaiting a manager's response</>}>
+          <Card
+            className="pea-card"
+            size="small"
+            title={<span className="pea-section-title">Awaiting a manager&apos;s response</span>}
+            extra={<span className="pea-count">{data.awaitingList.length}</span>}
+          >
             <Table
               size="small"
               rowKey="cycleId"
@@ -219,7 +329,12 @@ export default function Dashboard() {
 
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={12}>
-          <Card size="small" title="Coming up in the next 14 days">
+          <Card
+            className="pea-card"
+            size="small"
+            title={<span className="pea-section-title">Coming up in the next 14 days</span>}
+            extra={<span className="pea-count pea-count-muted">{data.upcomingList.length}</span>}
+          >
             <Table
               size="small"
               rowKey="cycleId"
@@ -241,7 +356,12 @@ export default function Dashboard() {
         </Col>
 
         <Col xs={24} xl={12}>
-          <Card size="small" title="Recently submitted">
+          <Card
+            className="pea-card"
+            size="small"
+            title={<span className="pea-section-title">Recently submitted</span>}
+            extra={<span className="pea-count pea-count-muted">{data.recentSubmissions.length}</span>}
+          >
             <Table
               size="small"
               rowKey="cycleId"
@@ -273,6 +393,6 @@ export default function Dashboard() {
           </Card>
         </Col>
       </Row>
-    </Space>
+    </>
   );
 }

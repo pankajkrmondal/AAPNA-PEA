@@ -31,6 +31,10 @@ api.interceptors.response.use(
       if (window.location.pathname !== '/login') window.location.href = '/login';
     }
     // Surface the server's message rather than axios's generic one.
+    // In useMutation callbacks write `(err) => { message.error(err.friendlyMessage); }`
+    // with braces: message.error returns a promise that settles when the toast
+    // closes, and React Query keeps the mutation pending — its button spinning
+    // and ignoring clicks — until a returned promise settles.
     err.friendlyMessage =
       err.response?.data?.message || err.message || 'Something went wrong';
     return Promise.reject(err);

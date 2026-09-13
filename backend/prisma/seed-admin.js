@@ -6,8 +6,11 @@
  * Idempotent: if the user already exists, the password is reset rather than a
  * duplicate created. Safe to re-run if someone forgets the password.
  *
- * Override the defaults with env vars:
- *   PEA_ADMIN_USERNAME · PEA_ADMIN_EMAIL · PEA_ADMIN_PASSWORD
+ * PEA_ADMIN_PASSWORD is REQUIRED — there is no default. A default password
+ * written in the repository becomes the admin password of every fresh database
+ * someone forgets to set it on. Optional: PEA_ADMIN_USERNAME, PEA_ADMIN_EMAIL.
+ *
+ *   PEA_ADMIN_PASSWORD='<at least 10 characters>' npm run seed:admin
  */
 import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
@@ -17,9 +20,19 @@ const prisma = new PrismaClient();
 
 const USERNAME = (process.env.PEA_ADMIN_USERNAME || 'pankaj').trim().toLowerCase();
 const EMAIL = (process.env.PEA_ADMIN_EMAIL || 'n8npankajmondal@gmail.com').trim().toLowerCase();
-const PASSWORD = process.env.PEA_ADMIN_PASSWORD || 'PeaAdmin@2026';
+const PASSWORD = process.env.PEA_ADMIN_PASSWORD || '';
 
 async function main() {
+  if (PASSWORD.length < 10) {
+    console.error(
+      '💥 Set PEA_ADMIN_PASSWORD to at least 10 characters. There is deliberately no default.\n' +
+        "   PowerShell:  $env:PEA_ADMIN_PASSWORD='<password>'; npm run seed:admin\n" +
+        "   bash:        PEA_ADMIN_PASSWORD='<password>' npm run seed:admin"
+    );
+    process.exitCode = 1;
+    return;
+  }
+
   const password_hash = await bcrypt.hash(PASSWORD, 10);
 
   const existing = await prisma.pea_users.findFirst({
@@ -51,12 +64,12 @@ async function main() {
     console.log(`✅ Admin created: ${user.username} <${user.email}> (id ${user.id})`);
   }
 
+  // The password is not echoed: terminal scrollback and CI logs outlive the
+  // moment someone needed to see it.
   console.log('\n   Sign in with');
   console.log(`     username : ${USERNAME}`);
   console.log(`     email    : ${EMAIL}`);
-  console.log(`     password : ${PASSWORD}`);
-  console.log('\n   ⚠️  Change this password before the app is reachable from staging.');
-  console.log('      Re-run with PEA_ADMIN_PASSWORD=<new> to reset it.\n');
+  console.log('     password : the value of PEA_ADMIN_PASSWORD\n');
 }
 
 main()

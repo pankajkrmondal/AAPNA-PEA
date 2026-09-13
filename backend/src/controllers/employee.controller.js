@@ -27,6 +27,26 @@ export const update = catchAsync(async (req, res) => {
   return success(res, employee, 'Employee updated');
 });
 
+/**
+ * POST /api/employees/:id/report-to-it   { field, correct_value, note? }
+ * Goes through the email choke point, so outside production it reaches only
+ * the test inbox.
+ */
+export const reportToIt = catchAsync(async (req, res) => {
+  const result = await employeeService.reportToIt(req.params.id, req.body, req.user.username);
+  return success(
+    res,
+    result,
+    result.status === 'failed'
+      ? `Could not send: ${result.error}`
+      : result.status === 'suppressed'
+        ? 'Logged — shadow mode is on, so nothing was sent'
+        : result.redirected
+          ? `Sent to the test inbox (${result.sentTo.join(', ')}) — staging never mails IT directly`
+          : 'Sent to IT'
+  );
+});
+
 /** POST /api/employees/:id/halt   { halt: true|false } */
 export const setHalt = catchAsync(async (req, res) => {
   const halt = req.body?.halt !== false;

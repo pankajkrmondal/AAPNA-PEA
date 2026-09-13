@@ -1,6 +1,12 @@
 -- ═══════════════════════════════════════════════════════════════════════════
 --  VERIFY peauser PERMISSIONS  —  run this AS peauser, not as postgres/admin
 --
+--  ⚠️ OBSOLETE (decision D5, 13 Sep 2026): this tested that peauser could READ
+--     but not change ATS tables in the shared database. PEA no longer reads ATS
+--     and has its own database, so those checks no longer apply. For the
+--     dedicated database, peauser simply gets rights on pea_ tables
+--     (pea-dedicated-database.sql, section 10).
+--
 --  Purpose: prove the safety backstop rather than trust it. This is the test
 --  the migration plan (R2, "Verification test before Day 1") calls for.
 --

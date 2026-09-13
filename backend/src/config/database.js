@@ -5,12 +5,8 @@ import config from './index.js';
 /**
  * Prisma client singleton.
  *
- * ⚠️  This client connects as `appuser`, which OWNS the 48 ATS rpa_ tables in
- * the same schema. The generated client only knows PEA's 10 pea_ models, so
- * ordinary model calls cannot touch ATS data — but `$queryRaw` and
- * `$executeRaw` are unrestricted. Use `$queryRaw` for the read-only ATS
- * history lookups (that is deliberate, see schema.prisma) and never
- * `$executeRaw` against an rpa_ table.
+ * PEA reads and writes only its own pea_ tables. It is a separate project from
+ * ATS with its own database (decision D5). No code in PEA queries an ATS table.
  */
 const prisma = new PrismaClient({
   log: config.isProduction
@@ -35,30 +31,39 @@ if (!config.isProduction) {
   });
 }
 
+/** The tables PEA cannot run without. */
+const CORE_TABLES = [
+  'pea_users', 'pea_sessions', 'pea_employees', 'pea_evaluation_cycles', 'pea_evaluation_scores',
+  'pea_evaluation_params', 'pea_email_log', 'pea_settings', 'pea_employee_audit',
+];
+
 /**
- * Connect, and assert the ATS tables are intact.
+ * Connect, and confirm PEA's own schema is present.
  *
- * The assertion is cheap and runs once at boot. If PEA ever does damage the
- * shared schema, this turns a silent catastrophe into a loud startup failure
- * on the very next restart, rather than something discovered days later.
+ * Runs once at boot. Pointing DATABASE_URL at the wrong or an empty database
+ * then fails loudly on startup — naming the database it reached and what is
+ * missing — instead of as a string of 503s on the first screen someone opens.
  * @returns {Promise<void>}
  */
 export async function connectDatabase() {
   try {
     await prisma.$connect();
 
-    const [{ n }] = await prisma.$queryRaw`
-      SELECT count(*)::int AS n FROM pg_tables
-       WHERE schemaname = 'public' AND tablename LIKE 'rpa\\_%'`;
+    const [{ db }] = await prisma.$queryRaw`SELECT current_database() AS db`;
+    const present = await prisma.$queryRaw`
+      SELECT tablename FROM pg_tables
+       WHERE schemaname = 'public' AND tablename LIKE 'pea\\_%'`;
+    const names = new Set(present.map((r) => r.tablename));
+    const missing = CORE_TABLES.filter((t) => !names.has(t));
 
-    if (n < 48) {
+    if (missing.length) {
       logger.error(
-        `🚨 ATS table count is ${n}, expected at least 48. The shared schema may have been damaged. ` +
-          'Investigate before proceeding — see prisma/ddl/2026-09-12-pea-core.README.md.'
+        `🚨 Connected to "${db}", but PEA's schema is incomplete — missing: ${missing.join(', ')}. ` +
+          'Create it with prisma/ddl/pea-dedicated-database.sql.'
       );
     }
 
-    logger.info(`✅ Database connected (${n} ATS tables intact)`);
+    logger.info(`✅ Database connected: "${db}" (${names.size} PEA tables)`);
   } catch (error) {
     logger.error('❌ Database connection failed', { error: error.message });
     throw error;

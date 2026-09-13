@@ -23,6 +23,7 @@ import AppError from '../utils/AppError.js';
 import { isValidRating } from '../config/ratingScale.js';
 import { generateExtensionCycles } from './cycleGenerator.service.js';
 import { queueEmail } from './notification.service.js';
+import { notifyStaff } from './inAppNotification.service.js';
 import { toDateString, formatDisplay } from '../utils/dateUtils.js';
 
 /** Statuses that mean the form is still open for submission. */
@@ -281,6 +282,21 @@ export async function submit(token, body, ip) {
       context: { confirmation, extensionCycles: result.extensionCycles },
     });
   }
+
+  // The bell. Best-effort by construction — notifyStaff never throws, so a
+  // missing notifications table cannot fail a manager's submission.
+  await notifyStaff({
+    type: confirmation ? 'decision_recorded' : 'evaluation_submitted',
+    title: confirmation
+      ? `${cycle.employee.full_name}: ${confirmation}`
+      : `Evaluation ${cycle.seq_no} submitted — ${cycle.employee.full_name}`,
+    body:
+      `Average ${avg} / 5` +
+      (result.extensionCycles ? ` · ${result.extensionCycles} extension evaluation(s) scheduled` : ''),
+    link: `/employees/${cycle.employee_id}`,
+    severity: confirmation && confirmation !== 'Confirmed' ? 'warning' : 'info',
+    dedupeKey: `submitted:${cycle.id}`,
+  });
 
   logger.info(
     `Evaluation ${cycle.seq_no} submitted for ${cycle.employee.full_name} ` +

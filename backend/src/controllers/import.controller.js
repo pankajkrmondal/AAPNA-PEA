@@ -51,7 +51,7 @@ export const importExcel = catchAsync(async (req, res) => {
     res,
     result,
     dryRun
-      ? `Dry run: ${result.valid} row(s) would import, ${result.rejected} rejected`
+      ? `Dry run: ${result.createdRows.length} row(s) would import; ${result.rejected} rejected, ${result.skippedExisting} already present`
       : `Imported ${result.imported} employee(s); ${result.rejected} rejected, ${result.skippedExisting} already present`
   );
 });

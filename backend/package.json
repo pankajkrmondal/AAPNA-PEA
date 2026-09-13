@@ -12,7 +12,7 @@
     "dev:staging": "cross-env NODE_ENV=staging nodemon src/server.js",
 
     "//  PRISMA  ": "=== Only `generate` exists here, and that is deliberate. ===",
-    "//  WARNING ": "PEA's pea_ tables share the public schema with 48 ATS rpa_ tables, and we connect as appuser which OWNS them. `prisma migrate dev` / `db push` would read those 48 tables as drift and emit DROP TABLE for each — successfully. `db pull` has no table filter and would import all 48 into schema.prisma. schema.prisma is HAND-WRITTEN; schema changes go through a reviewed file in prisma/ddl/. See prisma/ddl/2026-09-12-pea-core.README.md.",
+    "//  WARNING ": "PEA is a separate project with its own database (decision D5). TEMPORARILY its pea_ tables sit inside the ATS staging database, whose appuser OWNS the ATS tables: until PEA moves, `prisma migrate dev` / `db push` would treat those tables as drift and emit DROP TABLE for each — successfully — and `db pull` would import them. schema.prisma is HAND-WRITTEN; schema changes go through a reviewed file in prisma/ddl/. New PEA database: prisma/ddl/pea-dedicated-database.sql.",
     "prisma:generate": "prisma generate",
     "prisma:studio": "prisma studio",
 

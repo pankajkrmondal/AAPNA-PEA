@@ -82,6 +82,26 @@ export function addDays(date, days) {
 }
 
 /**
+ * Add whole calendar months, clamping to the last day of a shorter month.
+ *
+ * 31 Aug + 6 months is 28/29 Feb, not 3 March. JavaScript's setUTCMonth rolls
+ * the overflow forward into the next month, which would push a confirmation
+ * deadline past the date HR actually expects.
+ *
+ * @param {Date} date
+ * @param {number} months
+ * @returns {Date}
+ */
+export function addMonths(date, months) {
+  const y = date.getUTCFullYear();
+  const m = date.getUTCMonth() + months;
+  const targetYear = y + Math.floor(m / 12);
+  const targetMonth = ((m % 12) + 12) % 12;
+  const lastDay = new Date(Date.UTC(targetYear, targetMonth + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(targetYear, targetMonth, Math.min(date.getUTCDate(), lastDay)));
+}
+
+/**
  * Whole days between two dates (b - a). Both are treated as calendar dates.
  * @param {Date} a
  * @param {Date} b

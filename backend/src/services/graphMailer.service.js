@@ -63,6 +63,31 @@ export async function getAccessToken() {
 }
 
 /**
+ * Refuse any recipient outside the test inbox when not in production.
+ *
+ * Checked in the transport, not only upstream, so the rule holds by
+ * construction rather than by every caller remembering it. Throws before a
+ * token is even requested — a blocked message never reaches Microsoft.
+ *
+ * @param {string[]} to
+ * @param {string[]} [cc]
+ * @throws {Error} when any address is not an approved test recipient
+ */
+export function assertRecipientsAllowed(to = [], cc = []) {
+  if (!config.email.redirectInNonProd) return;
+
+  const allowed = new Set(config.email.testRecipients.map((a) => a.trim().toLowerCase()));
+  const offending = [...to, ...cc].filter((a) => !allowed.has(String(a || '').trim().toLowerCase()));
+
+  if (allowed.size === 0 || offending.length) {
+    throw new Error(
+      `Blocked: ${config.env} may only email ${[...allowed].join(', ') || '(no test inbox configured)'}; ` +
+        `refused ${offending.join(', ') || '(empty list)'}.`
+    );
+  }
+}
+
+/**
  * Send one HTML email through Graph.
  *
  * Takes recipients exactly as given — it does NOT apply the non-production
@@ -79,6 +104,11 @@ export async function getAccessToken() {
  * @returns {Promise<{messageId: string|null}>}
  */
 export async function sendMail({ to, cc = [], subject, html, replyTo }) {
+  // Second, independent lock. notification.applyRedirect() already rewrites
+  // recipients, but this is the last line before the wire: even a future code
+  // path that forgets to call it cannot mail a real person outside production.
+  assertRecipientsAllowed(to, cc);
+
   const sender = config.microsoft.sender;
   if (!sender) throw new Error('No sender mailbox configured (PEA_SENDER_EMAIL / MS_DEFAULT_SENDER_EMAIL).');
   if (!to || to.length === 0) throw new Error('No recipients resolved for this message.');

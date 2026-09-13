@@ -29,6 +29,8 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { queueEmail } from '../services/notification.service.js';
+import { notifyStaff } from '../services/inAppNotification.service.js';
+import { runDeadlineAlerts } from '../services/confirmationDeadline.service.js';
 import { todayIn, toDateString, addDays, toUtcMidnight } from '../utils/dateUtils.js';
 
 let task = null;
@@ -140,6 +142,24 @@ export async function runEvaluationSweep({ dryRun = false } = {}) {
   }
 
   logger.info(`[sweep] evaluations — ${sent} sent, ${failed} failed of ${due.length} due`);
+
+  if (failed > 0) {
+    // A failed send is left pending and retried tomorrow — which is correct, but
+    // it is also exactly the kind of quiet failure the old system hid. Say so.
+    await notifyStaff({
+      type: 'sweep_failures',
+      title: `${failed} evaluation email(s) failed to send`,
+      body: rows
+        .filter((r) => r.action === 'failed' || r.action === 'error')
+        .slice(0, 5)
+        .map((r) => `${r.cycle}: ${r.error}`)
+        .join('\n'),
+      link: '/',
+      severity: 'critical',
+      dedupeKey: `sweep_failures:${toDateString(today)}`,
+    });
+  }
+
   return { due: due.length, sent, failed, rows };
 }
 
@@ -260,6 +280,16 @@ export async function runSweep(opts = {}) {
   const evaluations = await runEvaluationSweep(opts);
   const reminders = await runReminderSweep(opts);
 
+  // Visibility only — never changes a record (decision 17 is still open).
+  // Isolated so a problem here can never cost anyone an evaluation email.
+  let deadlines;
+  try {
+    deadlines = await runDeadlineAlerts(opts);
+  } catch (err) {
+    logger.error(`[deadline] alert pass failed: ${err.message}`);
+    deadlines = { error: err.message };
+  }
+
   return {
     startedAt,
     finishedAt: new Date(),
@@ -268,6 +298,7 @@ export async function runSweep(opts = {}) {
     dryRun: !!opts.dryRun,
     evaluations,
     reminders,
+    deadlines,
   };
 }
 

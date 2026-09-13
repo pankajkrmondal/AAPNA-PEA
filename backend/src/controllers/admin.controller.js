@@ -16,6 +16,7 @@ import AppError from '../utils/AppError.js';
 import { runSweep } from '../jobs/evaluationScheduler.js';
 import { queueEmail, shadowReport, isShadowMode } from '../services/notification.service.js';
 import { verifyConnection } from '../services/graphMailer.service.js';
+import { verifyDirectoryAccess } from '../services/entraDirectory.service.js';
 import { findByOfficeEmail } from '../services/employee.service.js';
 import { addDays, toDateString, todayIn } from '../utils/dateUtils.js';
 import config from '../config/index.js';
@@ -147,7 +148,7 @@ export const diagnostics = catchAsync(async (_req, res) => {
   const today = todayIn(config.scheduler.timezone);
   const shadow = await isShadowMode();
 
-  const [pendingDue, awaiting, graph] = await Promise.all([
+  const [pendingDue, awaiting, graph, directory] = await Promise.all([
     prisma.pea_evaluation_cycles.count({
       where: {
         status: 'pending',
@@ -157,6 +158,11 @@ export const diagnostics = catchAsync(async (_req, res) => {
     }),
     prisma.pea_evaluation_cycles.count({ where: { status: { in: ['email_sent', 'opened'] } } }),
     verifyConnection(),
+    // Reported separately from the mail check: they use the same credentials but
+    // different permissions (Mail.Send vs User.Read.All), so one can work while
+    // the other does not. A silent directory failure shows up as an empty New
+    // Joiner Inbox, which looks exactly like "nobody joined".
+    verifyDirectoryAccess(),
   ]);
 
   const blockers = [];
@@ -173,6 +179,9 @@ export const diagnostics = catchAsync(async (_req, res) => {
     wouldSendNow: pendingDue,
     awaitingResponse: awaiting,
     graph,
+    // Not a blocker: the directory is only used by the New Joiner Inbox, and
+    // evaluations must keep going out whether or not it is reachable.
+    directory,
     blockers,
     willActuallySendEmail: blockers.length === 0,
   });

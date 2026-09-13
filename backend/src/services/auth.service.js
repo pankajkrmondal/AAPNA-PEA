@@ -2,10 +2,8 @@
  * auth.service.js — password verification, JWT issuing, and session CRUD
  * against pea_sessions.
  *
- * Deliberately NOT shared with ATS. ATS login WRITES to rpa_sessions and
- * rpa_users, and an ATS logout deletes every session for a user — which would
- * silently log them out of PEA too. Sharing auth would also mean granting PEA
- * write access to ATS tables. See plan §5.4.
+ * PEA's own users and sessions. PEA and ATS are separate projects with
+ * separate databases and separate sign-in (decision D5, plan §5.4).
  */
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
@@ -113,6 +111,20 @@ export async function login(identifier, password) {
 
   if (!user.is_active) throw new AppError('This account has been deactivated', 403);
 
+  return startSessionFor(user, 'password');
+}
+
+/**
+ * Issue a token and session for an already-authenticated user.
+ *
+ * Shared by password and Microsoft sign-in, so both produce exactly the same
+ * kind of session — revocable, expiring, and checked by verifySession().
+ *
+ * @param {object} user - an active pea_users row
+ * @param {'password'|'microsoft'} method
+ * @returns {Promise<{token: string, user: object}>}
+ */
+export async function startSessionFor(user, method) {
   const token = signToken(user);
   await createSession(user.id, normalizeRole(user.role), token);
 
@@ -121,7 +133,7 @@ export async function login(identifier, password) {
     data: { last_login_at: new Date() },
   });
 
-  logger.info(`Login: ${user.username} (${user.role})`);
+  logger.info(`Login: ${user.username} (${user.role}) via ${method}`);
 
   return { token, user: publicUser(user) };
 }
