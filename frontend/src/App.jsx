@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Layout, Menu, Button, Tooltip, Dropdown, Tag } from 'antd';
+import { Layout, Menu, Button, Tooltip, Dropdown, Tag, Result } from 'antd';
 import {
   DashboardOutlined,
   TeamOutlined,
@@ -9,20 +9,22 @@ import {
   SafetyCertificateOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  SunOutlined,
-  MoonOutlined,
   UserOutlined,
   BarChartOutlined,
   CloudUploadOutlined,
   LinkOutlined,
   SettingOutlined,
-  UsergroupAddOutlined,
   KeyOutlined,
+  MailOutlined,
 } from '@ant-design/icons';
-import { useQuery } from '@tanstack/react-query';
-import api, { unwrap, TOKEN_KEY, USER_KEY } from './api.js';
-import { useThemeMode } from './theme.jsx';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import api, { unwrap, TOKEN_KEY } from './api.js';
+import { MODULES, ROLE_LABEL, canUse, homePath, initialsOf, isAdminTier, signOut, useCurrentUser } from './auth.js';
 import NotificationBell from './components/NotificationBell.jsx';
+import ThemeToggle from './components/ThemeToggle.jsx';
+import AdminPortalIcon from './components/AdminPortalIcon.jsx';
+import ChangePasswordModal from './components/ChangePasswordModal.jsx';
+import AdminLayout from './layouts/AdminLayout.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Employees from './pages/Employees.jsx';
@@ -33,42 +35,39 @@ import ImportSheet from './pages/ImportSheet.jsx';
 import ManagerLinks from './pages/ManagerLinks.jsx';
 import ManagerPortal from './pages/ManagerPortal.jsx';
 import Settings from './pages/Settings.jsx';
-import Users from './pages/Users.jsx';
+import EmailTemplates from './pages/EmailTemplates.jsx';
+import AdminDashboard from './pages/AdminDashboard.jsx';
 import SelfView from './pages/SelfView.jsx';
-import ChangePasswordModal from './components/ChangePasswordModal.jsx';
 
 const { Header, Content, Sider } = Layout;
 
-// `min` hides an item from roles that could not use it. The API enforces the
-// same rule on its own; this only avoids showing someone a screen that would
-// refuse them.
-const RANK = { viewer: 10, hr: 20, admin: 30 };
+/** Sidebar icons by module. Which items a user sees is Module Access — see auth.js. */
+const ICONS = {
+  dashboard: <DashboardOutlined />,
+  employees: <TeamOutlined />,
+  new_joiners: <UserAddOutlined />,
+  analytics: <BarChartOutlined />,
+  import_sheet: <CloudUploadOutlined />,
+  manager_portal: <LinkOutlined />,
+  email_templates: <MailOutlined />,
+  settings: <SettingOutlined />,
+};
 
-const NAV = [
-  { key: '/', icon: <DashboardOutlined />, label: 'Dashboard' },
-  { key: '/employees', icon: <TeamOutlined />, label: 'Employees' },
-  { key: '/new-joiners', icon: <UserAddOutlined />, label: 'New joiners' },
-  { key: '/analytics', icon: <BarChartOutlined />, label: 'Analytics' },
-  { key: '/import', icon: <CloudUploadOutlined />, label: 'Import sheet', min: 'hr' },
-  { key: '/manager-portal', icon: <LinkOutlined />, label: 'Manager portal', min: 'hr' },
-  { key: '/settings', icon: <SettingOutlined />, label: 'Settings', min: 'hr' },
-  { key: '/users', icon: <UsergroupAddOutlined />, label: 'Users', min: 'admin' },
-];
+const TITLES = { ...Object.fromEntries(MODULES.map((m) => [m.path, m.label])), '/no-access': 'No access' };
 
-const TITLES = Object.fromEntries(NAV.map((n) => [n.key, n.label]));
+const signedIn = () => Boolean(localStorage.getItem(TOKEN_KEY));
 
-const initials = (user) =>
-  (user.first_name?.[0] || user.username?.[0] || '?').toUpperCase() +
-  (user.last_name?.[0] || '').toUpperCase();
-
-function Shell({ children }) {
+function Shell({ module, children }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { mode, toggle } = useThemeMode();
+  const qc = useQueryClient();
   const [collapsed, setCollapsed] = useState(false);
   const [pwOpen, setPwOpen] = useState(false);
-  const user = JSON.parse(localStorage.getItem(USER_KEY) || '{}');
-  const nav = NAV.filter((n) => !n.min || (RANK[user.role] ?? 0) >= RANK[n.min]).map(({ min: _m, ...n }) => n);
+  const user = useCurrentUser();
+
+  // A module switched off for this user is left out of the sidebar, and a
+  // direct visit is redirected below. The API refuses it regardless.
+  const nav = MODULES.filter((m) => canUse(user, m.key)).map((m) => ({ key: m.path, icon: ICONS[m.key], label: m.label }));
 
   // Surfaced in the header because both brakes silently mean "no manager hears
   // from us", and that is precisely the failure the old system suffered from.
@@ -79,20 +78,14 @@ function Shell({ children }) {
   });
 
   const logout = async () => {
-    try {
-      await api.post('/auth/logout');
-    } catch {
-      /* signing out locally is what matters */
-    }
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
+    await signOut(qc);
     navigate('/login');
   };
 
   const selected = nav.map((n) => n.key)
     .filter((key) => key !== '/' && location.pathname.startsWith(key))
     .at(0) ?? '/';
-  const title = location.pathname.startsWith('/employees/') ? 'Employee' : TITLES[selected];
+  const title = location.pathname.startsWith('/employees/') ? 'Employee' : (TITLES[location.pathname] ?? TITLES[selected]);
 
   return (
     <Layout className="pea-layout">
@@ -143,7 +136,17 @@ function Shell({ children }) {
           <div style={{ flex: 1 }} />
 
           {diag && !diag.willActuallySendEmail && (
-            <Tooltip title={diag.blockers?.join(' · ')}>
+            <Tooltip
+              placement="bottom"
+              title={
+                <div className="pea-tip">
+                  <div className="pea-tip-title">Why managers are not getting real emails</div>
+                  <ul>
+                    {diag.blockers?.map((b) => <li key={b}>{b}</li>)}
+                  </ul>
+                </div>
+              }
+            >
               <Tag icon={<SafetyCertificateOutlined />} color="gold" style={{ marginInlineEnd: 0 }}>
                 No email is being sent
               </Tag>
@@ -152,14 +155,13 @@ function Shell({ children }) {
 
           <NotificationBell />
 
-          <Tooltip title={mode === 'dark' ? 'Switch to light' : 'Switch to dark'}>
-            <Button
-              type="text"
-              className="pea-icon-btn"
-              icon={mode === 'dark' ? <MoonOutlined /> : <SunOutlined />}
-              onClick={toggle}
-            />
-          </Tooltip>
+          <ThemeToggle />
+
+          {isAdminTier(user.role) && (
+            <Button className="pea-top-btn" type="text" icon={<AdminPortalIcon />} onClick={() => navigate('/admin')}>
+              <span className="pea-hide-sm">Admin Portal</span>
+            </Button>
+          )}
 
           <Dropdown
             trigger={['click']}
@@ -172,8 +174,8 @@ function Shell({ children }) {
                   label: user.email || user.username,
                 },
                 { type: 'divider' },
-                { key: 'password', icon: <KeyOutlined />, label: 'Change password' },
-                { key: 'out', icon: <LogoutOutlined />, label: 'Sign out', danger: true },
+                { key: 'password', icon: <KeyOutlined />, label: 'Change Password' },
+                { key: 'out', icon: <LogoutOutlined />, label: 'Logout', danger: true },
               ],
               onClick: ({ key }) => {
                 if (key === 'out') logout();
@@ -184,15 +186,17 @@ function Shell({ children }) {
             <div className="pea-user-chip" style={{ cursor: 'pointer' }}>
               <div>
                 <div className="pea-user-name">{user.first_name || user.username}</div>
-                <div className="pea-user-role">{user.role}</div>
+                <div className="pea-user-role">{ROLE_LABEL[user.role] || user.role}</div>
               </div>
-              <div className="pea-avatar">{initials(user)}</div>
+              <div className="pea-avatar">{initialsOf(user)}</div>
             </div>
           </Dropdown>
         </Header>
 
         <Content className="pea-content">
-          <div className="pea-page">{children}</div>
+          <div className="pea-page">
+            {module && !canUse(user, module) ? <Navigate to={homePath(user)} replace /> : children}
+          </div>
         </Content>
         <ChangePasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
       </Layout>
@@ -200,24 +204,51 @@ function Shell({ children }) {
   );
 }
 
-function Protected({ children }) {
-  if (!localStorage.getItem(TOKEN_KEY)) return <Navigate to="/login" replace />;
-  return <Shell>{children}</Shell>;
+/** @param {{module?: string}} props - the Module Access key this screen needs */
+function Protected({ module, children }) {
+  if (!signedIn()) return <Navigate to="/login" replace />;
+  return <Shell module={module}>{children}</Shell>;
+}
+
+/** The Admin Portal — its own shell, admin tier only, as ATS's AdminRoute. */
+function AdminPortal() {
+  const user = useCurrentUser();
+  if (!isAdminTier(user.role)) return <Navigate to={homePath(user)} replace />;
+  return (
+    <AdminLayout user={user}>
+      <AdminDashboard me={user} />
+    </AdminLayout>
+  );
+}
+
+/** Where an HR user lands when every module has been switched off for them. */
+function NoAccess() {
+  return (
+    <Result
+      status="403"
+      title="No modules are enabled for your account"
+      subTitle="You are signed in, but no PEA module is switched on for you yet. Ask an admin to enable one under Admin Portal → Module Access."
+    />
+  );
 }
 
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
-      <Route path="/" element={<Protected><Dashboard /></Protected>} />
-      <Route path="/employees" element={<Protected><Employees /></Protected>} />
-      <Route path="/employees/:id" element={<Protected><EmployeeDetail /></Protected>} />
-      <Route path="/new-joiners" element={<Protected><NewJoiners /></Protected>} />
-      <Route path="/analytics" element={<Protected><Analytics /></Protected>} />
-      <Route path="/import" element={<Protected><ImportSheet /></Protected>} />
-      <Route path="/manager-portal" element={<Protected><ManagerLinks /></Protected>} />
-      <Route path="/settings" element={<Protected><Settings /></Protected>} />
-      <Route path="/users" element={<Protected><Users /></Protected>} />
+      <Route path="/" element={<Protected module="dashboard"><Dashboard /></Protected>} />
+      <Route path="/employees" element={<Protected module="employees"><Employees /></Protected>} />
+      <Route path="/employees/:id" element={<Protected module="employees"><EmployeeDetail /></Protected>} />
+      <Route path="/new-joiners" element={<Protected module="new_joiners"><NewJoiners /></Protected>} />
+      <Route path="/analytics" element={<Protected module="analytics"><Analytics /></Protected>} />
+      <Route path="/import" element={<Protected module="import_sheet"><ImportSheet /></Protected>} />
+      <Route path="/manager-portal" element={<Protected module="manager_portal"><ManagerLinks /></Protected>} />
+      <Route path="/settings" element={<Protected module="settings"><Settings /></Protected>} />
+      <Route path="/email-templates" element={<Protected module="email_templates"><EmailTemplates /></Protected>} />
+      <Route path="/no-access" element={<Protected><NoAccess /></Protected>} />
+      <Route path="/admin" element={signedIn() ? <AdminPortal /> : <Navigate to="/login" replace />} />
+      {/* Users moved into the Admin Portal; old bookmarks still arrive. */}
+      <Route path="/users" element={<Navigate to="/admin" replace />} />
       {/* PUBLIC — a reporting manager's own link. No HR shell, no HR session. */}
       <Route path="/manager/:token" element={<ManagerPortal />} />
       {/* PUBLIC — an employee's own probation, from a link HR shared. */}

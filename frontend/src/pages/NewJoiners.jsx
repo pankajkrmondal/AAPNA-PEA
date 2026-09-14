@@ -11,6 +11,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api, { unwrap } from '../api.js';
+import HintIcon from '../components/HintIcon.jsx';
 
 const fmt = (d) => (d ? String(d).slice(0, 10) : '—');
 
@@ -121,17 +122,21 @@ export default function NewJoiners() {
         <Space wrap>
           {/* Always available, not only once an ambiguity exists — the map is
               empty on first use, which is exactly when it needs seeding. */}
-          <Tooltip title="Rebuild the reporting-manager → project-leader map from the current roster">
+          <Tooltip title="Rebuilds the RM → PL lookup from the current employee list. A manager who has always had the same PL gets that PL prefilled for new joiners; a manager with more than one PL is marked ambiguous and shows 'needs HR' instead. Entries set by hand are kept. Employees are not changed; no email is sent.">
             <Button icon={<ClusterOutlined />} onClick={() => seedMap.mutate()} loading={seedMap.isPending}>
               Rebuild RM→PL map
             </Button>
           </Tooltip>
-          <Button icon={<EyeOutlined />} onClick={() => scan.mutate(true)} loading={scan.isPending}>
-            Dry run
-          </Button>
-          <Button type="primary" icon={<SyncOutlined />} onClick={() => scan.mutate(false)} loading={scan.isPending}>
-            Scan now
-          </Button>
+          <Tooltip title="Runs the Entra scan as a test and reports what a real scan would find: new joiners, refreshed suggestions, possible leavers, and names/emails to sync. Only a log entry is written; no email is sent.">
+            <Button icon={<EyeOutlined />} onClick={() => scan.mutate(true)} loading={scan.isPending}>
+              Dry run
+            </Button>
+          </Tooltip>
+          <Tooltip title="Runs the real Entra scan now (the nightly scan does the same if switched on in Settings → New joiners). Fills the inbox and records account status on employees. No email is sent; a bell notification is raised if something new is found.">
+            <Button type="primary" icon={<SyncOutlined />} onClick={() => scan.mutate(false)} loading={scan.isPending}>
+              Scan now
+            </Button>
+          </Tooltip>
         </Space>
       </div>
 
@@ -182,7 +187,12 @@ export default function NewJoiners() {
       <Card
         className="pea-card"
         size="small"
-        title={<span className="pea-section-title">Detected in Entra</span>}
+        title={
+          <span className="pea-section-title">
+            Detected in Entra
+            <HintIcon title="New Microsoft accounts waiting for HR to confirm (count at the top right). Turn a new account into a scheduled employee in two questions instead of typing eight columns." />
+          </span>
+        }
         extra={<span className="pea-count">{counts.joiners ?? 0}</span>}
       >
         <Table
@@ -253,15 +263,19 @@ export default function NewJoiners() {
               width: 190,
               render: (_, r) => (
                 <Space size={6}>
-                  <Button size="small" type="primary" icon={<UserAddOutlined />} onClick={() => openAccept(r)}>
-                    Confirm
-                  </Button>
+                  <Tooltip title="Open the confirm form to add this account as a new joiner.">
+                    <Button size="small" type="primary" icon={<UserAddOutlined />} onClick={() => openAccept(r)}>
+                      Confirm
+                    </Button>
+                  </Tooltip>
                   <Popconfirm
                     title="Remove from the inbox?"
                     description="They will not reappear unless Entra changes."
                     onConfirm={() => dismiss.mutate(r.id)}
                   >
-                    <Button size="small" icon={<CloseOutlined />} />
+                    <Tooltip title="Dismiss: remove this account from the inbox (after confirming). Use it for accounts that are not new joiners — shared mailboxes, test accounts and so on. A dismissed account does not come back on later scans.">
+                      <Button size="small" icon={<CloseOutlined />} aria-label="Dismiss" />
+                    </Tooltip>
                   </Popconfirm>
                 </Space>
               ),
@@ -274,7 +288,12 @@ export default function NewJoiners() {
       <Card
         className="pea-card"
         size="small"
-        title={<span className="pea-section-title">Possible leavers</span>}
+        title={
+          <span className="pea-section-title">
+            Possible leavers
+            <HintIcon title="Active employees whose Microsoft account looks like a leaver's. Flagged only when the account is BOTH disabled and unlicensed — no licence alone is not enough, as that wrongly flagged resource accounts, guests and unlicensed staff. Nothing changes until you confirm." />
+          </span>
+        }
         extra={<span className="pea-count pea-count-muted">{counts.leavers ?? 0}</span>}
       >
         <Alert

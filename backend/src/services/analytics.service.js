@@ -13,17 +13,57 @@
  *   · Response-time and reminder figures only count evaluations PEA actually
  *     sent (sent_at is set). A legacy row has no send, and counting it as
  *     "answered instantly without a reminder" would flatter every manager.
+ *
+ * ── Date range ─────────────────────────────────────────────────────────────
+ *
+ *   Every evaluation-based figure is limited to the selected range, using the
+ *   same date the trend chart plots: the IST submission date, or the due date
+ *   when there is none. Probation outcomes are a snapshot of employees, not
+ *   evaluations, so they are not filtered.
  */
+import { Prisma } from '@prisma/client';
 import prisma from '../config/database.js';
+import { todayIn, toUtcMidnight, toDateString, utcDate, addMonths } from '../utils/dateUtils.js';
 
 const TZ = 'Asia/Kolkata';
 
 /**
- * @param {{months?: number}} [opts]
+ * Turn the query into a valid, inclusive [from, to] range.
+ *
+ * `to` defaults to today and can never be in the future; `from` defaults to the
+ * start of the month `months - 1` before `to` (the old period selector). A
+ * reversed range is swapped rather than rejected.
+ *
+ * @param {{from?: string, to?: string, months?: number|string}} opts
+ * @returns {{from: string, to: string}} 'YYYY-MM-DD'
+ */
+export function resolveRange({ from, to, months } = {}) {
+  const today = todayIn(TZ);
+  let end = toUtcMidnight(to) || today;
+  if (end > today) end = today;
+
+  let start = toUtcMidnight(from);
+  if (!start) {
+    const window = Math.min(60, Math.max(1, parseInt(months, 10) || 12));
+    const monthStart = utcDate(end.getUTCFullYear(), end.getUTCMonth() + 1, 1);
+    start = addMonths(monthStart, -(window - 1));
+  }
+  if (start > end) [start, end] = [end, start];
+
+  return { from: toDateString(start), to: toDateString(end) };
+}
+
+/**
+ * @param {{from?: string, to?: string, months?: number|string}} [opts]
  * @returns {Promise<object>}
  */
-export async function getAnalytics({ months = 12 } = {}) {
-  const window = Math.min(60, Math.max(1, parseInt(months, 10) || 12));
+export async function getAnalytics(opts = {}) {
+  const range = resolveRange(opts);
+
+  /** The date an evaluation counts on, for column alias `c`. */
+  const inRange = (c) => Prisma.sql`
+    coalesce((${Prisma.raw(c)}.submitted_at AT TIME ZONE ${TZ})::date, ${Prisma.raw(c)}.due_date)
+      BETWEEN ${range.from}::date AND ${range.to}::date`;
 
   const [summary, trend, parameters, managers, outcomes, distribution] = await Promise.all([
     prisma.$queryRaw`
@@ -37,17 +77,17 @@ export async function getAnalytics({ months = 12 } = {}) {
              count(*) FILTER (WHERE status = 'completed' AND sent_at IS NOT NULL)::int   AS sent_by_pea,
              count(*) FILTER (WHERE status = 'completed' AND sent_at IS NOT NULL
                                 AND reminder_count = 0)::int                             AS without_reminder
-        FROM pea_evaluation_cycles`,
+        FROM pea_evaluation_cycles c
+       WHERE ${inRange('c')}`,
 
     prisma.$queryRaw`
-      SELECT to_char(date_trunc('month', coalesce(submitted_at AT TIME ZONE ${TZ}, due_date::timestamp)), 'YYYY-MM') AS month,
+      SELECT to_char(date_trunc('month', coalesce((submitted_at AT TIME ZONE ${TZ})::date, due_date)), 'YYYY-MM') AS month,
              round(avg(avg_rating)::numeric, 2)::float                   AS average,
              count(*)::int                                               AS evaluations,
              count(*) FILTER (WHERE submitted_at IS NULL)::int           AS placed_by_due_date
-        FROM pea_evaluation_cycles
+        FROM pea_evaluation_cycles c
        WHERE status = 'completed' AND avg_rating IS NOT NULL
-         AND coalesce(submitted_at AT TIME ZONE ${TZ}, due_date::timestamp)
-             >= date_trunc('month', now()) - make_interval(months => ${window - 1}::int)
+         AND ${inRange('c')}
        GROUP BY 1
        ORDER BY 1`,
 
@@ -65,6 +105,7 @@ export async function getAnalytics({ months = 12 } = {}) {
         JOIN pea_evaluation_cycles c ON c.id = s.cycle_id
         JOIN pea_employees e         ON e.id = c.employee_id
        WHERE s.rating IS NOT NULL AND c.legacy_format IS NULL
+         AND ${inRange('c')}
        GROUP BY s.param_key
        ORDER BY min(s.sort_order)`,
 
@@ -85,6 +126,7 @@ export async function getAnalytics({ months = 12 } = {}) {
         FROM pea_employees e
         JOIN pea_evaluation_cycles c ON c.employee_id = e.id
        WHERE coalesce(trim(e.rm_email), '') <> ''
+         AND ${inRange('c')}
        GROUP BY lower(trim(e.rm_email))
        ORDER BY max(e.rm_name)`,
 
@@ -97,8 +139,9 @@ export async function getAnalytics({ months = 12 } = {}) {
 
     prisma.$queryRaw`
       SELECT floor(avg_rating)::int AS band, count(*)::int AS evaluations
-        FROM pea_evaluation_cycles
+        FROM pea_evaluation_cycles c
        WHERE status = 'completed' AND avg_rating IS NOT NULL
+         AND ${inRange('c')}
        GROUP BY 1
        ORDER BY 1`,
   ]);
@@ -106,7 +149,7 @@ export async function getAnalytics({ months = 12 } = {}) {
   const s = summary[0] || {};
 
   return {
-    months: window,
+    ...range,
     summary: {
       ...s,
       onTimeRate: s.sent_by_pea ? Math.round((s.without_reminder / s.sent_by_pea) * 100) : null,

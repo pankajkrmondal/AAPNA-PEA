@@ -23,8 +23,9 @@ import XLSX from 'xlsx';
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
+import config from '../config/index.js';
 import { generateCycles } from './cycleGenerator.service.js';
-import { utcDate, toDateString } from '../utils/dateUtils.js';
+import { utcDate, toDateString, addMonths, todayIn, toUtcMidnight } from '../utils/dateUtils.js';
 import { CONFIRMATION_STATUSES } from './employee.service.js';
 
 /** Sheet1 column headers we depend on, exactly as they appear in the workbook. */
@@ -154,13 +155,56 @@ function fullYear(y) {
 }
 
 /**
+ * Months after DOJ past which a row with no final decision is old data — the
+ * extended confirmation deadline. HR decision 16 (13 Sep): these sheet rows are
+ * demo data, imported as Confirmed and deleted later.
+ */
+export const OLD_ROW_MONTHS = 8;
+
+/**
+ * True for an old row that never got a final decision (blank or "Extend for …").
+ * Pure, so the rule is testable without a workbook.
+ * @param {{doj: Date, confirmation_status: string|null}} row
+ * @param {Date} today - UTC midnight
+ * @returns {boolean}
+ */
+export function isOldUndecided({ doj, confirmation_status: status }, today) {
+  if (status && !status.startsWith('Extend')) return false;
+  const start = toUtcMidnight(doj);
+  if (!start) return false;
+  return addMonths(start, OLD_ROW_MONTHS) < today;
+}
+
+/**
+ * What the sheet's "EN Status" says about one evaluation.
+ *
+ *   'completed' — the manager answered; never send again.
+ *   'in_flight' — Power Automate emailed an MS Forms link ("Email Sent") and no
+ *                 answer is recorded. At go-live every Power Automate flow and
+ *                 the MS Forms are switched off, so that link is dead: the
+ *                 cycle stays due and PEA sends a fresh link. Listed in the
+ *                 preview so HR knows which managers get one.
+ *   null        — nothing was sent; PEA's sweep handles it as normal.
+ *
+ * @param {{status?: string|null}} [blob]
+ * @returns {'completed'|'in_flight'|null}
+ */
+export function legacyCycleState(blob) {
+  const s = blob?.status || '';
+  if (/complete/i.test(s)) return 'completed';
+  if (/\bsent\b/i.test(s)) return 'in_flight';
+  return null;
+}
+
+/**
  * Parse the workbook into rows plus a reconciliation report. No database writes,
  * so HR can review exactly what would happen before anything is committed.
  *
  * @param {Buffer|string} source - file buffer or path
+ * @param {{today?: Date}} [opts]
  * @returns {{valid: object[], rejected: object[], report: object}}
  */
-export function parseWorkbook(source) {
+export function parseWorkbook(source, { today = todayIn(config.scheduler.timezone) } = {}) {
   const wb =
     typeof source === 'string'
       ? XLSX.readFile(source, { cellDates: false })
@@ -246,7 +290,7 @@ export function parseWorkbook(source) {
       return;
     }
 
-    valid.push({
+    const parsed = {
       excelRow,
       full_name: name,
       office_email: officeEmail,
@@ -260,8 +304,43 @@ export function parseWorkbook(source) {
       // Tier 3: kept verbatim, never parsed. Three incompatible formats appear
       // in this column across the years. Plan R5.
       legacy_blobs: collectLegacyBlobs(row),
-    });
+      original_confirmation: confirmation,
+      auto_confirmed: false,
+    };
+
+    if (isOldUndecided(parsed, today)) {
+      parsed.confirmation_status = 'Confirmed';
+      parsed.auto_confirmed = true;
+    }
+
+    valid.push(parsed);
   });
+
+  const autoConfirmedRows = valid
+    .filter((v) => v.auto_confirmed)
+    .map((v) => ({
+      excelRow: v.excelRow,
+      name: v.full_name,
+      office_email: v.office_email,
+      doj: toDateString(v.doj),
+      was: v.original_confirmation,
+    }));
+
+  // A final decision closes every open evaluation, so only still-open employees
+  // can have an evaluation in flight.
+  const inFlightRows = valid
+    .filter((v) => !TERMINAL_STATUSES.has(v.confirmation_status))
+    .flatMap((v) =>
+      Object.entries(v.legacy_blobs)
+        .filter(([, blob]) => legacyCycleState(blob) === 'in_flight')
+        .map(([seq]) => ({
+          excelRow: v.excelRow,
+          name: v.full_name,
+          office_email: v.office_email,
+          rm_email: v.rm_email,
+          evaluation: Number(seq),
+        }))
+    );
 
   return {
     valid,
@@ -275,6 +354,10 @@ export function parseWorkbook(source) {
       experienced: valid.filter((v) => v.is_experienced).length,
       withConfirmation: valid.filter((v) => v.confirmation_status).length,
       halted: valid.filter((v) => v.halt_process).length,
+      autoConfirmed: autoConfirmedRows.length,
+      autoConfirmedRows,
+      inFlight: inFlightRows.length,
+      inFlightRows,
     },
   };
 }
@@ -387,7 +470,14 @@ export async function importRows(validRows, actor, { dryRun = false } = {}) {
       }
 
       await prisma.$transaction(async (tx) => {
-        const { excelRow: _row, legacy_blobs: blobs, ...data } = row;
+        const {
+          excelRow: _row,
+          legacy_blobs: blobs,
+          auto_confirmed: autoConfirmed,
+          original_confirmation: wasStatus,
+          ...data
+        } = row;
+        let inFlight = 0;
 
         const employee = await tx.pea_employees.create({
           data: { ...data, source: 'excel' },
@@ -404,13 +494,18 @@ export async function importRows(validRows, actor, { dryRun = false } = {}) {
           });
           if (!cycle) continue;
 
+          const state = legacyCycleState(blob);
+          if (state === 'in_flight' && cycle.status === 'pending') inFlight += 1;
+
           await tx.pea_evaluation_cycles.update({
             where: { id: cycle.id },
             data: {
               legacy_raw: JSON.stringify(blob),
               legacy_format: 'sheet1_freetext',
-              // A completed evaluation must not be re-sent to the manager.
-              status: /complete/i.test(blob.status || '') ? 'completed' : cycle.status,
+              // A completed evaluation must not be re-sent to the manager. One
+              // Power Automate emailed but nobody answered stays due: its MS
+              // Forms link stops working at go-live, so PEA sends a fresh one.
+              status: state === 'completed' ? 'completed' : cycle.status,
               remarks: blob.feedback || null,
             },
           });
@@ -425,6 +520,10 @@ export async function importRows(validRows, actor, { dryRun = false } = {}) {
             old_value: null,
             new_value:
               `imported from Excel row ${row.excelRow}` +
+              (autoConfirmed
+                ? ` — Confirmation Status set to Confirmed (old demo row, was ${wasStatus || 'blank'}; HR decision 16)`
+                : '') +
+              (inFlight ? ` — ${inFlight} unanswered Power Automate evaluation(s) left due for a fresh PEA link` : '') +
               (closed ? ` — ${closed} historical cycle(s) closed as no longer actionable` : ''),
             changed_by: actor,
             change_source: 'excel_import',

@@ -17,6 +17,7 @@ import AppError from '../utils/AppError.js';
 import config from '../config/index.js';
 import { generateCycles, regenerateCycles } from './cycleGenerator.service.js';
 import { queueEmail } from './notification.service.js';
+import { notifyStaff } from './inAppNotification.service.js';
 import { hasPhase2Features } from '../utils/schemaCapabilities.js';
 import { toUtcMidnight, toDateString } from '../utils/dateUtils.js';
 
@@ -529,4 +530,61 @@ export async function reportToIt(id, input, actor) {
  */
 export async function setHalt(id, halt, actor) {
   return updateEmployee(id, { halt_process: halt }, actor);
+}
+
+const normName = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/**
+ * The typed name must match the employee's, so a misclick can never delete a
+ * record. Pure, so the rule is testable without a database.
+ * @param {{full_name: string}} employee
+ * @param {string} typedName
+ * @throws {AppError} 400
+ */
+export function assertDeleteConfirmed(employee, typedName) {
+  if (!normName(typedName) || normName(typedName) !== normName(employee.full_name)) {
+    throw new AppError(`To delete, type the employee's full name exactly: "${employee.full_name}".`, 400);
+  }
+}
+
+/**
+ * Delete an employee permanently — for demo and test records (HR decision,
+ * 13 Sep). Someone who really left is marked "left" instead, which keeps
+ * their history.
+ *
+ * Evaluations, ratings and change history go with the employee (ON DELETE
+ * CASCADE). The email log and the joiner inbox keep their rows, unlinked
+ * (ON DELETE SET NULL). The change history is deleted too, so the record of
+ * the deletion itself is the log line and the admins' bell.
+ *
+ * @param {bigint|number|string} id
+ * @param {string} typedName
+ * @param {string} actor
+ * @returns {Promise<{id: string, full_name: string, cycles: number}>}
+ */
+export async function deleteEmployee(id, typedName, actor) {
+  const employeeId = BigInt(id);
+  const employee = await prisma.pea_employees.findUnique({ where: { id: employeeId } });
+  if (!employee) throw new AppError('Employee not found', 404);
+
+  assertDeleteConfirmed(employee, typedName);
+
+  const cycles = await prisma.pea_evaluation_cycles.count({ where: { employee_id: employeeId } });
+  await prisma.pea_employees.delete({ where: { id: employeeId } });
+
+  logger.warn(
+    `🗑️ Employee deleted by ${actor}: ${employee.full_name} <${employee.office_email}> ` +
+      `(id ${employeeId}, ${cycles} evaluation(s))`
+  );
+
+  await notifyStaff({
+    type: 'employee_deleted',
+    title: `Employee deleted — ${employee.full_name}`,
+    body: `By ${actor}. ${employee.office_email}, ${cycles} evaluation(s) removed.`,
+    link: '/employees',
+    severity: 'warning',
+    roles: ['superadmin', 'admin'],
+  });
+
+  return { id: String(employeeId), full_name: employee.full_name, cycles };
 }

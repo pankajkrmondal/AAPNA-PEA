@@ -1,5 +1,4 @@
-import { Tooltip } from 'antd';
-import { InfoCircleOutlined } from '@ant-design/icons';
+import HintIcon from './HintIcon.jsx';
 
 const ACCENTS = {
   green: ['var(--pea-green-600)', 'var(--pea-green-50)'],
@@ -36,11 +35,7 @@ export default function StatCard({
 
       <div className="pea-stat-label">
         {label}
-        {hint && (
-          <Tooltip title={hint}>
-            <InfoCircleOutlined style={{ fontSize: 12, color: 'var(--pea-text-faint)' }} />
-          </Tooltip>
-        )}
+        {hint && <HintIcon title={hint} />}
       </div>
 
       <div className="pea-stat-value" style={value > 0 && accent === 'red' ? { color: colour } : undefined}>

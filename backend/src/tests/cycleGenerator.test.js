@@ -22,7 +22,43 @@ import {
   todayIn,
   daysBetween,
 } from '../utils/dateUtils.js';
-import { parseTextDate, parseExcelDate } from '../services/excelImport.service.js';
+import {
+  parseTextDate,
+  parseExcelDate,
+  isOldUndecided,
+  legacyCycleState,
+} from '../services/excelImport.service.js';
+
+describe('sheet import at go-live — old rows and unanswered MS Forms links', () => {
+  const today = utcDate(2026, 9, 13);
+
+  test('a blank status long after DOJ is old demo data → imported as Confirmed', () => {
+    assert.equal(isOldUndecided({ doj: utcDate(2022, 9, 26), confirmation_status: null }, today), true);
+  });
+
+  test('an old "Extend for …" row is also imported as Confirmed', () => {
+    assert.equal(isOldUndecided({ doj: utcDate(2025, 1, 1), confirmation_status: 'Extend for 1 month' }, today), true);
+  });
+
+  test('someone still inside 8 months is left in probation', () => {
+    assert.equal(isOldUndecided({ doj: utcDate(2026, 3, 1), confirmation_status: null }, today), false);
+  });
+
+  test('a real final decision is never overwritten', () => {
+    assert.equal(isOldUndecided({ doj: utcDate(2022, 1, 1), confirmation_status: 'Not Confirmed' }, today), false);
+  });
+
+  test('"Email Sent" with no answer is recognised as an unanswered MS Forms link', () => {
+    assert.equal(legacyCycleState({ status: 'Email Sent' }), 'in_flight');
+    assert.equal(legacyCycleState({ status: 'email sent ' }), 'in_flight');
+  });
+
+  test('a completed evaluation is completed; a blank one is left to the sweep', () => {
+    assert.equal(legacyCycleState({ status: 'Completed' }), 'completed');
+    assert.equal(legacyCycleState({ status: null }), null);
+    assert.equal(legacyCycleState(undefined), null);
+  });
+});
 
 describe('fresher cadence', () => {
   const schedule = buildSchedule({ doj: '2026-01-05', is_experienced: false });

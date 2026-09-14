@@ -40,11 +40,17 @@ export const reportToIt = catchAsync(async (req, res) => {
     result.status === 'failed'
       ? `Could not send: ${result.error}`
       : result.status === 'suppressed'
-        ? 'Logged — shadow mode is on, so nothing was sent'
+        ? 'Logged — "Pause all email" is on, so nothing was sent'
         : result.redirected
           ? `Sent to the test inbox (${result.sentTo.join(', ')}) — staging never mails IT directly`
           : 'Sent to IT'
   );
+});
+
+/** DELETE /api/employees/:id   { confirm_name } — admin only. */
+export const remove = catchAsync(async (req, res) => {
+  const result = await employeeService.deleteEmployee(req.params.id, req.body?.confirm_name, req.user.username);
+  return success(res, result, `${result.full_name} deleted`);
 });
 
 /** POST /api/employees/:id/halt   { halt: true|false } */

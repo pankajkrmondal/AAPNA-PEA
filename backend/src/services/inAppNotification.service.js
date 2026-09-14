@@ -39,7 +39,7 @@ export async function notifyStaff({
   link = null,
   severity = 'info',
   dedupeKey = null,
-  roles = ['admin', 'hr'],
+  roles = ['superadmin', 'admin', 'hr'],
 }) {
   try {
     const users = await prisma.pea_users.findMany({

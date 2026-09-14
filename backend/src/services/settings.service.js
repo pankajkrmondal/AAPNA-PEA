@@ -19,7 +19,7 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
 import { notifyStaff } from './inAppNotification.service.js';
-import { TEMPLATE_CATALOG, renderPreview } from './emailTemplate.service.js';
+import { TEMPLATE_DEFS, listTemplateCatalog, validateDraft, renderPreview } from './emailTemplate.service.js';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -31,8 +31,8 @@ export const REGISTRY = Object.freeze([
   // ── Email ──────────────────────────────────────────────────────────────
   {
     key: 'shadow_mode', group: 'Email', type: 'boolean', critical: true,
-    label: 'Shadow mode',
-    help: 'On: every email is logged as "would have sent" and nothing leaves the system. Off: emails are sent — outside production, only ever to the test inbox.',
+    label: 'Pause all email',
+    help: 'Normally off. Off: PEA sends every email — on staging to the test inbox, on production to the real people. On (emergency only): emails are logged as "would have sent" and nothing leaves the system.',
   },
   {
     key: 'cc_emails', group: 'Email', type: 'email_list',
@@ -93,7 +93,7 @@ export const REGISTRY = Object.freeze([
   {
     key: 'azure_scan_enabled', group: 'New joiners', type: 'boolean', restart: true,
     label: 'Nightly Entra scan',
-    help: 'Plan §10: leave off until after the shadow-mode cutover. "Scan now" works regardless.',
+    help: 'Finds new joiners every night. "Scan now" works regardless.',
   },
   {
     key: 'azure_scan_cron', group: 'New joiners', type: 'cron', restart: true,
@@ -125,9 +125,9 @@ export const REGISTRY = Object.freeze([
   {
     key: 'employee_self_view', group: 'Access', type: 'choice', critical: true,
     options: ['off', 'schedule', 'averages', 'full'],
-    default: 'off',
+    default: 'averages',
     label: 'Employee self-view',
-    help: 'What an employee sees through their own link. off: nothing. schedule: dates and status only. averages: plus their average ratings. full: plus per-parameter ratings and manager comments. Needs an HR policy decision.',
+    help: 'What an employee sees through their own link. off: nothing. schedule: dates and status only. averages: plus their average ratings. full: plus per-parameter ratings and manager comments. HR chose averages (13 Sep).',
   },
 ]);
 
@@ -305,7 +305,7 @@ export async function updateSetting(key, value, actor) {
       body: `By ${actor}. Was "${before?.setting_value ?? '(unset)'}".`,
       link: '/settings',
       severity: 'warning',
-      roles: ['admin'],
+      roles: ['superadmin', 'admin'],
     });
   }
 
@@ -315,67 +315,57 @@ export async function updateSetting(key, value, actor) {
 // ── Email templates ─────────────────────────────────────────────────────────
 
 /**
- * Every template, with any saved override.
+ * Every email PEA sends, with its current subject and body and the
+ * placeholders it may use.
  * @returns {Promise<object[]>}
  */
 export async function listTemplates() {
-  const overrides = await prisma.pea_settings.findMany({
-    where: { setting_key: { startsWith: 'template.' } },
-  });
-  const map = new Map(overrides.map((o) => [o.setting_key, o]));
-
-  return Object.entries(TEMPLATE_CATALOG).map(([key, meta]) => ({
-    key,
-    ...meta,
-    override: {
-      subject: map.get(`template.${key}.subject`)?.setting_value || '',
-      body: map.get(`template.${key}.body`)?.setting_value || '',
-    },
-    overridden: !!(map.get(`template.${key}.subject`)?.setting_value || map.get(`template.${key}.body`)?.setting_value),
-  }));
+  return listTemplateCatalog();
 }
 
 /**
- * Save an override. A blank subject or body falls back to the built-in wording.
+ * Save the subject and body HR edited. Saving the built-in wording unchanged
+ * stores nothing, so the email keeps following the default.
  * @param {string} key
  * @param {{subject?: string, body?: string}} input
  * @param {string} actor
+ * @returns {Promise<{key: string, overridden: boolean}>}
  */
 export async function saveTemplate(key, input, actor) {
-  const meta = TEMPLATE_CATALOG[key];
-  if (!meta) throw new AppError(`Unknown template "${key}"`, 400);
-  if (!meta.editable) throw new AppError(`${meta.label} cannot be overridden — it is built from a list.`, 400);
+  const { subject, body } = validateDraft(key, input || {});
+  const def = TEMPLATE_DEFS[key];
 
-  const subject = String(input.subject || '').trim().slice(0, 300);
-  const body = String(input.body || '').trim().slice(0, 50_000);
-
-  // Catch a typo'd placeholder before it goes out as a blank in a real email.
-  const unknown = [...`${subject} ${body}`.matchAll(/\{\{\s*(\w+)\s*\}\}/g)]
-    .map((m) => m[1])
-    .filter((v) => !meta.variables.includes(v));
-  if (unknown.length) {
-    throw new AppError(
-      `Unknown placeholder(s): ${[...new Set(unknown)].map((v) => `{{${v}}}`).join(', ')}. ` +
-        `Available: ${meta.variables.map((v) => `{{${v}}}`).join(', ')}`,
-      400
-    );
-  }
+  if (subject === def.subject.trim() && body === def.body.trim()) return resetTemplate(key, actor);
 
   for (const [suffix, value] of [['subject', subject], ['body', body]]) {
     const settingKey = `template.${key}.${suffix}`;
-    if (value) {
-      await prisma.pea_settings.upsert({
-        where: { setting_key: settingKey },
-        create: { setting_key: settingKey, setting_value: value, description: `Override for ${meta.label}` },
-        update: { setting_value: value, modified_at: new Date() },
-      });
-    } else {
-      await prisma.pea_settings.deleteMany({ where: { setting_key: settingKey } });
-    }
+    await prisma.pea_settings.upsert({
+      where: { setting_key: settingKey },
+      create: { setting_key: settingKey, setting_value: value, description: `Email template: ${def.name}` },
+      update: { setting_value: value, modified_at: new Date() },
+    });
   }
 
-  logger.warn(`✉️ Template ${key} ${subject || body ? 'overridden' : 'reset to built-in'} by ${actor}`);
-  return { key, overridden: !!(subject || body) };
+  logger.warn(`✉️ Email template "${def.name}" saved by ${actor}`);
+  return { key, overridden: true };
+}
+
+/**
+ * Go back to the built-in wording.
+ * @param {string} key
+ * @param {string} actor
+ * @returns {Promise<{key: string, overridden: boolean}>}
+ */
+export async function resetTemplate(key, actor) {
+  const def = TEMPLATE_DEFS[key];
+  if (!def) throw new AppError(`Unknown email template "${key}"`, 404);
+
+  await prisma.pea_settings.deleteMany({
+    where: { setting_key: { in: [`template.${key}.subject`, `template.${key}.body`] } },
+  });
+
+  logger.warn(`✉️ Email template "${def.name}" reset to default by ${actor}`);
+  return { key, overridden: false };
 }
 
 /**
@@ -384,6 +374,5 @@ export async function saveTemplate(key, input, actor) {
  * @param {{subject?: string, body?: string}} draft
  */
 export function previewTemplate(key, draft) {
-  if (!TEMPLATE_CATALOG[key]) throw new AppError(`Unknown template "${key}"`, 400);
   return renderPreview(key, draft);
 }

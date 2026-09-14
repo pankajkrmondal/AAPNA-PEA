@@ -225,10 +225,11 @@ async function main() {
     orderBy: { sent_at: 'asc' },
   });
   ok(`${logs.length} notification(s) logged`);
-  const escaped = logs.filter((l) => l.status === 'sent');
+  // Outside production a real send is logged with "Redirected from: <real recipient>".
+  const escaped = logs.filter((l) => l.status === 'sent' && !l.error_message?.startsWith('Redirected from'));
   escaped.length === 0
-    ? ok('every notification suppressed — nothing left the system')
-    : bad(`${escaped.length} notification(s) were actually SENT`);
+    ? ok('no notification reached a real recipient')
+    : bad(`${escaped.length} notification(s) were sent WITHOUT the test-inbox redirect`);
   for (const l of logs) console.log(`     [${l.status}] ${l.email_type} — ${l.subject}`);
 
   // ── Shadow report ───────────────────────────────────────────────────────
@@ -239,9 +240,10 @@ async function main() {
   for (const r of sample) {
     console.log(`    · ${r.type} eval ${r.evaluation} → would have gone to: ${r.wouldHaveGoneTo}`);
   }
+  // wouldHaveGoneTo carries the real recipient: "Redirected from: …" on a sent row.
   sample.length && sample[0].wouldHaveGoneTo?.includes('@')
     ? ok('report shows the REAL intended recipient, not the diverted one')
-    : bad('shadow report does not show the intended recipient');
+    : bad('email report does not show the intended recipient');
 
   await cleanup();
   console.log(process.exitCode ? '\n❌ SCHEDULER E2E FAILED\n' : '\n✅ SCHEDULER E2E PASSED — test data cleaned up\n');

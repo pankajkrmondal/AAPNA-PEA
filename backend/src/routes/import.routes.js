@@ -2,7 +2,7 @@ import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
 import { preview, importExcel } from '../controllers/import.controller.js';
-import { authenticate, requireMinRole } from '../middleware/auth.js';
+import { authenticate, requireMinRole, requireModule } from '../middleware/auth.js';
 import AppError from '../utils/AppError.js';
 
 const router = Router();

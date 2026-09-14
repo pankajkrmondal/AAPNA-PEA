@@ -6,17 +6,13 @@
  * in exactly one place and cannot be sidestepped by reaching for a different
  * helper.
  *
- * THREE INDEPENDENT BRAKES stand between this function and a real mailbox:
- *   1. pea_settings.shadow_mode = 'true'  → nothing is sent at all
- *   2. EMAIL_REDIRECT_TO_TEST=true        → recipients rewritten to the test inbox
- *   3. PEA_SCHEDULER_ENABLED=false        → the sweep never runs
- * All three are reported by GET /api/health.
+ * Where mail goes (HR decision, 13 Sep — PEA sends everything itself):
+ *   • staging / development → every email to EMAIL_STAGING_RECIPIENTS, cc cleared
+ *   • production            → the real people
  *
- * Shadow mode is not just a safety catch — it is the R6 stage-1 cutover
- * evidence. PEA runs beside Power Automate writing its "would have sent" list
- * to pea_email_log; if that list matches what the flows actually sent for three
- * consecutive days, the migrated logic is proven before a single real email is
- * at stake.
+ * Two switches can still stop mail, both reported by GET /api/health:
+ *   1. pea_settings.shadow_mode = 'true'  → emergency pause: logged, not sent (off by default)
+ *   2. PEA_SCHEDULER_ENABLED=false        → the sweep never runs
  */
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
@@ -30,9 +26,9 @@ async function setting(key, fallback = null) {
   return row?.setting_value ?? fallback;
 }
 
-/** True when shadow mode is on — log the intent, send nothing. */
+/** True only when an admin has paused all email — log the intent, send nothing. */
 export async function isShadowMode() {
-  return (await setting('shadow_mode', 'true')) === 'true';
+  return (await setting('shadow_mode', 'false')) === 'true';
 }
 
 /**
@@ -155,12 +151,12 @@ export async function queueEmail({ type, cycle, cycleId, employeeId, subject, co
     return { status: 'failed', to: [], redirected: false, error: err.message };
   }
 
-  // Render the body. Templated types need a cycle; hr_notification does not.
+  // Render subject and body from the template HR controls on the Email
+  // Templates screen. `subject` is only a fallback if rendering fails — a
+  // caller's subject must never override the one HR wrote.
   let rendered = { subject: subject || 'Performance Evaluation notification', body: '' };
   try {
-    const vars = full ? buildVars(full, context) : context;
-    rendered = await render(type, vars);
-    if (subject) rendered.subject = subject;
+    rendered = await render(type, buildVars(full, { ...context, employee }));
   } catch (err) {
     logger.warn(`Template "${type}" could not be rendered: ${err.message}`);
   }

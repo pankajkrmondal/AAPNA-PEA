@@ -1,0 +1,301 @@
+/**
+ * emailTemplates.css — the Email Templates screen, ported from ATS
+ * (frontend/src/theme/index.css, "Email Templates" section) onto PEA's tokens,
+ * so the two screens look the same.
+ *
+ * The email itself lives inside an iframe as a complete HTML document; nothing
+ * here reaches it. The literal #f4f6f9 backgrounds on the frames are the
+ * email's own page colour, so there is no flash while it loads — do not
+ * tokenize them or give them a dark variant.
+ */
+
+/* ----- Toolbar ---------------------------------------------------------- */
+.email-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.email-toolbar__search { width: 300px; max-width: 100%; }
+.email-toolbar__category { min-width: 190px; }
+
+/* ----- Template list ---------------------------------------------------- */
+.email-template-list .template-list-item.ant-list-item {
+  position: relative;
+  padding: 10px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid var(--pea-border);
+  transition: background-color 0.15s ease;
+  animation: emailRowIn 0.34s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+/* The selection rail grows in from the centre. */
+.email-template-list .template-list-item.ant-list-item::before {
+  content: '';
+  position: absolute;
+  inset-inline-start: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--pea-green-600);
+  transform: scaleY(0);
+  transition: transform 0.2s ease;
+}
+.email-template-list .template-list-item.ant-list-item:hover { background: var(--pea-green-50); }
+.email-template-list .template-list-item.is-selected,
+.email-template-list .template-list-item.is-selected:hover { background: var(--pea-green-100); }
+.email-template-list .template-list-item.is-selected::before { transform: scaleY(1); }
+
+.template-list-item__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  margin-top: 7px;
+  flex-shrink: 0;
+  display: block;
+}
+.template-list-item__name {
+  font-size: 13.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--pea-text);
+}
+.template-list-item.is-selected .template-list-item__name { color: var(--pea-green-700); }
+.template-list-item__sub {
+  font-size: 11.5px;
+  color: var(--pea-text-faint);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.template-list-item.is-selected .template-list-item__sub { color: var(--pea-text-muted); }
+
+@keyframes emailRowIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.email-template-list .ant-list-item:nth-child(1) { animation-delay: 0.02s; }
+.email-template-list .ant-list-item:nth-child(2) { animation-delay: 0.05s; }
+.email-template-list .ant-list-item:nth-child(3) { animation-delay: 0.08s; }
+.email-template-list .ant-list-item:nth-child(4) { animation-delay: 0.11s; }
+.email-template-list .ant-list-item:nth-child(5) { animation-delay: 0.14s; }
+.email-template-list .ant-list-item:nth-child(6) { animation-delay: 0.17s; }
+.email-template-list .ant-list-item:nth-child(n+7) { animation-delay: 0.2s; }
+
+/* ----- Editor card ------------------------------------------------------ */
+.email-editor-card__name {
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--pea-text);
+  line-height: 1.3;
+}
+
+/* Subject: a full-width band under the card head, like a message header. */
+.email-subject-row {
+  --email-card-pad: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: calc(var(--email-card-pad) * -1) calc(var(--email-card-pad) * -1) 12px;
+  padding: 8px var(--email-card-pad);
+  border-bottom: 1px solid var(--pea-border);
+  transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+.email-subject-row:focus-within {
+  border-bottom-color: var(--pea-green-600);
+  background: var(--pea-green-50);
+}
+.email-subject-row__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--pea-text-faint);
+  flex-shrink: 0;
+}
+.email-subject-row__input.ant-input-affix-wrapper { flex-grow: 1; padding: 0; background: transparent; }
+
+/* ----- Segmented tab strip (Editor / HTML Code / Live Preview) ----------- */
+/* !important is required: antd's card+small tab rule is more specific. */
+.email-editor-card .email-editor-tabs .ant-tabs-nav { margin-bottom: 12px; }
+.email-editor-card .email-editor-tabs .ant-tabs-nav::before { display: none; }
+.email-editor-card .email-editor-tabs .ant-tabs-nav-wrap { flex: none; }
+.email-editor-card .email-editor-tabs .ant-tabs-nav-list {
+  gap: 2px;
+  padding: 4px;
+  background: var(--pea-surface-2);
+  border: 1px solid var(--pea-border);
+  border-radius: 999px;
+}
+.email-editor-card .email-editor-tabs .ant-tabs-tab {
+  margin: 0 !important;
+  padding: 5px 14px !important;
+  border: none !important;
+  background: transparent !important;
+  border-radius: 999px !important;
+  font-size: 12.5px;
+  color: var(--pea-text-muted);
+  transition: color 0.15s ease, background-color 0.15s ease;
+}
+.email-editor-card .email-editor-tabs .ant-tabs-tab:hover { color: var(--pea-text); }
+.email-editor-card .email-editor-tabs .ant-tabs-tab-active {
+  background: var(--pea-surface) !important;
+  box-shadow: var(--pea-shadow);
+}
+.email-editor-card .email-editor-tabs .ant-tabs-tab-active .ant-tabs-tab-btn {
+  color: var(--pea-green-700);
+  font-weight: 600;
+}
+.email-editor-card .email-editor-tabs .ant-tabs-ink-bar { display: none; }
+
+/* ----- Visual editor ---------------------------------------------------- */
+.email-editor-shell {
+  border: 1px solid var(--pea-border);
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--pea-surface);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.email-editor-shell:focus-within {
+  border-color: var(--pea-green-600);
+  box-shadow: 0 0 0 3px var(--pea-green-50);
+}
+.email-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  background: var(--pea-surface-2);
+  border-bottom: 1px solid var(--pea-border);
+}
+.email-editor-toolbar__btn { color: var(--pea-text-muted); border-radius: 6px; }
+.email-editor-toolbar__btn:hover {
+  color: var(--pea-green-600) !important;
+  background: var(--pea-green-50) !important;
+}
+.email-editor-toolbar__sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 6px;
+  background: var(--pea-border-strong);
+}
+.email-editor-iframe,
+.email-preview-iframe {
+  width: 100%;
+  min-height: 240px;
+  height: 600px;
+  border: none;
+  display: block;
+  background: #f4f6f9;
+  animation: emailSheetIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+}
+@keyframes emailSheetIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ----- HTML Code (CodeMirror) ------------------------------------------- */
+.email-html-editor {
+  width: 100%;
+  min-height: 200px;
+  border: 1px solid var(--pea-border);
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  animation: emailSheetIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+}
+.email-html-editor:focus-within {
+  border-color: var(--pea-green-600);
+  box-shadow: 0 0 0 3px var(--pea-green-50);
+}
+.email-html-editor .cm-editor { font-size: 12.5px; background: #ffffff; }
+.email-html-editor .cm-editor.cm-focused { outline: none; }
+.email-html-editor .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 1.55;
+}
+.email-html-editor .cm-gutters {
+  background: #f7f9f2;
+  border-right: 1px solid var(--pea-border);
+  color: var(--pea-text-muted);
+}
+.email-html-editor .cm-activeLineGutter,
+.email-html-editor .cm-activeLine { background: rgba(122, 146, 46, 0.08); }
+
+[data-theme='dark'] .email-html-editor,
+[data-theme='dark'] .email-html-editor .cm-editor { background: #282c34; }
+[data-theme='dark'] .email-html-editor .cm-gutters {
+  background: #21252b;
+  border-right-color: #181a1f;
+  color: #7d8799;
+}
+[data-theme='dark'] .email-html-editor .cm-activeLineGutter,
+[data-theme='dark'] .email-html-editor .cm-activeLine { background: rgba(255, 255, 255, 0.04); }
+
+/* ----- Live Preview: mail-client chrome --------------------------------- */
+.email-preview-shell {
+  border: 1px solid var(--pea-border);
+  border-radius: 12px;
+  background: var(--pea-surface);
+  box-shadow: var(--pea-shadow);
+  overflow: hidden;
+}
+.email-preview-shell__chrome {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 20px;
+  background: var(--pea-surface-2);
+  border-bottom: 1px solid var(--pea-border);
+}
+.email-preview-shell__lights { display: flex; gap: 6px; align-items: center; }
+.email-preview-shell__light { width: 10px; height: 10px; border-radius: 999px; }
+.email-preview-shell__light--r { background: #ff5f57; }
+.email-preview-shell__light--y { background: #febc2e; }
+.email-preview-shell__light--g { background: #28c840; }
+.email-preview-shell__row { display: flex; gap: 10px; font-size: 13px; }
+.email-preview-shell__chrome .email-preview-shell__mode {
+  margin-left: 10px;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--pea-text-faint);
+}
+.email-preview-shell__chrome .email-preview-shell__key { width: 60px; flex-shrink: 0; color: var(--pea-text-faint); }
+.email-preview-shell__chrome .email-preview-shell__val { color: var(--pea-text-muted); min-width: 0; }
+.email-preview-shell__chrome .email-preview-shell__val--strong { color: var(--pea-text); font-weight: 600; }
+
+/* ----- Placeholder help under the editor -------------------------------- */
+.email-placeholder-help {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px dashed var(--pea-border-strong);
+  border-radius: 12px;
+  background: var(--pea-surface-2);
+}
+.email-placeholder-help__row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0;
+}
+
+/* ----- Layout ----------------------------------------------------------- */
+@media (min-width: 768px) {
+  .email-editor-card .ant-card-head { padding-top: 10px; padding-bottom: 10px; min-height: 0; }
+  .email-template-list { max-height: calc(100vh - 260px); overflow-y: auto; }
+}
+@media (max-width: 767.98px) {
+  .email-template-list { max-height: 45vh; overflow-y: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .email-template-list .template-list-item.ant-list-item,
+  .email-editor-iframe,
+  .email-preview-iframe,
+  .email-html-editor { animation: none; }
+  .email-template-list .template-list-item.ant-list-item::before { transition: none; }
+}

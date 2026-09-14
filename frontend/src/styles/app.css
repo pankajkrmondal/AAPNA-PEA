@@ -46,6 +46,13 @@
   --pea-shadow: 0 1px 2px rgba(34, 52, 15, .04), 0 8px 24px -12px rgba(34, 52, 15, .12);
   --pea-shadow-lift: 0 2px 4px rgba(34, 52, 15, .05), 0 16px 32px -16px rgba(34, 52, 15, .22);
   --pea-sider-width: 248px;
+
+  /* Admin Portal + theme toggle, ported from ATS */
+  --pea-track: #eef0ea;
+  --pea-gradient-primary: linear-gradient(135deg, #5c8727 0%, #6b9a30 50%, #47691f 100%);
+  --pea-gradient-card: linear-gradient(145deg, rgba(255, 255, 255, .95) 0%, rgba(247, 246, 243, .7) 100%);
+  --pea-ease-out: cubic-bezier(.22, 1, .36, 1);
+  --pea-ease-spring: cubic-bezier(.34, 1.56, .64, 1);
 }
 
 :root[data-theme='dark'] {
@@ -76,11 +83,53 @@
 
   --pea-shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px -12px rgba(0, 0, 0, .5);
   --pea-shadow-lift: 0 2px 4px rgba(0, 0, 0, .35), 0 16px 32px -16px rgba(0, 0, 0, .6);
+
+  --pea-track: #20271b;
+  --pea-gradient-card: linear-gradient(145deg, rgba(26, 32, 20, .95) 0%, rgba(31, 39, 24, .85) 100%);
 }
 
 body {
   background: var(--pea-bg);
   -webkit-font-smoothing: antialiased;
+}
+
+/* Tooltip trigger — brand-green chip so "hover for help" is obvious everywhere */
+.pea-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  margin-left: 6px;
+  border-radius: 50%;
+  font-size: 13px;
+  color: var(--pea-green-600);
+  background: var(--pea-green-100);
+  box-shadow: inset 0 0 0 1px var(--pea-green-200);
+  vertical-align: middle;
+  cursor: help;
+  transition: background .2s var(--pea-ease-out), color .2s var(--pea-ease-out), transform .2s var(--pea-ease-spring);
+}
+
+/* These parents already space their children with `gap` */
+.pea-section-title .pea-hint,
+.pea-stat-label .pea-hint {
+  margin-left: 0;
+}
+
+.pea-stat-label .pea-hint {
+  width: 18px;
+  height: 18px;
+  font-size: 12px;
+}
+
+.pea-hint:hover,
+.pea-hint:focus-visible {
+  color: #fff;
+  background: var(--pea-green-600);
+  box-shadow: 0 0 0 3px var(--pea-green-100);
+  transform: scale(1.1);
+  outline: none;
 }
 
 /* ---------------------------------------------------------------- shell -- */
@@ -568,6 +617,857 @@ body {
   margin-bottom: 20px;
 }
 
+/* -------------------------------------------------------- theme toggle --- */
+
+/* The ATS sun/moon. The rays spin away and the orb is carved into a crescent
+   with an inset shadow, so it needs no background-coloured overlay. */
+.theme-toggle {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--pea-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background .15s ease, color .15s ease;
+}
+
+.theme-toggle:hover {
+  background: var(--pea-green-50);
+  color: var(--pea-green-600);
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--pea-green-500);
+  outline-offset: 2px;
+}
+
+.theme-toggle:active .theme-toggle__orb {
+  transform: scale(.5);
+}
+
+.theme-toggle__orb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: inset 0 0 0 0 currentColor;
+  transform: scale(.6);
+  transition: transform .45s var(--pea-ease-spring), background .3s ease, box-shadow .45s var(--pea-ease-out);
+}
+
+.theme-toggle--dark .theme-toggle__orb {
+  transform: scale(1) rotate(-25deg);
+  background: transparent;
+  box-shadow: inset -6px -5px 0 0 currentColor;
+}
+
+.theme-toggle__rays {
+  position: absolute;
+  inset: 0;
+  transition: transform .45s var(--pea-ease-spring), opacity .3s ease;
+}
+
+.theme-toggle__rays i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 4px;
+  border-radius: 2px;
+  background: currentColor;
+  transform: translate(-50%, -50%) rotate(calc(var(--i) * 45deg)) translateY(-9px);
+}
+
+.theme-toggle--dark .theme-toggle__rays {
+  transform: scale(0) rotate(90deg);
+  opacity: 0;
+}
+
+/* The circular reveal (themeTransition.js) animates the new snapshot itself,
+   so the browser's default cross-fade is switched off. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+/* Browsers without View Transitions get a short cross-fade instead. */
+html.theme-transition,
+html.theme-transition *,
+html.theme-transition *::before,
+html.theme-transition *::after {
+  transition: background-color .3s ease, border-color .3s ease, color .3s ease, fill .3s ease, box-shadow .3s ease !important;
+}
+
+/* --------------------------------------------------------- top buttons --- */
+
+/* "Admin Portal" / "Evaluation Portal" / "Logout" — the ATS outlined pills. */
+.pea-top-btn.ant-btn {
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--pea-border-strong) !important;
+  border-radius: 8px;
+  background: var(--pea-surface) !important;
+  color: var(--pea-green-600) !important;
+  font-size: 12.5px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all .2s var(--pea-ease-out);
+}
+
+.pea-top-btn.ant-btn:hover {
+  border-color: var(--pea-green-600) !important;
+  background: var(--pea-green-50) !important;
+  transform: translateY(-1px);
+}
+
+.pea-top-btn--logout.ant-btn {
+  color: var(--pea-text-muted) !important;
+}
+
+.pea-top-btn--logout.ant-btn:hover {
+  color: var(--pea-red) !important;
+  border-color: var(--pea-red) !important;
+  background: var(--pea-red-soft) !important;
+}
+
+/* -------------------------------------------------------- admin portal --- */
+
+.pea-admin-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 380px at 100% 0%, var(--pea-green-100), transparent 65%),
+    var(--pea-bg);
+}
+
+.pea-admin-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 68px;
+  padding: 8px 28px;
+  background: linear-gradient(180deg, var(--pea-surface) 0%, var(--pea-surface-2) 100%);
+  border-bottom: 1px solid var(--pea-border);
+  box-shadow: 0 1px 0 rgba(92, 135, 39, .06), 0 2px 14px rgba(0, 0, 0, .035);
+}
+
+.pea-admin-left,
+.pea-admin-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.pea-admin-right {
+  flex: none;
+  gap: 10px;
+}
+
+.pea-admin-sep {
+  width: 1px;
+  height: 30px;
+  background: var(--pea-border);
+}
+
+.pea-admin-brand-icon {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 16px;
+  color: #fff;
+  background: var(--pea-gradient-primary);
+  box-shadow: 0 3px 10px rgba(92, 135, 39, .32);
+  animation: pea-scale-in .5s var(--pea-ease-spring) backwards;
+}
+
+.pea-admin-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pea-admin-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--pea-text);
+}
+
+.pea-admin-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--pea-text-faint);
+}
+
+.pea-admin-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px 0 4px;
+  border: 1px solid var(--pea-border);
+  border-radius: 999px;
+  background: var(--pea-green-100);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--pea-green-700);
+  cursor: pointer;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+
+.pea-admin-chip:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--pea-shadow);
+}
+
+.pea-admin-chip-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--pea-gradient-primary);
+}
+
+.pea-admin-main {
+  padding-inline: 24px;
+}
+
+.pea-admin {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-block: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* Capsule tab bar */
+.pea-admin .admin-tabbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 16px;
+  border: 1px solid var(--pea-border);
+  border-radius: 16px;
+  background: var(--pea-gradient-card);
+  box-shadow: var(--pea-shadow);
+}
+
+.pea-admin .admin-tabs {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 5px;
+  border-radius: 999px;
+  background: var(--pea-track);
+}
+
+.pea-admin .admin-tab.ant-btn {
+  height: 38px;
+  padding: 0 18px;
+  border: none;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pea-text-muted) !important;
+  background: transparent !important;
+  box-shadow: none;
+  transition: all .25s var(--pea-ease-out);
+}
+
+.pea-admin .admin-tab.ant-btn:hover {
+  color: var(--pea-green-600) !important;
+  background: rgba(92, 135, 39, .07) !important;
+}
+
+.pea-admin .admin-tab.admin-tab--active.ant-btn,
+.pea-admin .admin-tab.admin-tab--active.ant-btn:hover {
+  color: #fff !important;
+  background: var(--pea-gradient-primary) !important;
+  box-shadow: 0 4px 14px rgba(92, 135, 39, .32);
+  animation: pea-tab-pop .3s var(--pea-ease-spring);
+}
+
+/* Stat cards */
+.pea-admin .admin-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.pea-admin .admin-stat {
+  padding: 22px 24px;
+  border: 1px solid var(--pea-border);
+  border-radius: 16px;
+  background: var(--pea-gradient-card);
+  box-shadow: var(--pea-shadow);
+  transition: transform .25s ease, box-shadow .25s ease;
+  animation: pea-fade-up .45s var(--pea-ease-out) backwards;
+}
+
+.pea-admin .admin-stat:nth-child(2) { animation-delay: 60ms; }
+.pea-admin .admin-stat:nth-child(3) { animation-delay: 120ms; }
+.pea-admin .admin-stat:nth-child(4) { animation-delay: 180ms; }
+
+.pea-admin .admin-stat:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--pea-shadow-lift);
+}
+
+.pea-admin .admin-stat-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pea-admin .admin-stat-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--pea-text-muted);
+}
+
+.pea-admin .admin-stat-num {
+  margin: 6px 0 2px;
+  font-size: 32px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--tone-num, var(--pea-text));
+  animation: pea-scale-in .45s var(--pea-ease-spring) backwards;
+}
+
+.pea-admin .admin-stat-foot {
+  font-size: 11.5px;
+  color: var(--pea-text-muted);
+}
+
+.pea-admin .admin-stat-icon {
+  flex: none;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  color: var(--tone);
+  background: var(--tone-soft);
+  transition: transform .25s ease;
+}
+
+.pea-admin .admin-stat:hover .admin-stat-icon {
+  transform: scale(1.1) rotate(-6deg);
+}
+
+/* Cards, toolbar and table */
+.pea-admin-card.ant-card {
+  border-radius: 16px;
+  border-color: var(--pea-border);
+  box-shadow: var(--pea-shadow);
+  overflow: hidden;
+}
+
+.pea-admin-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--pea-border);
+}
+
+.pea-admin-toolbar-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--pea-text);
+}
+
+.pea-admin .ant-table-thead > tr > th {
+  background: var(--pea-surface-2) !important;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--pea-text-muted) !important;
+  border-bottom: 1px solid var(--pea-border) !important;
+}
+
+.pea-admin .ant-table-thead > tr > th::before {
+  display: none !important;
+}
+
+.pea-admin .ant-table-tbody > tr:hover > td {
+  background: rgba(92, 135, 39, .045) !important;
+}
+
+.pea-admin .ant-table-pagination.ant-pagination {
+  padding-inline: 20px;
+}
+
+.pea-user-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.pea-admin-avatar {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--pea-green-200);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pea-green-700);
+  background: var(--pea-green-100);
+}
+
+.pea-user-cell-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pea-text);
+}
+
+.pea-user-cell-email {
+  font-size: 11.5px;
+  color: var(--pea-text-muted);
+}
+
+.pea-mono {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+}
+
+.pea-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.pea-status i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.pea-status--on { color: var(--pea-emerald); background: var(--pea-emerald-soft); }
+.pea-status--off { color: var(--pea-red); background: var(--pea-red-soft); }
+
+.pea-act--edit.ant-btn:not(:disabled) { color: var(--pea-green-600) !important; }
+.pea-act--power.ant-btn:not(:disabled) { color: var(--pea-orange) !important; }
+.pea-act--delete.ant-btn:not(:disabled) { color: var(--pea-red) !important; }
+
+/* Role pills — the ATS hues; HR takes the recruiter green */
+.role-badge {
+  position: relative;
+  overflow: hidden;
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 11px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  line-height: 1.55;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.role-badge--superadmin {
+  background: linear-gradient(135deg, #7a922e 0%, #b9a14a 100%);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(122, 146, 46, .35);
+}
+
+/* A periodic light sheen, as on the ATS Super Admin pill. */
+.role-badge--superadmin::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -60%;
+  width: 38%;
+  height: 100%;
+  background: linear-gradient(120deg, transparent, rgba(255, 255, 255, .55), transparent);
+  transform: skewX(-20deg);
+  animation: pea-badge-sheen 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.role-badge--admin { background: #e8f0fb; color: #1d6fb8; border-color: #cfe1f6; }
+.role-badge--hr { background: #e7f6ec; color: #1f7a47; border-color: #cdebd6; }
+
+:root[data-theme='dark'] .role-badge--admin {
+  background: rgba(59, 130, 246, .16);
+  color: #7fb0f5;
+  border-color: rgba(59, 130, 246, .32);
+}
+
+:root[data-theme='dark'] .role-badge--hr {
+  background: rgba(90, 156, 110, .16);
+  color: #7fc999;
+  border-color: rgba(90, 156, 110, .32);
+}
+
+/* Module Access */
+.pea-select-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  text-transform: uppercase;
+  color: var(--pea-text-faint);
+}
+
+.pea-mod-users {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.pea-mod-user {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: none;
+  border-bottom: 1px solid var(--pea-border);
+  border-left: 3px solid transparent;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .15s ease;
+}
+
+.pea-mod-user:hover { background: var(--pea-green-50); }
+
+.pea-mod-user--selected,
+.pea-mod-user--selected:hover {
+  background: var(--pea-green-100);
+  border-left-color: var(--pea-green-600);
+}
+
+.pea-mod-user-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.pea-mod-user-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--pea-text);
+}
+
+.pea-mod-user--selected .pea-mod-user-name { color: var(--pea-green-700); }
+
+.pea-mod-user-role {
+  font-size: 11px;
+  color: var(--pea-text-muted);
+}
+
+.pea-mod-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-block: 12px;
+  white-space: normal;
+}
+
+.pea-mod-head-name {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--pea-text);
+}
+
+.pea-mod-head-sub {
+  margin-top: 3px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--pea-text-muted);
+}
+
+.pea-autosaved {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pea-emerald);
+  white-space: nowrap;
+  animation: pea-fade-up .3s ease backwards;
+}
+
+.pea-mod-empty {
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--pea-text-faint);
+}
+
+.pea-mod-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Header "No email is being sent" tooltip — compact, readable, like the ATS tips. */
+.pea-tip {
+  max-width: 320px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.pea-tip-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+
+.pea-tip ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.pea-tip li + li {
+  margin-top: 4px;
+}
+
+.pea-module-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 16px 18px;
+  border: 1px solid var(--pea-border);
+  border-radius: 10px;
+  background: var(--pea-surface-2);
+  transition: background .2s ease, border-color .2s ease;
+}
+
+.pea-module-row--on {
+  background: var(--pea-green-50);
+  border-color: var(--pea-green-200);
+}
+
+.pea-module-row--static {
+  border-style: dashed;
+  background: var(--pea-surface);
+}
+
+.pea-module-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+}
+
+.pea-module-icon {
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  background: var(--pea-track);
+}
+
+.pea-module-row--on .pea-module-icon,
+.pea-module-row--static .pea-module-icon {
+  background: var(--pea-surface);
+  border: 1px solid var(--pea-green-200);
+}
+
+.pea-module-label {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--pea-text);
+}
+
+.pea-module-desc {
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--pea-text-muted);
+}
+
+.pea-module-state {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.pea-module-state--on { color: var(--pea-emerald); background: var(--pea-emerald-soft); }
+.pea-module-state--off { color: var(--pea-red); background: var(--pea-red-soft); }
+.pea-module-state--role { color: var(--pea-blue); background: var(--pea-blue-soft); }
+
+/* Add / edit user modal */
+.pea-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.pea-admin-section {
+  margin-bottom: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  color: var(--pea-green-700);
+}
+
+.pea-admin-rule {
+  margin: 16px 0;
+  border: none;
+  border-top: 1px solid var(--pea-border);
+}
+
+.pea-gen-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.pea-gen-hint {
+  font-size: 11.5px;
+  color: var(--pea-text-muted);
+}
+
+.pea-cred-box {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--pea-green-200);
+  border-radius: 8px;
+  background: var(--pea-green-50);
+}
+
+.pea-cred-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--pea-green-700);
+}
+
+.pea-cred-value {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.pea-lock-note {
+  display: block;
+  font-size: 12.5px;
+}
+
+.pea-confirm-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pea-warn-box {
+  margin-block: 10px;
+  padding: 12px 14px;
+  border: 1px solid #f6dcb6;
+  border-radius: 8px;
+  background: var(--pea-orange-soft);
+  color: var(--pea-text);
+  font-size: 13px;
+}
+
+.pea-warn-box strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+:root[data-theme='dark'] .pea-warn-box {
+  border-color: rgba(224, 129, 19, .35);
+}
+
+@keyframes pea-fade-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes pea-scale-in {
+  from { opacity: 0; transform: scale(.85); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes pea-tab-pop {
+  0% { transform: scale(.94); }
+  60% { transform: scale(1.04); }
+  100% { transform: scale(1); }
+}
+
+@keyframes pea-badge-sheen {
+  0%, 70% { left: -60%; }
+  100% { left: 130%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle,
+  .theme-toggle__orb,
+  .theme-toggle__rays {
+    transition: none;
+  }
+
+  html.theme-transition,
+  html.theme-transition *,
+  html.theme-transition *::before,
+  html.theme-transition *::after {
+    transition: none !important;
+  }
+
+  .pea-admin *,
+  .pea-admin-brand-icon,
+  .role-badge--superadmin::after {
+    animation: none !important;
+  }
+}
+
 /* -------------------------------------------------------------- mobile --- */
 
 @media (max-width: 720px) {
@@ -576,4 +1476,13 @@ body {
   .pea-hero { padding: 20px; }
   .pea-user-role, .pea-user-name { display: none; }
   .pea-user-chip { padding: 0 5px; border: none; }
+
+  .pea-hide-sm { display: none; }
+  .pea-top-btn.ant-btn { padding: 0 9px; }
+  .pea-admin-topbar { padding: 8px 14px; }
+  .pea-admin-sub,
+  .pea-admin-sep,
+  .pea-admin-left > .pea-brand-mark { display: none; }
+  .pea-admin-main { padding-inline: 14px; }
+  .pea-admin-chip { padding: 0 4px; }
 }

@@ -265,12 +265,17 @@ export async function submit(token, body, ip) {
 
   // Notifications are queued outside the transaction: a mail failure must never
   // roll back a manager's submitted ratings.
+  // Subjects come from the Email Templates screen, not from here.
   await queueEmail({
     type: 'acknowledgement',
     cycleId: cycle.id,
     employeeId: cycle.employee_id,
-    subject: `Performance Evaluation ${cycle.seq_no} submitted — ${cycle.employee.full_name}`,
-    context: { avg, confirmation, submittedBy: body.submitted_by },
+    context: {
+      average: avg,
+      confirmation,
+      submittedBy: body.submitted_by,
+      remarks: (body.remarks || '').trim() || null,
+    },
   });
 
   if (confirmation && confirmation.startsWith('Extend')) {
@@ -278,8 +283,7 @@ export async function submit(token, body, ip) {
       type: 'extend_alert',
       cycleId: cycle.id,
       employeeId: cycle.employee_id,
-      subject: `Alert — evaluation extended for ${cycle.employee.full_name}`,
-      context: { confirmation, extensionCycles: result.extensionCycles },
+      context: { confirmation, submittedBy: body.submitted_by, extensionCycles: result.extensionCycles },
     });
   }
 

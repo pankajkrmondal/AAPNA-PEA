@@ -29,6 +29,7 @@ export const preview = catchAsync(async (req, res) => {
         doj: toDateString(v.doj),
         rm_email: v.rm_email,
         confirmation_status: v.confirmation_status,
+        auto_confirmed: v.auto_confirmed,
         halt_process: v.halt_process,
         evaluationsToCreate: v.is_experienced ? 3 : 6,
       })),

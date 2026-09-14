@@ -222,16 +222,17 @@ async function main() {
   ok(`extension periods end at DOJ +${days(extras[0].period_to)} and +${days(extras[1].period_to)} days (expect 210, 240)`);
 
   // ── 7. Nothing was emailed ──────────────────────────────────────────────
-  h('7. Email safety — shadow mode must have suppressed everything');
+  h('7. Email safety — outside production every send must be redirected to the test inbox');
   const mails = await prisma.pea_email_log.findMany({
     where: { employee_id: BigInt(employee.id) },
     orderBy: { sent_at: 'asc' },
   });
   ok(`${mails.length} notification(s) logged`);
-  const sent = mails.filter((m) => m.status !== 'suppressed');
-  sent.length === 0
-    ? ok('every notification suppressed — nothing left the system')
-    : bad(`${sent.length} notification(s) were NOT suppressed`);
+  // A real send outside production is logged with "Redirected from: <real recipient>".
+  const escaped = mails.filter((m) => m.status === 'sent' && !m.error_message?.startsWith('Redirected from'));
+  escaped.length === 0
+    ? ok('no notification reached a real recipient')
+    : bad(`${escaped.length} notification(s) were sent WITHOUT the test-inbox redirect`);
   for (const m of mails) console.log(`     [${m.status}] ${m.email_type} — ${m.subject}`);
 
   // ── 8. An unknown token must not leak information ───────────────────────

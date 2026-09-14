@@ -76,7 +76,6 @@ await check('notifications', async () => {
 const { listSettings, listTemplates, previewTemplate } = await import('../src/services/settings.service.js');
 const { listUsers } = await import('../src/services/users.service.js');
 const { currentLevel } = await import('../src/services/selfView.service.js');
-const { ssoStatus } = await import('../src/services/sso.service.js');
 
 await check('settings', async () => {
   const s = await listSettings();
@@ -92,15 +91,11 @@ await check('email templates render', async () => {
 
 await check('users', async () => {
   const u = await listUsers();
-  return `${u.length} user(s), ${u.filter((x) => x.role === 'admin' && x.is_active).length} active admin(s)`;
+  const active = (role) => u.filter((x) => x.role === role && x.is_active).length;
+  return `${u.length} user(s), ${active('superadmin')} active super admin(s), ${active('admin')} active admin(s)`;
 });
 
 await check('employee self-view', async () => `level "${await currentLevel()}"`);
-
-await check('Microsoft sign-in', async () => {
-  const s = ssoStatus();
-  return s.enabled ? 'enabled' : s.requested ? `requested but missing ${s.missing.join(', ')}` : 'off';
-});
 
 console.log('');
 for (const [icon, name, summary] of results) console.log(`  ${icon} ${name.padEnd(40)} ${summary}`);

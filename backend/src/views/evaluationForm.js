@@ -119,6 +119,7 @@ function page(title, bodyHtml) {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235c8727'/%3E%3Ctext x='32' y='42' font-family='Arial' font-size='24' font-weight='700' fill='%23fff' text-anchor='middle'%3EPEA%3C/text%3E%3C/svg%3E">
 <title>${esc(title)}</title>
 <style>${STYLES}</style>
 </head>

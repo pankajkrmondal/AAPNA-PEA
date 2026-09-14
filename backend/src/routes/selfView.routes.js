@@ -2,13 +2,13 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
-import { authenticate, requireMinRole } from '../middleware/auth.js';
+import { authenticate, requireMinRole, requireModule } from '../middleware/auth.js';
 import { createSelfViewLink, getSelfView, currentLevel } from '../services/selfView.service.js';
 
-/** HR side, mounted at /api/self-view-links. */
+/** HR side, mounted at /api/self-view-links. Issued from an employee's page. */
 export const selfViewLinksRouter = Router();
 
-selfViewLinksRouter.use(authenticate);
+selfViewLinksRouter.use(authenticate, requireModule('employees'));
 
 selfViewLinksRouter.get('/level', catchAsync(async (_req, res) => success(res, { level: await currentLevel() })));
 

@@ -6,7 +6,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { REGISTRY, normaliseValue } from '../services/settings.service.js';
-import { refuseChange, assertPasswordAcceptable } from '../services/users.service.js';
+import { refuseChange, refuseDelete, assertPasswordAcceptable } from '../services/users.service.js';
 
 const def = (key) => REGISTRY.find((r) => r.key === key);
 
@@ -49,8 +49,8 @@ describe('settings validation', () => {
     assert.throws(() => normaliseValue(def('azure_email_domain'), 'aapnainfotech'), /domain/);
   });
 
-  test('employee self-view is a fixed set of levels, defaulting to off', () => {
-    assert.equal(def('employee_self_view').default, 'off');
+  test('employee self-view is a fixed set of levels, defaulting to averages (HR, 13 Sep)', () => {
+    assert.equal(def('employee_self_view').default, 'averages');
     assert.throws(() => normaliseValue(def('employee_self_view'), 'everything'), /one of/);
   });
 
@@ -61,37 +61,83 @@ describe('settings validation', () => {
   });
 });
 
-describe('user management cannot lock everyone out', () => {
-  const admin = { id: 1, role: 'admin', is_active: true };
-  const other = { id: 2, role: 'admin', is_active: true };
-  const hr = { id: 3, role: 'hr', is_active: true };
+describe('user management follows the Super Admin > Admin > HR ladder', () => {
+  const superA = { id: 1, role: 'superadmin', is_active: true };
+  const superB = { id: 2, role: 'superadmin', is_active: true };
+  const admin = { id: 3, role: 'admin', is_active: true };
+  const admin2 = { id: 4, role: 'admin', is_active: true };
+  const hr = { id: 5, role: 'hr', is_active: true };
 
   test('you cannot change your own role', () => {
-    assert.match(refuseChange(admin, admin, { role: 'hr' }, 2), /own role/);
+    assert.match(refuseChange(superA, superA, { role: 'hr' }, 2), /own role/);
   });
 
   test('you cannot deactivate yourself', () => {
-    assert.match(refuseChange(admin, admin, { is_active: false }, 2), /own account/);
+    assert.match(refuseChange(admin, admin, { is_active: false }, 1), /own account/);
   });
 
-  test('the last active admin cannot be demoted by anyone', () => {
-    assert.match(refuseChange({ id: 9 }, admin, { role: 'viewer' }, 1), /last active admin/);
+  test('your own password is changed from your menu, not the user editor', () => {
+    assert.match(refuseChange(admin, admin, { password: 'long enough phrase' }, 1), /menu/);
   });
 
-  test('the last active admin cannot be deactivated', () => {
-    assert.match(refuseChange({ id: 9 }, admin, { is_active: false }, 1), /last active admin/);
+  test('anyone may save their own details', () => {
+    assert.equal(refuseChange(hr, hr, { role: 'hr', is_active: true }, 1), null);
   });
 
-  test('an admin can be demoted while another admin remains', () => {
-    assert.equal(refuseChange(admin, other, { role: 'hr' }, 2), null);
+  test('an admin manages HR — role, status and password', () => {
+    assert.equal(refuseChange(admin, hr, { role: 'admin', is_active: false, password: 'x' }, 1), null);
   });
 
-  test('ordinary changes to an HR user are allowed', () => {
-    assert.equal(refuseChange(admin, hr, { role: 'viewer', is_active: false }, 1), null);
+  test('an admin cannot manage a peer admin or a super admin', () => {
+    assert.match(refuseChange(admin, admin2, { is_active: false }, 1), /below your role/);
+    assert.match(refuseChange(admin, superA, {}, 1), /below your role/);
   });
 
-  test('saving an admin with their role unchanged is not a demotion', () => {
-    assert.equal(refuseChange({ id: 9 }, admin, { role: 'admin' }, 1), null);
+  test('HR cannot manage anyone else', () => {
+    assert.match(refuseChange(hr, { id: 6, role: 'hr', is_active: true }, {}, 1), /below your role/);
+  });
+
+  test('an admin cannot hand out the Super Admin role', () => {
+    assert.match(refuseChange(admin, hr, { role: 'superadmin' }, 1), /Super Admin role/);
+  });
+
+  test("a super admin can edit a peer super admin's details, but not their password", () => {
+    assert.equal(refuseChange(superA, superB, { role: 'superadmin', is_active: true }, 2), null);
+    assert.match(refuseChange(superA, superB, { password: 'x' }, 2), /account owner/);
+  });
+
+  test('the last active super admin cannot be demoted or deactivated', () => {
+    assert.match(refuseChange(superA, superB, { role: 'admin' }, 1), /last active Super Admin/);
+    assert.match(refuseChange(superA, superB, { is_active: false }, 1), /last active Super Admin/);
+  });
+
+  test('a super admin can be demoted while another remains', () => {
+    assert.equal(refuseChange(superA, superB, { role: 'admin' }, 2), null);
+  });
+
+  test('saving a super admin with their role unchanged is not a demotion', () => {
+    assert.equal(refuseChange(superA, superB, { role: 'superadmin' }, 1), null);
+  });
+});
+
+describe('deleting users', () => {
+  const superA = { id: 1, role: 'superadmin', is_active: true };
+  const superB = { id: 2, role: 'superadmin', is_active: true };
+  const admin = { id: 3, role: 'admin', is_active: true };
+  const hr = { id: 5, role: 'hr', is_active: true };
+
+  test('only a super admin can delete', () => {
+    assert.match(refuseDelete(admin, hr, 1), /Only a Super Admin/);
+    assert.equal(refuseDelete(superA, hr, 1), null);
+  });
+
+  test('nobody can delete themselves', () => {
+    assert.match(refuseDelete(superA, superA, 2), /own account/);
+  });
+
+  test('the last active super admin cannot be deleted', () => {
+    assert.match(refuseDelete(superA, superB, 1), /last active Super Admin/);
+    assert.equal(refuseDelete(superA, superB, 2), null);
   });
 });
 

@@ -3,6 +3,7 @@ import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
 import AppError from '../utils/AppError.js';
 import { changeOwnPassword } from '../services/users.service.js';
+import { modulesFor } from '../services/modulePermissions.service.js';
 
 /** POST /api/auth/login  { identifier, password } */
 export const login = catchAsync(async (req, res) => {
@@ -14,6 +15,9 @@ export const login = catchAsync(async (req, res) => {
   }
 
   const result = await authService.login(id, password);
+  // The sidebar is built from this list, so the first screen after sign-in
+  // already matches what Module Access allows.
+  result.user.modules = await modulesFor(result.user);
   return success(res, result, 'Signed in');
 });
 
@@ -37,7 +41,12 @@ export const changePassword = catchAsync(async (req, res) => {
   );
 });
 
-/** GET /api/auth/me */
+/**
+ * GET /api/auth/me
+ *
+ * Polled by the frontend, so a role or module change made in the Admin Portal
+ * reaches a browser that is already open.
+ */
 export const me = catchAsync(async (req, res) =>
-  success(res, authService.publicUser(req.user))
+  success(res, { ...authService.publicUser(req.user), modules: await modulesFor(req.user) })
 );

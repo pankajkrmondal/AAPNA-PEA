@@ -6,8 +6,10 @@
  * drift. The light/dark choice lives here too because antd needs the algorithm
  * swapped at the provider, not in CSS.
  */
-import { createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { ConfigProvider, App as AntApp, theme as antdTheme } from 'antd';
+import { startThemeTransition } from './themeTransition.js';
 
 const STORAGE_KEY = 'pea_theme';
 
@@ -28,6 +30,7 @@ export default function ThemeProvider({ children }) {
 
   useEffect(() => {
     document.documentElement.dataset.theme = mode;
+    document.documentElement.style.colorScheme = mode;
     try {
       localStorage.setItem(STORAGE_KEY, mode);
     } catch {
@@ -35,10 +38,27 @@ export default function ThemeProvider({ children }) {
     }
   }, [mode]);
 
-  const ctx = useMemo(
-    () => ({ mode, toggle: () => setMode((m) => (m === 'dark' ? 'light' : 'dark')) }),
+  /**
+   * Flip light/dark. From a click, the new theme spreads out from the button
+   * that was clicked (themeTransition.js), exactly as the ATS toggle does.
+   */
+  const toggle = useCallback(
+    (event) => {
+      const rect = event?.currentTarget?.getBoundingClientRect?.();
+      const coords = rect && { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      const next = mode === 'dark' ? 'light' : 'dark';
+
+      startThemeTransition(() => {
+        // The attribute goes on before React renders, so the CSS variables and
+        // antd's algorithm change inside the same captured frame.
+        document.documentElement.dataset.theme = next;
+        flushSync(() => setMode(next));
+      }, coords);
+    },
     [mode]
   );
+
+  const ctx = useMemo(() => ({ mode, toggle }), [mode, toggle]);
 
   const dark = mode === 'dark';
 
@@ -61,6 +81,9 @@ export default function ThemeProvider({ children }) {
       colorBorderSecondary: dark ? '#2c3722' : '#e6ebdb',
       colorText: dark ? '#e7eddf' : '#1f2a17',
       colorTextSecondary: dark ? '#9aa891' : '#6b7566',
+      // Tooltips: brand green in light, as ATS ("Switch to dark mode"). In dark
+      // a neutral ink, because white on brand green fails contrast there.
+      colorBgSpotlight: dark ? '#26302c' : '#5c8727',
     },
     components: {
       Layout: {

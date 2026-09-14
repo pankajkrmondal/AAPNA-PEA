@@ -115,7 +115,7 @@ export const sendEvaluationNow = catchAsync(async (req, res) => {
       redirected: result.redirected,
     },
     result.status === 'suppressed'
-      ? 'Shadow mode is on — the send was logged but no email left the system.'
+      ? '"Pause all email" is on — the send was logged but no email left the system.'
       : `Evaluation ${seqNo} sent to ${result.to.join(', ')}`
   );
 });
@@ -166,16 +166,22 @@ export const diagnostics = catchAsync(async (_req, res) => {
   ]);
 
   const blockers = [];
-  if (shadow) blockers.push('shadow_mode is true — nothing is sent');
-  if (!config.scheduler.enabled) blockers.push('PEA_SCHEDULER_ENABLED is false — the sweep never runs');
-  if (config.email.redirectInNonProd) {
-    blockers.push(`non-prod guard on — mail is diverted to ${config.email.testRecipients.join(', ')}`);
+  // Plain sentences: they are shown to HR as-is in the header tooltip.
+  if (shadow) blockers.push('"Pause all email" is on in Settings, so nothing is sent.');
+  if (!config.scheduler.enabled) {
+    blockers.push('The scheduler is off, so evaluation emails are not sent automatically.');
   }
-  if (!graph.ok) blockers.push(`Microsoft Graph: ${graph.detail}`);
+  if (config.email.redirectInNonProd) {
+    blockers.push(
+      `This is not production, so every email goes to the test inbox (${config.email.testRecipients.join(', ')}) instead of the real person.`
+    );
+  }
+  if (!graph.ok) blockers.push(`The Microsoft email connection is failing: ${graph.detail}`);
 
   return success(res, {
     today: toDateString(today),
     timezone: config.scheduler.timezone,
+    environment: config.env,
     wouldSendNow: pendingDue,
     awaitingResponse: awaiting,
     graph,

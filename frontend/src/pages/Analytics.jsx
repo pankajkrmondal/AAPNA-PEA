@@ -1,16 +1,18 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Row, Col, Table, Tag, Segmented, Spin, Alert, Empty, Typography, Tooltip as AntTooltip } from 'antd';
+import { Card, Row, Col, Table, Tag, DatePicker, Space, Spin, Alert, Empty, Typography } from 'antd';
+import dayjs from 'dayjs';
 import {
   ResponsiveContainer, ComposedChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell,
 } from 'recharts';
 import {
-  InfoCircleOutlined, CheckCircleOutlined, StarOutlined, FieldTimeOutlined, NotificationOutlined,
+  CheckCircleOutlined, StarOutlined, FieldTimeOutlined, NotificationOutlined,
 } from '@ant-design/icons';
 import api, { unwrap } from '../api.js';
 import { useThemeMode } from '../theme.jsx';
 import StatCard from '../components/StatCard.jsx';
+import HintIcon from '../components/HintIcon.jsx';
 
 /**
  * Recharts draws SVG attributes, which do not reliably resolve CSS variables,
@@ -55,13 +57,35 @@ const chartTooltip = (p) => ({
   },
 });
 
+const API_DATE = 'YYYY-MM-DD';
+
+/** Quick picks — each ends today; HR can still choose any custom range. */
+const rangePresets = () => {
+  const today = dayjs().endOf('day');
+  const monthsBack = (n) => [today.subtract(n - 1, 'month').startOf('month'), today];
+  return [
+    { label: 'Last 30 days', value: [today.subtract(29, 'day').startOf('day'), today] },
+    { label: 'This month', value: [today.startOf('month'), today] },
+    { label: 'Last 3 months', value: monthsBack(3) },
+    { label: 'Last 6 months', value: monthsBack(6) },
+    { label: 'Last 12 months', value: monthsBack(12) },
+    { label: 'Last 24 months', value: monthsBack(24) },
+    { label: 'This year', value: [today.startOf('year'), today] },
+  ];
+};
+
 export default function Analytics() {
-  const [months, setMonths] = useState(12);
+  const [range, setRange] = useState(() => rangePresets().find((r) => r.label === 'Last 12 months').value);
   const p = usePalette();
 
-  const { data, isLoading, error } = useQuery({
-    queryKey: ['analytics', months],
-    queryFn: () => api.get('/analytics', { params: { months } }).then(unwrap),
+  const from = range[0].format(API_DATE);
+  const to = range[1].format(API_DATE);
+
+  const { data, isLoading, isFetching, error } = useQuery({
+    queryKey: ['analytics', from, to],
+    queryFn: () => api.get('/analytics', { params: { from, to } }).then(unwrap),
+    // Keep the current charts on screen while a new range loads.
+    placeholderData: (previous) => previous,
   });
 
   if (isLoading) return <Spin size="large" style={{ display: 'block', marginTop: 80 }} />;
@@ -78,25 +102,35 @@ export default function Analytics() {
           <h2>Analytics</h2>
           <p>Rating trends, parameter strengths and how quickly managers respond</p>
         </div>
-        <Segmented
-          value={months}
-          onChange={setMonths}
-          options={[
-            { label: '6 months', value: 6 },
-            { label: '12 months', value: 12 },
-            { label: '24 months', value: 24 },
-          ]}
-        />
+        <Space size={8} wrap>
+          {isFetching && <Spin size="small" />}
+          <DatePicker.RangePicker
+            value={range}
+            onChange={(v) => v && setRange([v[0].startOf('day'), v[1].endOf('day')])}
+            presets={rangePresets()}
+            format="DD MMM YYYY"
+            allowClear={false}
+            disabledDate={(d) => d.isAfter(dayjs(), 'day')}
+          />
+          <HintIcon title="Pick any start date up to today. Every card, chart and the manager table cover evaluations in this range — dated by submission, or by due date for imported history. Probation outcomes always show the current position." />
+        </Space>
       </div>
 
       <div className="pea-stats">
-        <StatCard label="Evaluations completed" value={s.completed ?? 0} accent="green" icon={<CheckCircleOutlined />} />
+        <StatCard
+          label="Evaluations completed"
+          value={s.completed ?? 0}
+          accent="green"
+          icon={<CheckCircleOutlined />}
+          hint="Total evaluations submitted by managers in the selected date range."
+        />
         <StatCard
           label="Average rating"
           value={s.average_rating ?? '—'}
           suffix={s.average_rating != null ? '/ 5' : undefined}
           accent="blue"
           icon={<StarOutlined />}
+          hint="Average of all completed evaluations in the range, out of 5. Shows — if none have ratings."
           share={s.average_rating != null ? s.average_rating / 5 : null}
         />
         <StatCard
@@ -113,6 +147,7 @@ export default function Analytics() {
           accent="emerald"
           icon={<NotificationOutlined />}
           share={s.onTimeRate != null ? s.onTimeRate / 100 : null}
+          hint="Percentage of evaluations PEA sent that the manager submitted before any reminder went out. Imported history is excluded."
           foot={s.sent_by_pea ? `${s.without_reminder} of ${s.sent_by_pea} sent by PEA` : 'No evaluations sent by PEA yet'}
         />
       </div>
@@ -125,14 +160,12 @@ export default function Analytics() {
             title={
               <span className="pea-section-title">
                 Average rating by month
-                <AntTooltip title={data.trendBasis}>
-                  <InfoCircleOutlined style={{ color: 'var(--pea-text-faint)' }} />
-                </AntTooltip>
+                <HintIcon title={data.trendBasis} />
               </span>
             }
           >
             {data.trend.length === 0 ? (
-              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No completed evaluations in this window" />
+              <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No completed evaluations in this date range" />
             ) : (
               <ResponsiveContainer width="100%" height={280}>
                 {/* Composed, not LineChart: a LineChart silently ignores the Bar child. */}
@@ -152,7 +185,16 @@ export default function Analytics() {
         </Col>
 
         <Col xs={24} xl={10}>
-          <Card className="pea-card" size="small" title={<span className="pea-section-title">Probation outcomes</span>}>
+          <Card
+            className="pea-card"
+            size="small"
+            title={
+              <span className="pea-section-title">
+                Probation outcomes
+                <HintIcon title="Where every probation stands today. This is a snapshot of employees, so the date range does not change it." />
+              </span>
+            }
+          >
             {data.outcomes.length === 0 ? (
               <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} />
             ) : (
