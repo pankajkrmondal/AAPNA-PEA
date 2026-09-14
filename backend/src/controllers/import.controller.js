@@ -3,6 +3,7 @@ import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
 import AppError from '../utils/AppError.js';
 import { toDateString } from '../utils/dateUtils.js';
+import { isAdminTier } from '../config/roles.js';
 
 /**
  * POST /api/import/preview   (multipart: file)
@@ -43,9 +44,14 @@ export const preview = catchAsync(async (req, res) => {
  * Imports the workbook. Idempotent on office_email.
  */
 export const importExcel = catchAsync(async (req, res) => {
+  const dryRun = req.query.dryRun === 'true';
+  // A dry run writes nothing, so HR may run it; only the real import is admin-only.
+  if (!dryRun && !isAdminTier(req.user.role)) {
+    throw new AppError('You do not have permission to do that', 403);
+  }
+
   if (!req.file) throw new AppError('No file uploaded. Attach the Excel workbook as "file".', 400);
 
-  const dryRun = req.query.dryRun === 'true';
   const result = await importWorkbook(req.file.buffer, req.user.username, { dryRun });
 
   return success(

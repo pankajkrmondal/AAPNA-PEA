@@ -24,6 +24,8 @@ const upload = multer({
 router.use(authenticate);
 
 router.post('/preview', requireMinRole('hr'), upload.single('file'), preview);
-router.post('/excel', requireMinRole('admin'), upload.single('file'), importExcel);
+// HR may dry-run; the real import is admin-only, checked in the controller
+// because the same route serves both.
+router.post('/excel', requireMinRole('hr'), upload.single('file'), importExcel);
 
 export default router;

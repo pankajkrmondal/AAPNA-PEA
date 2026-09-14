@@ -275,7 +275,9 @@ CREATE TABLE IF NOT EXISTS pea_email_log (
   CONSTRAINT pea_email_log_status_chk CHECK (status IN ('sent', 'failed', 'suppressed')),
   CONSTRAINT pea_email_log_type_chk   CHECK (
     email_type IN ('evaluation_link', 'reminder', 'acknowledgement', 'extend_alert',
-                   'hr_notification', 'it_report', 'manager_portal', 'deadline_alert')
+                   'hr_notification', 'it_report', 'manager_portal', 'deadline_alert',
+                   -- account email (accountEmail.service.js)
+                   'user_created', 'user_password_changed', 'password_reset_request')
   )
 );
 CREATE INDEX IF NOT EXISTS idx_pea_email_log_cycle ON pea_email_log (cycle_id);

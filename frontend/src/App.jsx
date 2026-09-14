@@ -212,9 +212,14 @@ function Protected({ module, children }) {
   return <Shell module={module}>{children}</Shell>;
 }
 
-/** The Admin Portal — its own shell, admin tier only, as ATS's AdminRoute. */
+/**
+ * The Admin Portal — its own shell, admin tier only, as ATS's AdminRoute.
+ * The sign-in check lives here, not in the route: a check in App's JSX is
+ * evaluated once and would still say "signed out" after the user signs in.
+ */
 function AdminPortal() {
   const user = useCurrentUser();
+  if (!signedIn()) return <Navigate to="/login" replace />;
   if (!isAdminTier(user.role)) return <Navigate to={homePath(user)} replace />;
   return (
     <AdminLayout user={user}>
@@ -250,7 +255,7 @@ export default function App() {
       <Route path="/settings" element={<Protected module="settings"><Settings /></Protected>} />
       <Route path="/email-templates" element={<Protected module="email_templates"><EmailTemplates /></Protected>} />
       <Route path="/no-access" element={<Protected><NoAccess /></Protected>} />
-      <Route path="/admin" element={signedIn() ? <AdminPortal /> : <Navigate to="/login" replace />} />
+      <Route path="/admin" element={<AdminPortal />} />
       {/* Users moved into the Admin Portal; old bookmarks still arrive. */}
       <Route path="/users" element={<Navigate to="/admin" replace />} />
       {/* PUBLIC — a reporting manager's own link. No HR shell, no HR session. */}

@@ -112,10 +112,14 @@ export async function getFormData(token) {
 
   // First open: stamp it, so HR can see the manager received and opened the
   // link even before they submit. The old system had no visibility here at all.
+  // An emailed link is 'email_sent', so that must move to 'opened' too.
   if (!cycle.opened_at) {
     await prisma.pea_evaluation_cycles.update({
       where: { id: cycle.id },
-      data: { opened_at: new Date(), status: cycle.status === 'pending' ? 'opened' : cycle.status },
+      data: {
+        opened_at: new Date(),
+        status: ['pending', 'email_sent'].includes(cycle.status) ? 'opened' : cycle.status,
+      },
     });
   }
 

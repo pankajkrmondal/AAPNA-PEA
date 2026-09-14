@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
 import { authenticate, requireMinRole, requireModule } from '../middleware/auth.js';
+import { noStore } from '../middleware/noStore.js';
 import { createSelfViewLink, getSelfView, currentLevel } from '../services/selfView.service.js';
 
 /** HR side, mounted at /api/self-view-links. Issued from an employee's page. */
@@ -24,7 +25,8 @@ selfViewLinksRouter.post(
 export const selfViewPublicRouter = Router();
 
 selfViewPublicRouter.use(
-  rateLimit({ windowMs: 10 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false })
+  rateLimit({ windowMs: 10 * 60 * 1000, max: 60, standardHeaders: true, legacyHeaders: false }),
+  noStore
 );
 
 selfViewPublicRouter.get('/:token', catchAsync(async (req, res) => success(res, await getSelfView(req.params.token))));

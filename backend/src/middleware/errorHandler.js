@@ -39,6 +39,16 @@ export function errorHandler(err, req, res, _next) {
     message = 'Database schema is out of date — a DDL file may not have been applied';
   }
 
+  // Upload limits are the user's input being refused, not a server fault.
+  if (err.name === 'MulterError') {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      statusCode = 413;
+      message = 'File too large. The limit is 10 MB.';
+    } else {
+      statusCode = 400;
+    }
+  }
+
   if (err.name === 'JsonWebTokenError') {
     statusCode = 401;
     message = 'Invalid token';
@@ -60,7 +70,7 @@ export function errorHandler(err, req, res, _next) {
     logger.warn(message, logMeta);
   }
 
-  const isOperational = err instanceof AppError || err.isOperational;
+  const isOperational = err instanceof AppError || err.isOperational || err.name === 'MulterError';
   const body = {
     status: `${statusCode}`.startsWith('4') ? 'fail' : 'error',
     message: config.isProduction && !isOperational ? 'Something went wrong' : message,

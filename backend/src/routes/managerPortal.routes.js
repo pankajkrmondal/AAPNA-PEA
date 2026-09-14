@@ -3,6 +3,7 @@ import rateLimit from 'express-rate-limit';
 import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
 import { authenticate, requireMinRole, requireModule } from '../middleware/auth.js';
+import { noStore } from '../middleware/noStore.js';
 import {
   listManagers,
   listLinks,
@@ -61,7 +62,8 @@ managerPublicRouter.use(
     standardHeaders: true,
     legacyHeaders: false,
     message: 'Too many requests. Please wait a few minutes and try again.',
-  })
+  }),
+  noStore
 );
 
 managerPublicRouter.get('/:token', catchAsync(async (req, res) => success(res, await getTeamView(req.params.token))));

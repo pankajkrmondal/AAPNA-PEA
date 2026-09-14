@@ -58,6 +58,9 @@ export const CONFIRMATION_STATUSES = Object.freeze([
   'Extend for 2 months',
 ]);
 
+/** Decisions that end the probation, so no further evaluation is wanted. */
+const ENDS_PROBATION = Object.freeze(['Confirmed', 'Not Confirmed']);
+
 /** Normalise an email for storage and comparison. */
 const normEmail = (v) => (v || '').trim().toLowerCase() || null;
 
@@ -283,6 +286,23 @@ export async function updateEmployee(id, input, actor, source = 'manual') {
 
     const changes = await recordChanges(employeeId, before, data, actor, source, tx);
 
+    // Confirmed / Not Confirmed ends the probation, whether the manager chose it
+    // on the form or HR recorded it here: close whatever is still outstanding,
+    // exactly as evaluation.service.submit() does.
+    let closedEvaluations = 0;
+    if (
+      ENDS_PROBATION.includes(data.confirmation_status) &&
+      data.confirmation_status !== before.confirmation_status
+    ) {
+      ({ count: closedEvaluations } = await tx.pea_evaluation_cycles.updateMany({
+        where: { employee_id: employeeId, status: { in: ['pending', 'email_sent', 'opened'] } },
+        data: { status: 'skipped', modified_at: new Date() },
+      }));
+      if (closedEvaluations) {
+        logger.info(`Employee ${employeeId} ${data.confirmation_status}: ${closedEvaluations} open evaluation(s) closed`);
+      }
+    }
+
     let rescheduled = null;
     if (reschedule) {
       rescheduled = await regenerateCycles(employeeId, tx);
@@ -298,7 +318,7 @@ export async function updateEmployee(id, input, actor, source = 'manual') {
       include: { cycles: { orderBy: { seq_no: 'asc' } } },
     });
 
-    return { ...fresh, _meta: { auditedChanges: changes, rescheduled } };
+    return { ...fresh, _meta: { auditedChanges: changes, rescheduled, closedEvaluations } };
   });
 }
 

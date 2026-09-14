@@ -174,7 +174,9 @@ export default function ManagerLinks() {
                       <Button size="small" icon={<CopyOutlined />} onClick={() => copy(r.url)} />
                     </Tooltip>
                     <Popconfirm title="Revoke this link?" description="It stops working immediately." onConfirm={() => revoke.mutate(r.id)}>
-                      <Tooltip title="Revoke link: asks to confirm, then cancels this link so it stops working immediately. Create a new link to give the manager access again.">
+                      {/* Below the button: the confirmation opens above it, and a tooltip
+                          on top of it would sit over the OK button and swallow the click. */}
+                      <Tooltip placement="bottom" title="Revoke link: asks to confirm, then cancels this link so it stops working immediately. Create a new link to give the manager access again.">
                         <Button size="small" danger icon={<StopOutlined />} />
                       </Tooltip>
                     </Popconfirm>

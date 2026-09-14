@@ -255,7 +255,8 @@ model pea_email_log {
   id              BigInt  @id @default(autoincrement())
   cycle_id        BigInt?
   employee_id     BigInt?
-  /// evaluation_link | reminder | acknowledgement | extend_alert | hr_notification
+  /// evaluation_link | reminder | acknowledgement | extend_alert | hr_notification | it_report |
+  /// manager_portal | deadline_alert | user_created | user_password_changed | password_reset_request
   email_type      String  @db.VarChar(50)
   recipient_email String  @db.VarChar(255)
   cc_emails       String?
