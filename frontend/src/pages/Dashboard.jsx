@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Row, Col, Card, Table, Tag, Space, Button, Alert, Spin, App,
+  Row, Col, Card, Table, Tag, Space, Button, Alert, Spin, App, Tooltip,
 } from 'antd';
 import {
   WarningOutlined, ClockCircleOutlined, CheckCircleOutlined, DownloadOutlined,
@@ -10,12 +10,20 @@ import {
 } from '@ant-design/icons';
 import api, { unwrap, TOKEN_KEY, USER_KEY } from '../api.js';
 import StatCard from '../components/StatCard.jsx';
+import HintIcon from '../components/HintIcon.jsx';
 
 const fmt = (d) => (d ? String(d).slice(0, 10) : '—');
 
 const greeting = (h) => (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening');
 
 const ratio = (part, whole) => (whole ? part / whole : 0);
+
+const SectionTitle = ({ children, hint }) => (
+  <span className="pea-section-title">
+    {children}
+    <HintIcon title={hint} />
+  </span>
+);
 
 function Clock() {
   const [now, setNow] = useState(() => new Date());
@@ -97,18 +105,24 @@ export default function Dashboard() {
         </div>
 
         <div className="pea-hero-actions">
-          <Button icon={<DownloadOutlined />} onClick={download}>Export to Excel</Button>
-          <Button icon={<EyeOutlined />} onClick={() => sweep.mutate(true)} loading={sweep.isPending}>
-            Preview sweep
-          </Button>
-          <Button
-            type="primary"
-            icon={<SyncOutlined />}
-            onClick={() => sweep.mutate(false)}
-            loading={sweep.isPending}
-          >
-            Run sweep now
-          </Button>
+          <Tooltip title="Download a snapshot in the old master workbook layout (Sheet1 summary, Sheet2 ratings). Changes nothing.">
+            <Button icon={<DownloadOutlined />} onClick={download}>Export to Excel</Button>
+          </Tooltip>
+          <Tooltip title="Dry run: shows how many evaluation emails and reminders would be sent now, and probations near or past their deadline. Nothing is sent or changed.">
+            <Button icon={<EyeOutlined />} onClick={() => sweep.mutate(true)} loading={sweep.isPending}>
+              Preview sweep
+            </Button>
+          </Tooltip>
+          <Tooltip title="Runs the real daily sweep now instead of at 11:00: sends due evaluation emails and reminders, and raises deadline alerts. Emails ARE sent.">
+            <Button
+              type="primary"
+              icon={<SyncOutlined />}
+              onClick={() => sweep.mutate(false)}
+              loading={sweep.isPending}
+            >
+              Run sweep now
+            </Button>
+          </Tooltip>
         </div>
       </section>
 
@@ -118,6 +132,7 @@ export default function Dashboard() {
           value={emp.active}
           icon={<TeamOutlined />}
           accent="green"
+          hint="Employees whose employment is Active. The footer shows everyone on record and how many are marked Left."
           foot={`${emp.total} on record · ${emp.left} left`}
           share={ratio(emp.active, emp.total)}
         />
@@ -126,6 +141,7 @@ export default function Dashboard() {
           value={emp.inProbation}
           icon={<SolutionOutlined />}
           accent="blue"
+          hint="Active employees with no confirmation decision yet."
           foot={`${emp.confirmed} confirmed · ${emp.extended} extended`}
           share={ratio(emp.inProbation, emp.active)}
         />
@@ -152,6 +168,7 @@ export default function Dashboard() {
           value={ev.dueInNext14Days}
           icon={<CalendarOutlined />}
           accent="violet"
+          hint="Evaluations not yet sent that fall due in the next 14 days."
           foot="Coming up in the next fortnight"
           share={ratio(ev.dueInNext14Days, ev.total)}
         />
@@ -161,6 +178,7 @@ export default function Dashboard() {
           suffix={`/ ${ev.total}`}
           icon={<CheckCircleOutlined />}
           accent="emerald"
+          hint="Submitted evaluations out of all evaluations. The footer shows the average rating across completed ones."
           foot={
             ev.averageRating != null
               ? `Average rating ${ev.averageRating.toFixed(2)}`
@@ -254,7 +272,11 @@ export default function Dashboard() {
           <Card
             className="pea-card"
             size="small"
-            title={<span className="pea-section-title">Overdue — nobody has been asked</span>}
+            title={
+              <SectionTitle hint="Up to 25 evaluations due today or earlier whose email has not been sent, oldest first. Normally the next sweep sends them. If one stays here, check for missing RM/PL details, or whether the scheduler or email is off (see the yellow header tag). Late: orange up to 14 days, red beyond.">
+                Overdue — nobody has been asked
+              </SectionTitle>
+            }
             extra={<span className="pea-count">{data.overdueList.length}</span>}
           >
             <Table
@@ -287,7 +309,11 @@ export default function Dashboard() {
           <Card
             className="pea-card"
             size="small"
-            title={<span className="pea-section-title">Awaiting a manager&apos;s response</span>}
+            title={
+              <SectionTitle hint="Up to 25 evaluations sent to the manager and not yet submitted, longest waiting first. Use it to know which managers to chase. Chased = reminders sent; a blue 'opened' tag means the manager opened the form.">
+                Awaiting a manager&apos;s response
+              </SectionTitle>
+            }
             extra={<span className="pea-count">{data.awaitingList.length}</span>}
           >
             <Table
@@ -332,7 +358,11 @@ export default function Dashboard() {
           <Card
             className="pea-card"
             size="small"
-            title={<span className="pea-section-title">Coming up in the next 14 days</span>}
+            title={
+              <SectionTitle hint="Up to 25 evaluations falling due in the next two weeks, soonest first. Plan ahead: warn a manager, or fix a wrong DOJ or manager before the email goes out.">
+                Coming up in the next 14 days
+              </SectionTitle>
+            }
             extra={<span className="pea-count pea-count-muted">{data.upcomingList.length}</span>}
           >
             <Table
@@ -359,7 +389,11 @@ export default function Dashboard() {
           <Card
             className="pea-card"
             size="small"
-            title={<span className="pea-section-title">Recently submitted</span>}
+            title={
+              <SectionTitle hint="The last 10 evaluations submitted by managers, newest first. Average is out of 5 (green ≥ 3.5, blue ≥ 2.5, red below). Decision appears only on a final evaluation: green for Confirmed, orange otherwise.">
+                Recently submitted
+              </SectionTitle>
+            }
             extra={<span className="pea-count pea-count-muted">{data.recentSubmissions.length}</span>}
           >
             <Table

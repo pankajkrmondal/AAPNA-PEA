@@ -1,222 +1,33 @@
 /**
- * emailTemplate.service.js — the bodies managers actually receive.
+ * emailTemplate.service.js — every email PEA sends, editable from the site.
  *
- * Wording, layout and the rating table are carried over from the exported
- * Power Automate flow so cutover is invisible to the recipient (plan R9). The
- * greeting, the "As per the performance evaluation process at AAPNA…" sentence,
- * the period line and the rating structure table are all as they were.
+ * Each template is a SUBJECT and a BODY FRAGMENT containing {{placeholders}}.
+ * The AAPNA header, logo, sign-off and footer are added by
+ * emailLayout.service.js at send time — the same shell ATS uses — so HR edits
+ * only the wording and can never break the design. The default wording is the
+ * text carried over from the Power Automate flows (plan R9).
  *
- * Two things deliberately changed, and both remove a step the manager used to
- * have to get right:
+ * Storage: an edit is saved in pea_settings as `template.<key>.subject` and
+ * `template.<key>.body`. With no row the built-in default below is used, and
+ * "Reset to default" deletes the rows. No table of its own, so no DDL.
  *
- *   - The old "Points to be followed" told them to copy the employee's email
- *     into the form and pick the evaluation number by hand. The token carries
- *     both now, so that instruction is gone.
- *   - The employee's name and the period are stated in the button context
- *     rather than only in prose, because the form now shows them too.
- *
- * Defaults live here; overrides live in pea_settings under
- * `template.<key>.subject` / `.body`, so HR can reword without a deployment —
- * the same "changeable without development" principle behind
- * pea_evaluation_params.
+ * Placeholders come in two kinds:
+ *   - text   {{employee_name}} — HTML-escaped when inserted, so a name, a
+ *            remark or a note typed by someone can never inject markup;
+ *   - blocks {{form_button}}, {{rating_table}}, {{overdue_table}} … — HTML the
+ *            code builds (a button carrying the live link, a table built from
+ *            a list). HR places, moves or deletes them like any other word.
+ *            This is what makes even the deadline digest editable: its list is
+ *            one block. The same idea as {{teams_line}} in ATS.
  */
 import prisma from '../config/database.js';
 import config from '../config/index.js';
+import AppError from '../utils/AppError.js';
 import { formatDisplay } from '../utils/dateUtils.js';
 import { RATING_SCALE } from '../config/ratingScale.js';
+import { wrapBrandedEmail, brandedWrapperParts, BRAND } from './emailLayout.service.js';
 
-/** Shared CSS, lifted from the flow's `Styling` compose action. */
-const STYLE = `
-  body, table, th, td { font-family: Calibri, sans-serif; font-size: 14.2px; line-height: 1.4; color:#22272b; }
-  table.r { border-collapse: collapse; width: auto; margin: 8px 0 14px; }
-  table.r th, table.r td { border: 1px solid #ccc; padding: 7px 10px; text-align: left; }
-  table.r th { background-color: #345C72; color: white; }
-  .btn { display:inline-block; background:#345C72; color:#ffffff !important; text-decoration:none;
-         padding:12px 26px; border-radius:5px; font-weight:bold; }
-  .muted { color:#5b6b78; }
-`;
-
-/**
- * Plain-text signature.
- *
- * The original embedded a base64 logo and half a dozen Outlook safelink-wrapped
- * social icons — tens of kilobytes on every send, and the safelinks were tied
- * to one sender's tenant rewrite. A text signature says the same thing, renders
- * everywhere, and keeps the message small.
- */
-const SIGNATURE = `
-  <p style="margin-top:22px">
-    <strong style="color:#414042">Thanks &amp; Regards,</strong><br>
-    <span style="color:#414042">AAPNA | HR Team</span>
-  </p>`;
-
-const ratingTable = () => `
-  <table class="r">
-    <tr><th>Rating</th><th style="text-align:center">Score</th><th style="text-align:center">%age</th></tr>
-    ${RATING_SCALE.map(
-      (r) =>
-        `<tr><td>${r.label} <span class="muted">(${r.detail})</span></td>
-             <td style="text-align:center"><strong>${r.value}</strong></td>
-             <td style="text-align:center">${r.percent}</td></tr>`
-    ).join('')}
-  </table>`;
-
-const shell = (inner) =>
-  `<!DOCTYPE html><html><head><meta charset="utf-8"><style>${STYLE}</style></head>
-   <body>${inner}${SIGNATURE}</body></html>`;
-
-/** Built-in templates. Each returns { subject, body }. */
-const TEMPLATES = {
-  /** The evaluation request — the flow's "Evaluation N" email. */
-  evaluation_link: (v) => ({
-    subject: `Performance Evaluation ${v.seqNo} - ${v.employeeName}`,
-    body: shell(`
-      <p>Hello ${v.rmName},</p>
-      <p>Greetings!</p>
-      <p>As per the performance evaluation process at AAPNA, we request you to evaluate the
-         performance of <strong>${v.employeeName}</strong> (email id: ${v.officeEmail})
-         who joined us on <strong>${v.dojLabel}</strong>.</p>
-      <p>Evaluation will be done on the parameters shared in the form for
-         <strong>${v.periodLabel}</strong>.</p>
-
-      <p style="margin:22px 0"><a class="btn" href="${v.formUrl}">Open evaluation form</a></p>
-      <p class="muted" style="font-size:13px">
-        If the button does not work, paste this link into your browser:<br>${v.formUrl}
-      </p>
-
-      <p><strong>Please note:</strong></p>
-      <ol>
-        <li>The form already knows who you are rating and which evaluation this is — there is
-            nothing to fill in by hand.</li>
-        <li>Please give a rating and a comment against each parameter; the comments are what
-            help ${v.firstName} improve.</li>
-        <li>The link can be submitted once.</li>
-      </ol>
-
-      <p><strong>Rating Structure:</strong></p>
-      ${ratingTable()}`),
-  }),
-
-  /** Reminder. Same link, shorter body. */
-  reminder: (v) => ({
-    subject: `Reminder ${v.reminderNumber} - Performance Evaluation ${v.seqNo} - ${v.employeeName}`,
-    body: shell(`
-      <p>Hello ${v.rmName},</p>
-      <p>This is a gentle reminder that the performance evaluation for
-         <strong>${v.employeeName}</strong> covering <strong>${v.periodLabel}</strong>
-         is still awaiting your response.</p>
-      <p>It was sent on ${v.sentLabel}.</p>
-
-      <p style="margin:22px 0"><a class="btn" href="${v.formUrl}">Open evaluation form</a></p>
-      <p class="muted" style="font-size:13px">
-        If the button does not work, paste this link into your browser:<br>${v.formUrl}
-      </p>
-
-      <p>If you have already responded, please ignore this message.</p>`),
-  }),
-
-  /** HR notification when a manager submits. */
-  acknowledgement: (v) => ({
-    subject: `Performance Evaluation ${v.seqNo} submitted - ${v.employeeName}`,
-    body: shell(`
-      <p>Hello,</p>
-      <p><strong>${v.submittedBy || v.rmName}</strong> has submitted performance evaluation
-         ${v.seqNo} for <strong>${v.employeeName}</strong>.</p>
-      <table class="r">
-        <tr><th>Employee</th><td>${v.employeeName}</td></tr>
-        <tr><th>Evaluation</th><td>${v.seqNo}</td></tr>
-        <tr><th>Period</th><td>${v.periodLabel}</td></tr>
-        <tr><th>Average rating</th><td><strong>${v.average} / 5</strong></td></tr>
-        ${v.confirmation ? `<tr><th>Decision</th><td><strong>${v.confirmation}</strong></td></tr>` : ''}
-      </table>
-      ${v.remarks ? `<p><strong>Overall remarks:</strong><br>${v.remarks}</p>` : ''}`),
-  }),
-
-  /** The flow's "Alert - Performance Evaluation Extended" email. */
-  extend_alert: (v) => ({
-    subject: `Alert - Performance Evaluation extended for ${v.employeeName}`,
-    body: shell(`
-      <p>Hello,</p>
-      <p>The probation period for <strong>${v.employeeName}</strong> has been
-         <strong>${v.confirmation}</strong> by ${v.submittedBy || v.rmName}.</p>
-      <p>${v.extensionCycles} further evaluation${v.extensionCycles === 1 ? '' : 's'}
-         ${v.extensionCycles === 1 ? 'has' : 'have'} been scheduled automatically, and the
-         reporting manager will receive a link when ${v.extensionCycles === 1 ? 'it is' : 'they are'} due.</p>`),
-  }),
-
-  /** Generic HR notice. */
-  hr_notification: (v) => ({
-    subject: v.subject || 'Performance Evaluation notification',
-    body: shell(`<p>Hello,</p><p>${v.message || ''}</p>`),
-  }),
-
-  /**
-   * "Report to IT" — Entra holds a wrong value. Plan §6.5 Part 3: HR fixes it
-   * locally in PEA, and this asks IT to fix it at source so every other
-   * Microsoft-connected system is corrected too.
-   */
-  it_report: (v) => ({
-    subject: `Directory correction requested — ${v.employeeName}`,
-    body: shell(`
-      <p>Hello IT team,</p>
-      <p>HR has found a value in Microsoft Entra that appears to be wrong, and has
-         corrected it locally in the Performance Evaluation system. Please update the
-         directory so other systems pick up the correct value as well.</p>
-      <table class="r">
-        <tr><th>Employee</th><td>${esc(v.employeeName)}</td></tr>
-        <tr><th>Account</th><td>${esc(v.accountEmail)}</td></tr>
-        <tr><th>Field</th><td>${esc(v.fieldLabel)}</td></tr>
-        <tr><th>Entra currently holds</th><td>${esc(v.azureValue) || '<em>(blank)</em>'}</td></tr>
-        <tr><th>Correct value</th><td><strong>${esc(v.correctValue)}</strong></td></tr>
-        <tr><th>Reported by</th><td>${esc(v.reportedBy)}</td></tr>
-      </table>
-      ${v.note ? `<p><strong>Note:</strong><br>${esc(v.note)}</p>` : ''}
-      <p class="muted">Once the directory is updated, HR can unlock the field in PEA and it
-         will follow Entra again.</p>`),
-  }),
-
-  /** A reporting manager's "my team" link. */
-  manager_portal: (v) => ({
-    subject: 'Your team’s performance evaluations',
-    body: shell(`
-      <p>Hello ${esc(v.rmName) || ''},</p>
-      <p>You can now see every performance evaluation for the people who report to you in
-         one place — what is due, what is waiting for you, and what you have already
-         submitted.</p>
-      <p style="margin:22px 0"><a class="btn" href="${v.portalUrl}">Open my team</a></p>
-      <p class="muted" style="font-size:13px">
-        If the button does not work, paste this link into your browser:<br>${v.portalUrl}
-      </p>
-      <p class="muted">No login is needed. The link is personal to you and expires on
-         ${esc(v.expiresLabel)}.</p>`),
-  }),
-
-  /** Daily HR digest of probations past their confirmation deadline. Plan §2.7. */
-  deadline_alert: (v) => ({
-    subject: `${(v.overdue || []).length} probation(s) past the confirmation deadline`,
-    body: shell(`
-      <p>Hello,</p>
-      <p>The following probations have passed their confirmation deadline — 6 months from
-         the date of joining, or 8 once extended — with no final decision recorded.</p>
-      <table class="r">
-        <tr><th>Employee</th><th>Joined</th><th>Deadline</th><th>Days overdue</th><th>Manager</th></tr>
-        ${(v.overdue || [])
-          .map(
-            (e) => `<tr><td>${esc(e.full_name)}</td><td>${e.doj}</td><td>${e.deadline}</td>
-                        <td style="text-align:center"><strong>${e.daysOverdue}</strong></td>
-                        <td>${esc(e.rm_name)}</td></tr>`
-          )
-          .join('')}
-      </table>
-      ${
-        (v.dueSoon || []).length
-          ? `<p>A further <strong>${v.dueSoon.length}</strong> reach their deadline within two weeks.</p>`
-          : ''
-      }`),
-  }),
-};
-
-/** Escape a value for HTML. Several of the new templates carry HR-typed text. */
+/** Escape a value for HTML. */
 function esc(value) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -225,170 +36,497 @@ function esc(value) {
     .replace(/"/g, '&quot;');
 }
 
-/**
- * Substitute {{placeholders}} in an HR-supplied override.
- * @param {string} text
- * @param {object} vars
- * @returns {string}
- */
-function interpolate(text, vars) {
-  return String(text).replace(/\{\{\s*(\w+)\s*\}\}/g, (_m, key) =>
-    vars[key] === undefined || vars[key] === null ? '' : String(vars[key])
-  );
+const TOKEN = /\{\{\s*(\w+)\s*\}\}/g;
+
+/** Placeholder names used in a piece of text. */
+export function usedPlaceholders(text) {
+  return [...String(text || '').matchAll(TOKEN)].map((m) => m[1]);
 }
 
-/**
- * Build the variables every template can use.
- * @param {object} cycle - with `employee` included
- * @param {object} [extra]
- * @returns {object}
- */
-export function buildVars(cycle, extra = {}) {
-  const employee = cycle.employee || {};
-  const base = config.frontendUrl.replace(/\/$/, '');
+/** What each placeholder is, for the editor. `block` = HTML built by the code. */
+export const PLACEHOLDERS = Object.freeze({
+  employee_name: { label: 'Employee name' },
+  first_name: { label: 'Employee first name' },
+  employee_email: { label: 'Employee office email' },
+  joining_date: { label: 'Date of joining' },
+  manager_name: { label: 'Reporting manager name' },
+  manager_email: { label: 'Reporting manager email' },
+  project_leader_email: { label: 'Project leader email' },
+  evaluation_number: { label: 'Evaluation number (1, 2, 3 …)' },
+  evaluation_period: { label: 'Period being evaluated' },
+  due_date: { label: 'Evaluation due date' },
+  sent_date: { label: 'Date the evaluation was sent' },
+  reminder_number: { label: 'Reminder number (1 or 2)' },
+  form_link: { label: 'Evaluation form link, as plain text' },
+  form_button: { label: 'Green "Open evaluation form" button with the link', block: true },
+  rating_table: { label: 'Rating structure table (1–5)', block: true },
+  average_rating: { label: 'Average rating given' },
+  decision: { label: 'Confirmation decision (Confirmed, Extend for 1 month …)' },
+  submitted_by: { label: 'Who submitted the evaluation' },
+  remarks: { label: 'Manager’s overall remarks' },
+  evaluation_summary_table: { label: 'Table: employee, evaluation, period, average, decision', block: true },
+  remarks_block: { label: '"Overall remarks" paragraph — only when there are remarks', block: true },
+  extension_summary: { label: 'Sentence saying how many extra evaluations were scheduled' },
+  account_email: { label: 'Microsoft account email' },
+  field_label: { label: 'Which field is wrong' },
+  entra_value: { label: 'Value Microsoft Entra holds now' },
+  correct_value: { label: 'Correct value' },
+  reported_by: { label: 'Who reported it' },
+  note: { label: 'Note for IT' },
+  it_details_table: { label: 'Table: employee, account, field, current and correct value', block: true },
+  note_block: { label: '"Note" paragraph — only when a note was written', block: true },
+  portal_link: { label: 'Manager portal link, as plain text' },
+  portal_button: { label: 'Green "Open my team" button with the link', block: true },
+  expires_date: { label: 'Date the link expires' },
+  overdue_count: { label: 'Number of overdue probations' },
+  due_soon_count: { label: 'Number due within two weeks' },
+  today: { label: 'Today’s date' },
+  overdue_table: { label: 'Table of every overdue probation', block: true },
+  due_soon_line: { label: '"A further N reach their deadline…" — only when there are some', block: true },
+});
+
+export const CATEGORY_LABELS = Object.freeze({
+  manager: 'To reporting manager',
+  hr: 'To HR',
+  it: 'To IT',
+});
+
+/** The built-in templates, in the order the screen lists them. */
+const TEMPLATES = Object.freeze({
+  evaluation_link: {
+    name: 'Evaluation request',
+    category: 'manager',
+    recipient: 'Reporting manager · CC project leader and the CC list',
+    description: 'Sent when an evaluation is due.',
+    placeholders: [
+      'employee_name', 'first_name', 'employee_email', 'joining_date', 'manager_name', 'project_leader_email',
+      'evaluation_number', 'evaluation_period', 'due_date', 'form_link', 'form_button', 'rating_table',
+    ],
+    requiredAny: [['form_button', 'form_link']],
+    subject: 'Performance Evaluation {{evaluation_number}} - {{employee_name}}',
+    body: `<p>Hello {{manager_name}},</p>
+<p>Greetings!</p>
+<p>As per the performance evaluation process at AAPNA, we request you to evaluate the performance of <strong>{{employee_name}}</strong> (email id: {{employee_email}}) who joined us on <strong>{{joining_date}}</strong>.</p>
+<p>Evaluation will be done on the parameters shared in the form for <strong>{{evaluation_period}}</strong>.</p>
+{{form_button}}
+<p><strong>Please note:</strong></p>
+<ol>
+<li>The form already knows who you are rating and which evaluation this is — there is nothing to fill in by hand.</li>
+<li>Please give a rating and a comment against each parameter; the comments are what help {{first_name}} improve.</li>
+<li>The link can be submitted once.</li>
+</ol>
+<p><strong>Rating Structure:</strong></p>
+{{rating_table}}`,
+  },
+
+  reminder: {
+    name: 'Evaluation reminder',
+    category: 'manager',
+    recipient: 'Reporting manager · CC project leader and the CC list',
+    description: 'Sent when an evaluation is still not submitted (reminder 1 and 2).',
+    placeholders: [
+      'employee_name', 'first_name', 'manager_name', 'evaluation_number', 'evaluation_period', 'sent_date',
+      'reminder_number', 'form_link', 'form_button', 'rating_table',
+    ],
+    requiredAny: [['form_button', 'form_link']],
+    subject: 'Reminder {{reminder_number}} - Performance Evaluation {{evaluation_number}} - {{employee_name}}',
+    body: `<p>Hello {{manager_name}},</p>
+<p>This is a gentle reminder that the performance evaluation for <strong>{{employee_name}}</strong> covering <strong>{{evaluation_period}}</strong> is still awaiting your response.</p>
+<p>It was sent on {{sent_date}}.</p>
+{{form_button}}
+<p>If you have already responded, please ignore this message.</p>`,
+  },
+
+  manager_portal: {
+    name: 'Manager portal link',
+    category: 'manager',
+    recipient: 'Reporting manager',
+    description: 'Sent when HR issues a manager their "my team" link.',
+    placeholders: ['manager_name', 'portal_link', 'portal_button', 'expires_date'],
+    requiredAny: [['portal_button', 'portal_link']],
+    subject: 'Your team’s performance evaluations',
+    body: `<p>Hello {{manager_name}},</p>
+<p>You can now see every performance evaluation for the people who report to you in one place — what is due, what is waiting for you, and what you have already submitted.</p>
+{{portal_button}}
+<p>No login is needed. The link is personal to you and expires on {{expires_date}}.</p>`,
+  },
+
+  acknowledgement: {
+    name: 'Evaluation submitted',
+    category: 'hr',
+    recipient: 'HR notification recipients',
+    description: 'Sent when a manager submits an evaluation.',
+    placeholders: [
+      'employee_name', 'first_name', 'employee_email', 'manager_name', 'evaluation_number', 'evaluation_period',
+      'average_rating', 'decision', 'submitted_by', 'remarks', 'evaluation_summary_table', 'remarks_block',
+    ],
+    requiredAny: [],
+    subject: 'Performance Evaluation {{evaluation_number}} submitted - {{employee_name}}',
+    body: `<p>Hello,</p>
+<p><strong>{{submitted_by}}</strong> has submitted performance evaluation {{evaluation_number}} for <strong>{{employee_name}}</strong>.</p>
+{{evaluation_summary_table}}
+{{remarks_block}}`,
+  },
+
+  extend_alert: {
+    name: 'Probation extended',
+    category: 'hr',
+    recipient: 'HR notification recipients',
+    description: 'Sent when a manager extends a probation.',
+    placeholders: [
+      'employee_name', 'first_name', 'manager_name', 'evaluation_number', 'decision', 'submitted_by', 'extension_summary',
+    ],
+    requiredAny: [],
+    subject: 'Alert - Probation extended for {{employee_name}}',
+    body: `<p>Hello,</p>
+<p>The probation period for <strong>{{employee_name}}</strong> has been extended — <strong>{{decision}}</strong> — by {{submitted_by}}.</p>
+<p>{{extension_summary}}</p>`,
+  },
+
+  deadline_alert: {
+    name: 'Confirmation deadline digest',
+    category: 'hr',
+    recipient: 'HR notification recipients',
+    description: 'Daily list of probations past their confirmation deadline (when switched on in Settings).',
+    placeholders: ['overdue_count', 'due_soon_count', 'today', 'overdue_table', 'due_soon_line'],
+    requiredAny: [['overdue_table']],
+    subject: '{{overdue_count}} probation(s) past the confirmation deadline — {{today}}',
+    body: `<p>Hello,</p>
+<p>The following probations have passed their confirmation deadline — 6 months from the date of joining, or 8 once extended — with no final decision recorded.</p>
+{{overdue_table}}
+{{due_soon_line}}`,
+  },
+
+  it_report: {
+    name: 'Report to IT',
+    category: 'it',
+    recipient: '"Report to IT" recipients · CC HR',
+    description: 'Sent when HR reports a wrong value in Microsoft Entra.',
+    placeholders: [
+      'employee_name', 'account_email', 'field_label', 'entra_value', 'correct_value', 'reported_by', 'note',
+      'it_details_table', 'note_block',
+    ],
+    requiredAny: [['it_details_table', 'correct_value']],
+    subject: 'Directory correction requested — {{employee_name}}',
+    body: `<p>Hello IT team,</p>
+<p>HR has found a value in Microsoft Entra that appears to be wrong, and has corrected it locally in the Performance Evaluation system. Please update the directory so other systems pick up the correct value as well.</p>
+{{it_details_table}}
+{{note_block}}
+<p>Once the directory is updated, HR can unlock the field in PEA and it will follow Entra again.</p>`,
+  },
+});
+
+export const TEMPLATE_DEFS = TEMPLATES;
+export const TEMPLATE_KEYS = Object.keys(TEMPLATES);
+
+// ── Blocks — the HTML the code builds ─────────────────────────────────────
+
+const TH = `background:${BRAND.accent};color:#ffffff;border:1px solid #d1d5db;padding:8px 12px;text-align:left;font-size:14px`;
+const TD = `border:1px solid #d1d5db;padding:8px 12px;font-size:14px;color:${BRAND.text}`;
+
+const table = (rows) =>
+  `<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;margin:10px 0 16px 0">${rows}</table>`;
+
+const pairs = (list) => list.map(([k, v]) => `<tr><th style="${TH}">${k}</th><td style="${TD}">${v}</td></tr>`).join('');
+
+const multiline = (text) => esc(text).replace(/\r?\n/g, '<br>');
+
+function button(url, label) {
+  if (!url) return '';
+  return `<p style="margin:22px 0 10px 0"><a href="${esc(url)}" style="background:${BRAND.accent};color:#ffffff;padding:12px 26px;text-decoration:none;border-radius:8px;font-weight:700;display:inline-block">${label}</a></p>`
+    + `<p style="margin:0 0 16px 0;font-size:13px;color:${BRAND.muted}">If the button does not work, paste this link into your browser:<br>`
+    + `<a href="${esc(url)}" style="color:${BRAND.accent};word-break:break-all">${esc(url)}</a></p>`;
+}
+
+function buildBlocks(v) {
+  const overdue = v._overdue || [];
+  const dueSoon = v._dueSoon || [];
 
   return {
-    employeeName: employee.full_name,
-    firstName: (employee.full_name || '').split(' ')[0],
-    officeEmail: employee.office_email,
-    dojLabel: employee.doj ? formatDisplay(employee.doj) : '',
-    rmName: employee.rm_name,
-    rmEmail: employee.rm_email,
-    plEmail: employee.pl_email,
-    seqNo: cycle.seq_no,
-    isExtension: cycle.is_extension,
-    periodLabel:
-      cycle.period_from && cycle.period_to
-        ? `${formatDisplay(cycle.period_from)} to ${formatDisplay(cycle.period_to)}`
-        : '',
-    dueLabel: cycle.due_date ? formatDisplay(cycle.due_date) : '',
-    sentLabel: cycle.sent_at ? formatDisplay(cycle.sent_at) : '',
-    // The public form lives on the API host, not the SPA — it is server
-    // rendered. Managers must reach it without a login.
-    formUrl: `${base.replace(/\/+$/, '')}/api/evaluation/${cycle.token}`,
-    ...extra,
+    form_button: button(v.form_link, 'Open evaluation form'),
+    portal_button: button(v.portal_link, 'Open my team'),
+
+    rating_table: table(
+      `<tr><th style="${TH}">Rating</th><th style="${TH};text-align:center">Score</th><th style="${TH};text-align:center">%age</th></tr>`
+        + RATING_SCALE.map(
+          (r) => `<tr><td style="${TD}">${esc(r.label)} <span style="color:${BRAND.muted}">(${esc(r.detail)})</span></td>`
+            + `<td style="${TD};text-align:center"><strong>${r.value}</strong></td>`
+            + `<td style="${TD};text-align:center">${r.percent}</td></tr>`
+        ).join('')
+    ),
+
+    evaluation_summary_table: table(pairs([
+      ['Employee', esc(v.employee_name)],
+      ['Evaluation', esc(v.evaluation_number)],
+      ['Period', esc(v.evaluation_period)],
+      ['Average rating', `<strong>${esc(v.average_rating || '—')} / 5</strong>`],
+      ...(v.decision ? [['Decision', `<strong>${esc(v.decision)}</strong>`]] : []),
+    ])),
+
+    remarks_block: v.remarks ? `<p><strong>Overall remarks:</strong><br>${multiline(v.remarks)}</p>` : '',
+
+    it_details_table: table(pairs([
+      ['Employee', esc(v.employee_name)],
+      ['Account', esc(v.account_email)],
+      ['Field', esc(v.field_label)],
+      ['Entra currently holds', v.entra_value ? esc(v.entra_value) : '<em>(blank)</em>'],
+      ['Correct value', `<strong>${esc(v.correct_value)}</strong>`],
+      ['Reported by', esc(v.reported_by)],
+    ])),
+
+    note_block: v.note ? `<p><strong>Note:</strong><br>${multiline(v.note)}</p>` : '',
+
+    overdue_table: overdue.length
+      ? table(
+        `<tr><th style="${TH}">Employee</th><th style="${TH}">Joined</th><th style="${TH}">Deadline</th><th style="${TH};text-align:center">Days overdue</th><th style="${TH}">Manager</th></tr>`
+          + overdue.map(
+            (e) => `<tr><td style="${TD}">${esc(e.full_name)}</td><td style="${TD}">${esc(e.doj)}</td><td style="${TD}">${esc(e.deadline)}</td>`
+              + `<td style="${TD};text-align:center"><strong>${esc(e.daysOverdue)}</strong></td><td style="${TD}">${esc(e.rm_name)}</td></tr>`
+          ).join('')
+      )
+      : '<p><em>No probation is past its confirmation deadline.</em></p>',
+
+    due_soon_line: dueSoon.length
+      ? `<p>A further <strong>${dueSoon.length}</strong> reach their deadline within two weeks.</p>`
+      : '',
+  };
+}
+
+// ── Variables ─────────────────────────────────────────────────────────────
+
+/**
+ * Build every placeholder value from the cycle (when there is one) and the
+ * context the caller passed.
+ * @param {object|null} cycle - with `employee` included
+ * @param {object} [context]
+ * @returns {object}
+ */
+export function buildVars(cycle, context = {}) {
+  const c = cycle || {};
+  const e = c.employee || context.employee || {};
+  const base = config.frontendUrl.replace(/\/+$/, '');
+  const date = (d) => (d ? formatDisplay(d) : '');
+  const average = context.average ?? context.avg;
+  const extensions = Number(context.extensionCycles || 0);
+  const name = e.full_name || context.employeeName || '';
+
+  return {
+    employee_name: name,
+    first_name: String(name).split(' ')[0],
+    employee_email: e.office_email || '',
+    joining_date: date(e.doj),
+    manager_name: e.rm_name || context.rmName || '',
+    manager_email: e.rm_email || context.rmEmail || '',
+    project_leader_email: e.pl_email || '',
+    evaluation_number: c.seq_no ?? '',
+    evaluation_period: c.period_from && c.period_to ? `${date(c.period_from)} to ${date(c.period_to)}` : '',
+    due_date: date(c.due_date),
+    sent_date: date(c.sent_at),
+    reminder_number: context.reminderNumber ?? '',
+    // The public form is server-rendered on the API host; managers need no login.
+    form_link: c.token ? `${base}/api/evaluation/${c.token}` : '',
+    average_rating: average === undefined || average === null ? '' : String(Number(average)),
+    decision: context.confirmation || '',
+    submitted_by: context.submittedBy || e.rm_email || '',
+    remarks: context.remarks || '',
+    extension_summary: extensions
+      ? `${extensions} further evaluation${extensions === 1 ? ' has' : 's have'} been scheduled automatically, and the reporting manager will receive a link when ${extensions === 1 ? 'it is' : 'they are'} due.`
+      : '',
+    account_email: context.accountEmail || '',
+    field_label: context.fieldLabel || '',
+    entra_value: context.azureValue || '',
+    correct_value: context.correctValue || '',
+    reported_by: context.reportedBy || '',
+    note: context.note || '',
+    portal_link: context.portalUrl || '',
+    expires_date: context.expiresLabel || '',
+    overdue_count: context.overdue ? String(context.overdue.length) : '',
+    due_soon_count: context.dueSoon ? String(context.dueSoon.length) : '',
+    today: context.today || '',
+    _overdue: context.overdue || [],
+    _dueSoon: context.dueSoon || [],
+  };
+}
+
+/** Realistic sample values, so a preview reads like the real thing. */
+const SAMPLE_VARS = Object.freeze({
+  employee_name: 'Priya Sharma',
+  first_name: 'Priya',
+  employee_email: 'psharma@aapnainfotech.com',
+  joining_date: '01-Jul-2026',
+  manager_name: 'Chhavi Verma',
+  manager_email: 'cverma@aapnainfotech.com',
+  project_leader_email: 'aroy@aapnainfotech.com',
+  evaluation_number: '2',
+  evaluation_period: '31-Jul-2026 to 30-Aug-2026',
+  due_date: '31-Aug-2026',
+  sent_date: '31-Aug-2026',
+  reminder_number: '1',
+  form_link: 'https://pea-staging.aapnainfotech.com/api/evaluation/00000000-0000-0000-0000-000000000000',
+  average_rating: '3.71',
+  decision: 'Extend for 1 month',
+  submitted_by: 'cverma@aapnainfotech.com',
+  remarks: 'Strong progress on delivery; communication with the client still developing.',
+  extension_summary: '1 further evaluation has been scheduled automatically, and the reporting manager will receive a link when it is due.',
+  account_email: 'psharma@aapnainfotech.com',
+  field_label: 'Display name',
+  entra_value: 'Priya S',
+  correct_value: 'Priya Sharma',
+  reported_by: 'pankaj',
+  note: 'Surname missing in Entra.',
+  portal_link: 'https://pea-staging.aapnainfotech.com/manager/00000000-0000-0000-0000-000000000000',
+  expires_date: '13-Oct-2026',
+  overdue_count: '1',
+  due_soon_count: '0',
+  today: '13-Sep-2026',
+  _overdue: [{ full_name: 'Pooja Goel', doj: '2022-09-20', deadline: '2023-03-20', daysOverdue: 1272, rm_name: 'Aroy' }],
+  _dueSoon: [],
+});
+
+// ── Compile, store, render ────────────────────────────────────────────────
+
+/**
+ * Fill in a subject and body and wrap the body in the branded shell. Pure, so
+ * the rules are testable without a database.
+ *
+ * @param {{subject: string, body: string}} template
+ * @param {object} vars - from buildVars()
+ * @returns {{subject: string, body: string, bodyFragment: string}}
+ */
+export function compile({ subject, body }, vars) {
+  const text = (k) => (vars[k] === undefined || vars[k] === null ? '' : String(vars[k]));
+  const blocks = buildBlocks(vars);
+
+  // A subject is plain text, not HTML — values go in unescaped, newlines out.
+  const compiledSubject = String(subject || '').replace(TOKEN, (_m, k) => text(k)).replace(/\s+/g, ' ').trim();
+  const bodyFragment = String(body || '').replace(TOKEN, (_m, k) => (k in blocks ? blocks[k] : esc(text(k))));
+
+  return {
+    subject: compiledSubject,
+    bodyFragment,
+    body: wrapBrandedEmail(bodyFragment, { title: compiledSubject }),
+  };
+}
+
+/** The stored subject/body for one template, or the built-in default. */
+async function current(key) {
+  const def = TEMPLATES[key];
+  const rows = await prisma.pea_settings.findMany({
+    where: { setting_key: { in: [`template.${key}.subject`, `template.${key}.body`] } },
+  });
+  const by = Object.fromEntries(rows.map((r) => [r.setting_key.split('.').pop(), r]));
+  return {
+    subject: by.subject?.setting_value || def.subject,
+    body: by.body?.setting_value || def.body,
+    rows: by,
   };
 }
 
 /**
- * Render a template, applying any pea_settings override.
- * @param {string} key - template key
- * @param {object} vars
+ * Render a template for sending.
+ * @param {string} key
+ * @param {object} vars - from buildVars()
  * @returns {Promise<{subject: string, body: string}>}
  */
 export async function render(key, vars) {
-  const builder = TEMPLATES[key];
-  if (!builder) throw new Error(`Unknown email template "${key}"`);
-
-  const built = builder(vars);
-
-  const overrides = await prisma.pea_settings.findMany({
-    where: { setting_key: { in: [`template.${key}.subject`, `template.${key}.body`] } },
-  });
-
-  const bySuffix = Object.fromEntries(
-    overrides.map((o) => [o.setting_key.split('.').pop(), o.setting_value])
-  );
-
-  return {
-    subject: bySuffix.subject ? interpolate(bySuffix.subject, vars) : built.subject,
-    body: bySuffix.body ? shell(interpolate(bySuffix.body, vars)) : built.body,
-  };
+  if (!TEMPLATES[key]) throw new Error(`Unknown email template "${key}"`);
+  const { subject, body } = await current(key);
+  const out = compile({ subject, body }, vars);
+  return { subject: out.subject, body: out.body };
 }
 
-/** Template keys, for the admin screen. */
-export const TEMPLATE_KEYS = Object.keys(TEMPLATES);
-
 /**
- * What each template is, which {{variables}} an override may use, and whether
- * it can be overridden at all.
- *
- * deadline_alert is not overridable: its body is a table built from a list, and
- * the {{placeholder}} syntax has no loops — an override could only ever drop
- * the list, which is the whole message.
- */
-export const TEMPLATE_CATALOG = Object.freeze({
-  evaluation_link: {
-    label: 'Evaluation request (to reporting manager)',
-    editable: true,
-    variables: ['employeeName', 'firstName', 'officeEmail', 'dojLabel', 'rmName', 'seqNo', 'periodLabel', 'dueLabel', 'formUrl'],
-  },
-  reminder: {
-    label: 'Reminder (to reporting manager)',
-    editable: true,
-    variables: ['employeeName', 'rmName', 'seqNo', 'periodLabel', 'sentLabel', 'reminderNumber', 'formUrl'],
-  },
-  acknowledgement: {
-    label: 'Evaluation submitted (to HR)',
-    editable: true,
-    variables: ['employeeName', 'seqNo', 'periodLabel', 'average', 'confirmation', 'remarks', 'submittedBy', 'rmName'],
-  },
-  extend_alert: {
-    label: 'Probation extended (to HR)',
-    editable: true,
-    variables: ['employeeName', 'confirmation', 'extensionCycles', 'submittedBy', 'rmName'],
-  },
-  hr_notification: { label: 'General HR notice', editable: true, variables: ['subject', 'message'] },
-  it_report: {
-    label: 'Report to IT',
-    editable: true,
-    variables: ['employeeName', 'accountEmail', 'fieldLabel', 'azureValue', 'correctValue', 'reportedBy', 'note'],
-  },
-  manager_portal: {
-    label: 'Manager portal link (to reporting manager)',
-    editable: true,
-    variables: ['rmName', 'portalUrl', 'expiresLabel'],
-  },
-  deadline_alert: { label: 'Confirmation deadline digest (to HR)', editable: false, variables: [] },
-});
-
-/** Realistic sample values, so a preview reads like the real thing. */
-const SAMPLE_VARS = {
-  employeeName: 'Priya Sharma',
-  firstName: 'Priya',
-  officeEmail: 'psharma@aapnainfotech.com',
-  dojLabel: '01-Jul-2026',
-  rmName: 'Chhavi Verma',
-  rmEmail: 'cverma@aapnainfotech.com',
-  seqNo: 2,
-  periodLabel: '31-Jul-2026 to 30-Aug-2026',
-  dueLabel: '31-Aug-2026',
-  sentLabel: '31-Aug-2026',
-  reminderNumber: 1,
-  formUrl: 'https://pea-staging.aapnainfotech.com/api/evaluation/00000000-0000-0000-0000-000000000000',
-  average: '3.71',
-  confirmation: 'Extend for 1 month',
-  remarks: 'Strong progress on delivery; communication with the client still developing.',
-  submittedBy: 'cverma@aapnainfotech.com',
-  extensionCycles: 1,
-  subject: 'Sample notice',
-  message: 'This is how a general HR notice will look.',
-  accountEmail: 'psharma@aapnainfotech.com',
-  fieldLabel: 'Display name',
-  azureValue: 'Priya S',
-  correctValue: 'Priya Sharma',
-  reportedBy: 'pankaj',
-  note: 'Surname missing in Entra.',
-  portalUrl: 'https://pea-staging.aapnainfotech.com/manager/00000000-0000-0000-0000-000000000000',
-  expiresLabel: '13-Oct-2026',
-  overdue: [
-    { full_name: 'Pooja Goel', doj: '2022-09-20', deadline: '2023-03-20', daysOverdue: 1272, rm_name: 'Aroy' },
-  ],
-  dueSoon: [],
-};
-
-/**
- * Render a template for preview, with an unsaved override applied.
+ * Render an unsaved draft with sample data. Nothing is saved or sent.
  * @param {string} key
- * @param {{subject?: string, body?: string}} [draft] - blank fields fall back to the built-in
+ * @param {{subject?: string, body?: string}} [draft] - blank falls back to the default
  * @returns {{subject: string, body: string}}
  */
 export function renderPreview(key, draft = {}) {
-  const builder = TEMPLATES[key];
-  if (!builder) throw new Error(`Unknown email template "${key}"`);
-  const built = builder(SAMPLE_VARS);
-  return {
-    subject: draft.subject ? interpolate(draft.subject, SAMPLE_VARS) : built.subject,
-    body: draft.body ? shell(interpolate(draft.body, SAMPLE_VARS)) : built.body,
-  };
+  const def = TEMPLATES[key];
+  if (!def) throw new AppError(`Unknown email template "${key}"`, 404);
+  const out = compile({ subject: draft.subject || def.subject, body: draft.body || def.body }, SAMPLE_VARS);
+  return { subject: out.subject, body: out.body };
+}
+
+/**
+ * Check an edited subject and body before it is saved. Pure.
+ *
+ * @param {string} key
+ * @param {{subject?: string, body?: string}} draft
+ * @returns {{subject: string, body: string}} trimmed
+ * @throws {AppError} 400
+ */
+export function validateDraft(key, draft) {
+  const def = TEMPLATES[key];
+  if (!def) throw new AppError(`Unknown email template "${key}"`, 404);
+
+  const subject = String(draft.subject ?? '').trim();
+  const body = String(draft.body ?? '').trim();
+  const fail = (msg) => { throw new AppError(msg, 400); };
+
+  if (!subject) fail('A subject is required.');
+  if (subject.length > 300) fail('The subject must be 300 characters or fewer.');
+  if (!body) fail('The email body cannot be empty. Use "Reset to default" to go back to the built-in wording.');
+  if (body.length > 50_000) fail('The email body is too long (50,000 characters at most).');
+  if (/<script[\s>]|\son\w+\s*=|javascript:/i.test(body)) {
+    fail('Scripts, event handlers and javascript: links are not allowed in an email.');
+  }
+  if (/<!DOCTYPE|<html[\s>]|<body[\s>]/i.test(body)) {
+    fail('Enter only the message body — the AAPNA header, logo and footer are added automatically.');
+  }
+
+  const used = usedPlaceholders(`${subject} ${body}`);
+  const unknown = [...new Set(used.filter((p) => !def.placeholders.includes(p)))];
+  if (unknown.length) {
+    fail(
+      `Unknown placeholder(s): ${unknown.map((p) => `{{${p}}}`).join(', ')}. ` +
+        `This email can use: ${def.placeholders.map((p) => `{{${p}}}`).join(', ')}`
+    );
+  }
+
+  for (const group of def.requiredAny || []) {
+    if (!group.some((p) => used.includes(p))) {
+      fail(
+        `This email must contain ${group.map((p) => `{{${p}}}`).join(' or ')} — without it the recipient has nothing to act on.`
+      );
+    }
+  }
+
+  return { subject, body };
+}
+
+/**
+ * Every template with its current wording, for the Email Templates screen.
+ * @returns {Promise<object[]>}
+ */
+export async function listTemplateCatalog() {
+  const rows = await prisma.pea_settings.findMany({ where: { setting_key: { startsWith: 'template.' } } });
+  const byKey = new Map(rows.map((r) => [r.setting_key, r]));
+
+  return TEMPLATE_KEYS.map((key) => {
+    const def = TEMPLATES[key];
+    const s = byKey.get(`template.${key}.subject`);
+    const b = byKey.get(`template.${key}.body`);
+    const subject = s?.setting_value || def.subject;
+    const body = b?.setting_value || def.body;
+    const stamps = [s?.modified_at, b?.modified_at].filter(Boolean).map((d) => new Date(d).getTime());
+
+    return {
+      key,
+      name: def.name,
+      category: def.category,
+      categoryLabel: CATEGORY_LABELS[def.category],
+      recipient: def.recipient,
+      description: def.description,
+      subject,
+      body,
+      defaultSubject: def.subject,
+      defaultBody: def.body,
+      overridden: !!(s?.setting_value || b?.setting_value),
+      modifiedAt: stamps.length ? new Date(Math.max(...stamps)) : null,
+      placeholders: def.placeholders.map((name) => ({ name, label: PLACEHOLDERS[name].label, block: !!PLACEHOLDERS[name].block })),
+      requiredAny: def.requiredAny || [],
+      wrapper: brandedWrapperParts({ title: subject, bodyHtml: body }),
+    };
+  });
 }

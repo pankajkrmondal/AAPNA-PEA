@@ -78,13 +78,6 @@ const config = {
     testRecipients: list(process.env.EMAIL_STAGING_RECIPIENTS),
   },
 
-  // Microsoft sign-in. Off unless explicitly enabled AND a redirect URI that IT
-  // has registered on the app registration is configured. Plan §5.4 Option 3.
-  sso: {
-    enabled: bool(process.env.SSO_ENABLED, false),
-    redirectUri: process.env.SSO_REDIRECT_URI || '',
-  },
-
   scheduler: {
     enabled: bool(process.env.PEA_SCHEDULER_ENABLED, false),
     timezone: process.env.TZ || 'Asia/Kolkata',

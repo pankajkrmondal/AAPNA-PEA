@@ -96,15 +96,23 @@ export default function ManagerLinks() {
             <Switch checked={send} onChange={setSend} />
             <Typography.Text>Email it to them</Typography.Text>
           </Space>
-          <Button
-            type="primary"
-            icon={send ? <SendOutlined /> : <LinkOutlined />}
-            disabled={!rmEmail}
-            loading={create.isPending}
-            onClick={() => create.mutate()}
+          <Tooltip
+            title={
+              send
+                ? "Creates the manager's personal link (valid 30 days by default, Settings → Access) and emails it to them using the Manager portal link template. Their previous link stops working. Outside production the email reaches only the test inbox."
+                : "Creates the manager's personal link (valid 30 days by default, Settings → Access) for you to copy and share. No email is sent. Their previous link stops working."
+            }
           >
-            {send ? 'Create and email' : 'Create link'}
-          </Button>
+            <Button
+              type="primary"
+              icon={send ? <SendOutlined /> : <LinkOutlined />}
+              disabled={!rmEmail}
+              loading={create.isPending}
+              onClick={() => create.mutate()}
+            >
+              {send ? 'Create and email' : 'Create link'}
+            </Button>
+          </Tooltip>
         </Space>
 
         <Alert
@@ -162,11 +170,13 @@ export default function ManagerLinks() {
               render: (_, r) =>
                 r.state === 'active' ? (
                   <Space size={4}>
-                    <Tooltip title="Copy link">
+                    <Tooltip title="Copy link: copies this manager's personal link to the clipboard so you can share it.">
                       <Button size="small" icon={<CopyOutlined />} onClick={() => copy(r.url)} />
                     </Tooltip>
                     <Popconfirm title="Revoke this link?" description="It stops working immediately." onConfirm={() => revoke.mutate(r.id)}>
-                      <Button size="small" danger icon={<StopOutlined />} />
+                      <Tooltip title="Revoke link: asks to confirm, then cancels this link so it stops working immediately. Create a new link to give the manager access again.">
+                        <Button size="small" danger icon={<StopOutlined />} />
+                      </Tooltip>
                     </Popconfirm>
                   </Space>
                 ) : null,

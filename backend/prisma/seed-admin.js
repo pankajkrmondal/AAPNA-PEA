@@ -1,10 +1,13 @@
 /**
- * seed-admin.js — create (or reset) the first PEA admin account.
+ * seed-admin.js — create (or reset) the first PEA Super Admin account.
  *
  * Run:  npm run seed:admin
  *
  * Idempotent: if the user already exists, the password is reset rather than a
  * duplicate created. Safe to re-run if someone forgets the password.
+ *
+ * Needs prisma/ddl/2026-09-13b-pea-admin-portal.sql applied: the role CHECK
+ * before it does not allow `superadmin`.
  *
  * PEA_ADMIN_PASSWORD is REQUIRED — there is no default. A default password
  * written in the repository becomes the admin password of every fresh database
@@ -47,9 +50,9 @@ async function main() {
   if (existing) {
     await prisma.pea_users.update({
       where: { id: existing.id },
-      data: { password_hash, role: 'admin', is_active: true, modified_at: new Date() },
+      data: { password_hash, role: 'superadmin', is_active: true, modified_at: new Date() },
     });
-    console.log(`↻ Existing user "${existing.username}" updated — password reset, role set to admin.`);
+    console.log(`↻ Existing user "${existing.username}" updated — password reset, role set to superadmin.`);
   } else {
     const user = await prisma.pea_users.create({
       data: {
@@ -57,11 +60,11 @@ async function main() {
         email: EMAIL,
         password_hash,
         first_name: 'Pankaj',
-        role: 'admin',
+        role: 'superadmin',
         is_active: true,
       },
     });
-    console.log(`✅ Admin created: ${user.username} <${user.email}> (id ${user.id})`);
+    console.log(`✅ Super Admin created: ${user.username} <${user.email}> (id ${user.id})`);
   }
 
   // The password is not echoed: terminal scrollback and CI logs outlive the

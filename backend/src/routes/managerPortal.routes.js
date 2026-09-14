@@ -2,7 +2,7 @@ import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
-import { authenticate, requireMinRole } from '../middleware/auth.js';
+import { authenticate, requireMinRole, requireModule } from '../middleware/auth.js';
 import {
   listManagers,
   listLinks,
@@ -14,7 +14,7 @@ import {
 /** HR side — issue and revoke links. Mounted at /api/manager-links. */
 export const managerLinksRouter = Router();
 
-managerLinksRouter.use(authenticate);
+managerLinksRouter.use(authenticate, requireModule('manager_portal'));
 
 managerLinksRouter.get('/managers', catchAsync(async (_req, res) => success(res, await listManagers())));
 managerLinksRouter.get('/', catchAsync(async (_req, res) => success(res, await listLinks())));

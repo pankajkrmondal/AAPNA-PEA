@@ -169,9 +169,9 @@ export async function runDeadlineAlerts({ dryRun = false } = {}) {
   });
 
   if (toggle?.setting_value === 'true' && overdue.length > 0) {
+    // The subject comes from the Email Templates screen ({{overdue_count}}, {{today}}).
     const result = await queueEmail({
       type: 'deadline_alert',
-      subject: `${overdue.length} probation(s) past the confirmation deadline — ${today}`,
       context: { overdue, dueSoon, today },
     });
     emailed = result.status !== 'failed';

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card, Descriptions, Tag, Table, Space, Typography, Timeline, Button, Spin, Alert,
@@ -7,10 +7,14 @@ import {
 } from 'antd';
 import {
   ArrowLeftOutlined, SendOutlined, PauseOutlined, PlayCircleOutlined, EditOutlined,
-  LockOutlined, UnlockOutlined, WarningOutlined, MailOutlined, ShareAltOutlined,
+  LockOutlined, UnlockOutlined, WarningOutlined, MailOutlined, ShareAltOutlined, DeleteOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import api, { unwrap } from '../api.js';
+import api, { unwrap, USER_KEY } from '../api.js';
+import { isAdminTier } from '../auth.js';
+
+/** Same rule as the server: case and extra spaces do not matter. */
+const normName = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
 
 const CONFIRMATION_OPTIONS = ['Confirmed', 'Not Confirmed', 'Extend for 1 month', 'Extend for 2 months'];
 
@@ -145,6 +149,22 @@ export default function EmployeeDetail() {
     onError: (err) => { message.error(err.friendlyMessage); },
   });
 
+  const navigate = useNavigate();
+  const isAdmin = isAdminTier(JSON.parse(localStorage.getItem(USER_KEY) || '{}').role);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteName, setDeleteName] = useState('');
+
+  const remove = useMutation({
+    mutationFn: () => api.delete(`/employees/${id}`, { data: { confirm_name: deleteName } }).then((r) => r.data),
+    onSuccess: (res) => {
+      message.success(res.message);
+      setDeleteOpen(false);
+      qc.invalidateQueries({ queryKey: ['employees'] });
+      navigate('/employees');
+    },
+    onError: (err) => { message.error(err.friendlyMessage); },
+  });
+
   if (isLoading) return <Spin size="large" style={{ display: 'block', marginTop: 80 }} />;
   if (!e) return <Alert type="error" message="Employee not found" />;
 
@@ -226,6 +246,15 @@ export default function EmployeeDetail() {
           >
             {e.halt_process ? 'Resume evaluations' : 'Pause evaluations'}
           </Button>
+          {isAdmin && (
+            <Button
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => { setDeleteName(''); setDeleteOpen(true); }}
+            >
+              Delete
+            </Button>
+          )}
         </Space>
       </div>
 
@@ -560,6 +589,34 @@ export default function EmployeeDetail() {
             </Typography.Text>
           </>
         )}
+      </Modal>
+
+      {/* ── Delete employee — admin only, for demo and test records ───── */}
+      <Modal
+        title={`Delete ${e.full_name}?`}
+        open={deleteOpen}
+        onCancel={() => setDeleteOpen(false)}
+        onOk={() => remove.mutate()}
+        confirmLoading={remove.isPending}
+        okText="Delete permanently"
+        okButtonProps={{ danger: true, disabled: normName(deleteName) !== normName(e.full_name) }}
+      >
+        <Alert
+          type="warning"
+          showIcon
+          style={{ marginBottom: 14 }}
+          message="This cannot be undone"
+          description="The employee, every evaluation, all ratings and the change history are removed. If this person really left, use Edit → Employment → Left instead — that keeps their history."
+        />
+        <Typography.Paragraph>
+          Type <strong>{e.full_name}</strong> to confirm:
+        </Typography.Paragraph>
+        <Input
+          value={deleteName}
+          onChange={(ev) => setDeleteName(ev.target.value)}
+          placeholder={e.full_name}
+          onPressEnter={() => normName(deleteName) === normName(e.full_name) && remove.mutate()}
+        />
       </Modal>
 
       {/* ── Report to IT — plan §6.5 Part 3 ────────────────────────────── */}

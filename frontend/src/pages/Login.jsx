@@ -1,43 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Form, Input, Button, Typography, Alert, Divider } from 'antd';
-import { LockOutlined, UserOutlined, WindowsOutlined } from '@ant-design/icons';
+import { Form, Input, Button, Typography, Alert } from 'antd';
+import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import api, { TOKEN_KEY, USER_KEY } from '../api.js';
+import { homePath } from '../auth.js';
 
 export default function Login() {
   const navigate = useNavigate();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [ssoEnabled, setSsoEnabled] = useState(false);
-
-  useEffect(() => {
-    api.get('/auth/sso/config').then((r) => setSsoEnabled(!!r.data?.data?.enabled)).catch(() => {});
-
-    // Returning from Microsoft. The token arrives in the URL fragment, which
-    // no server ever sees; it is removed from the address bar immediately.
-    const params = new URLSearchParams(window.location.hash.slice(1));
-    const ssoToken = params.get('sso_token');
-    const ssoError = params.get('sso_error');
-    if (!ssoToken && !ssoError) return;
-
-    window.history.replaceState(null, '', window.location.pathname);
-
-    if (ssoError) {
-      setError(ssoError);
-      return;
-    }
-
-    setLoading(true);
-    api
-      .get('/auth/me', { headers: { Authorization: `Bearer ${ssoToken}` } })
-      .then((r) => {
-        localStorage.setItem(TOKEN_KEY, ssoToken);
-        localStorage.setItem(USER_KEY, JSON.stringify(r.data.data));
-        navigate('/');
-      })
-      .catch((err) => setError(err.friendlyMessage))
-      .finally(() => setLoading(false));
-  }, [navigate]);
 
   const onFinish = async (values) => {
     setLoading(true);
@@ -47,7 +18,8 @@ export default function Login() {
       const { token, user } = res.data.data;
       localStorage.setItem(TOKEN_KEY, token);
       localStorage.setItem(USER_KEY, JSON.stringify(user));
-      navigate('/');
+      // The first module this account can open — the dashboard may be switched off.
+      navigate(homePath(user));
     } catch (err) {
       setError(err.friendlyMessage);
     } finally {
@@ -96,20 +68,6 @@ export default function Login() {
             Sign in
           </Button>
         </Form>
-
-        {ssoEnabled && (
-          <>
-            <Divider plain style={{ fontSize: 12 }}>or</Divider>
-            <Button
-              size="large"
-              block
-              icon={<WindowsOutlined />}
-              href={`${import.meta.env.VITE_API_URL || '/api'}/auth/sso/start`}
-            >
-              Sign in with Microsoft
-            </Button>
-          </>
-        )}
       </div>
     </div>
   );

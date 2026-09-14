@@ -81,12 +81,12 @@ CREATE TABLE IF NOT EXISTS pea_users (
   last_name       VARCHAR(100),
   role            VARCHAR(50)  NOT NULL DEFAULT 'hr',
   is_active       BOOLEAN      NOT NULL DEFAULT TRUE,
-  -- Set on first "Sign in with Microsoft"; binds the account to one Entra user.
+  -- Unused: Microsoft SSO was removed (13 Sep). Kept so schema.prisma matches.
   azure_object_id VARCHAR(100),
   last_login_at   TIMESTAMPTZ,
   created_at      TIMESTAMPTZ  NOT NULL DEFAULT now(),
   modified_at     TIMESTAMPTZ  NOT NULL DEFAULT now(),
-  CONSTRAINT pea_users_role_chk CHECK (role IN ('admin', 'hr', 'viewer'))
+  CONSTRAINT pea_users_role_chk CHECK (role IN ('superadmin', 'admin', 'hr'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pea_users_username ON pea_users (lower(username));
 CREATE UNIQUE INDEX IF NOT EXISTS uq_pea_users_email    ON pea_users (lower(email));
@@ -389,6 +389,18 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_pea_notifications_dedupe
 CREATE INDEX IF NOT EXISTS idx_pea_notifications_user
   ON pea_notifications (user_id, read_at, created_at DESC);
 
+-- Admin Portal → Module Access. A missing row means the module is ON; only
+-- is_enabled = false restricts. See 2026-09-13b-pea-admin-portal.sql.
+CREATE TABLE IF NOT EXISTS pea_module_permissions (
+  id          SERIAL       PRIMARY KEY,
+  user_id     INT          NOT NULL REFERENCES pea_users(id) ON DELETE CASCADE,
+  module_key  VARCHAR(50)  NOT NULL,
+  is_enabled  BOOLEAN      NOT NULL DEFAULT TRUE,
+  updated_by  VARCHAR(100),
+  updated_at  TIMESTAMPTZ  NOT NULL DEFAULT now(),
+  CONSTRAINT uq_pea_module_permissions_user_module UNIQUE (user_id, module_key)
+);
+
 CREATE TABLE IF NOT EXISTS pea_manager_links (
   id            BIGSERIAL    PRIMARY KEY,
   token         UUID         NOT NULL DEFAULT gen_random_uuid(),
@@ -439,7 +451,7 @@ ON CONFLICT (template, param_key) DO NOTHING;
 --    feature OFF.
 -- ═══════════════════════════════════════════════════════════════════════════
 INSERT INTO pea_settings (setting_key, setting_value, description) VALUES
-  ('shadow_mode',                          'true', 'ON = log emails as "would have sent", send nothing. Set false to go live.'),
+  ('shadow_mode',                          'false','Emergency pause. OFF = PEA sends (staging → test inbox, production → real people).'),
   ('cc_emails',
    'sroy@aapnainfotech.com;rsomani@aapnainfotech.com;sshukla@aapnainfotech.com;smaiti@aapnainfotech.com',
    'CC on evaluation emails, lifted from the Power Automate flow. HR to confirm.'),
@@ -458,7 +470,7 @@ INSERT INTO pea_settings (setting_key, setting_value, description) VALUES
   ('azure_email_domain',                   'aapnainfotech.com', 'Only accounts on this domain are joiners.'),
   ('azure_field_sync_enabled',             'false','Let the scan update unlocked names/emails from Entra.'),
   ('manager_link_validity_days',           '30',   'Manager portal link lifetime.'),
-  ('employee_self_view',                   'off',  'off | schedule | averages | full — HR policy decision.')
+  ('employee_self_view',                   'averages', 'off | schedule | averages | full — HR chose averages (13 Sep).')
 ON CONFLICT (setting_key) DO NOTHING;
 
 
@@ -497,6 +509,6 @@ SELECT * FROM (
          (SELECT count(*)::text FROM pea_evaluation_params)
   UNION ALL SELECT 5, 'settings (expect 18)',
          (SELECT count(*)::text FROM pea_settings)
-  UNION ALL SELECT 6, 'shadow_mode (expect true)',
+  UNION ALL SELECT 6, 'shadow_mode (expect false)',
          (SELECT setting_value FROM pea_settings WHERE setting_key = 'shadow_mode')
 ) q ORDER BY n;

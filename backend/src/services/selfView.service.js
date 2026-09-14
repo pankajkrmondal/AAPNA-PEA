@@ -1,9 +1,8 @@
 /**
  * selfView.service.js — an employee sees their own probation. Plan §10.
  *
- * ⚠️ Plan §10 says this needs an HR policy decision first, and it still does.
- * So the feature ships switched OFF, and what it reveals is a setting HR
- * chooses (pea_settings.employee_self_view), not a decision made in code:
+ * HR chose `averages` on 13 Sep. What it reveals is still a setting HR can
+ * change (pea_settings.employee_self_view), not a decision made in code:
  *
  *   off       nothing — links cannot be issued and existing ones stop working
  *   schedule  evaluation dates and whether each is done; no ratings at all

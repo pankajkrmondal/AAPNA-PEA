@@ -2,6 +2,29 @@ import { verifySession } from '../services/auth.service.js';
 import AppError from '../utils/AppError.js';
 import catchAsync from '../utils/catchAsync.js';
 import { normalizeRole, ROLE_RANK } from '../config/roles.js';
+import { modulesFor } from '../services/modulePermissions.service.js';
+
+/**
+ * Require access to at least one of the given sidebar modules. Use after
+ * `authenticate`.
+ *
+ * Admins and super admins always pass. An HR user passes unless an admin has
+ * switched every one of these modules off for them in the Admin Portal — see
+ * services/modulePermissions.service.js.
+ *
+ * @param {...string} keys - config/modules.js keys
+ * @returns {Function} Express middleware
+ */
+export function requireModule(...keys) {
+  return catchAsync(async (req, _res, next) => {
+    if (!req.user) throw new AppError('Not signed in', 401);
+    const mine = await modulesFor(req.user);
+    if (!keys.some((key) => mine.includes(key))) {
+      throw new AppError('This module is not enabled for your account — ask an admin', 403);
+    }
+    next();
+  });
+}
 
 /**
  * Require a valid session. Attaches `req.user`.
