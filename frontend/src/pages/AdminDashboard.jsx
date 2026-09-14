@@ -179,7 +179,13 @@ export default function AdminDashboard({ me }) {
   const save = useMutation({
     mutationFn: ({ id, payload }) => (id ? api.patch(`/users/${id}`, payload) : api.post('/users', payload)).then((r) => r.data),
     onSuccess: (res) => {
-      message.success(res.message);
+      // Saved either way; a warning when the login details email did not go out.
+      const emailed = res.data?.credentialEmail;
+      if (emailed && emailed.status !== 'sent') {
+        message.warning(res.message, 10);
+      } else {
+        message.success(res.message);
+      }
       setModalOpen(false);
       refreshUsers();
     },
@@ -335,7 +341,9 @@ export default function AdminDashboard({ me }) {
           </Button>
         </div>
       )}
-      <div className="pea-gen-hint">Share it with them directly — PEA does not email passwords.</div>
+      <div className="pea-gen-hint">
+        PEA emails the login details, including this password, to the user&apos;s own inbox — on staging too.
+      </div>
     </>
   );
 

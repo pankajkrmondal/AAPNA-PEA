@@ -34,6 +34,7 @@ import {
   assignableRoles,
 } from '../config/roles.js';
 import { hashPassword } from './auth.service.js';
+import { sendCredentialEmail } from './accountEmail.service.js';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 // `@` is allowed because, as in ATS, a blank username defaults to the email.
@@ -204,7 +205,10 @@ export async function createUser(input, actor) {
   });
 
   logger.warn(`👤 User created by ${actor.username}: ${username} <${email}> as ${role}`);
-  return user;
+
+  // As in ATS: the new user gets their login details in their own inbox.
+  const credentialEmail = await sendCredentialEmail({ user, plainTextPassword: input.password, isNewUser: true });
+  return { ...user, credentialEmail };
 }
 
 /**
@@ -284,7 +288,12 @@ export async function updateUser(id, input, actor) {
       (ended ? ` — ${ended} session(s) ended` : '')
   );
 
-  return { ...user, sessionsEnded: ended };
+  // As in ATS: a password set by an admin is emailed to the account owner.
+  const credentialEmail = change.password
+    ? await sendCredentialEmail({ user, plainTextPassword: change.password, isNewUser: false })
+    : null;
+
+  return { ...user, sessionsEnded: ended, credentialEmail };
 }
 
 /**
@@ -295,8 +304,8 @@ export async function updateUser(id, input, actor) {
  */
 export async function resetPassword(id, password, actor) {
   if (!password) throw new AppError('Enter a new password', 400);
-  const { sessionsEnded } = await updateUser(id, { password }, actor);
-  return { sessionsEnded };
+  const { sessionsEnded, credentialEmail } = await updateUser(id, { password }, actor);
+  return { sessionsEnded, credentialEmail };
 }
 
 /**

@@ -66,9 +66,10 @@ const config = {
     // rewritten to testRecipients and CC is cleared. This is what stops a
     // half-tested build emailing 130 real reporting managers. Plan R8.
     //
-    // PEA applies this with NO exceptions. ATS exempts internal alerts and
-    // operator-typed addresses; PEA has no equivalent case — every recipient
-    // here is a colleague who never asked to be mailed from a test system.
+    // Every evaluation email is redirected. The one exception, as in ATS
+    // (NEVER_REDIRECT), is account email: login details and password reset
+    // links go to the PEA user's own inbox in every environment, because a
+    // redirected reset link is useless. See accountEmail.service.js.
     //
     // MANDATORY outside production (13 Sep 2026). It used to follow
     // EMAIL_REDIRECT_TO_TEST, so one mistyped line in .env.staging could email
@@ -76,6 +77,13 @@ const config = {
     // boot check below refuses to start if anyone tries to switch it off.
     redirectInNonProd: NODE_ENV !== 'production',
     testRecipients: list(process.env.EMAIL_STAGING_RECIPIENTS),
+  },
+
+  // Cloudflare Turnstile on the login page. The site key lives in the
+  // frontend build (VITE_TURNSTILE_SITE_KEY); only the secret is needed here.
+  turnstile: {
+    secretKey: process.env.TURNSTILE_SECRET_KEY || '',
+    enabled: Boolean(process.env.TURNSTILE_SECRET_KEY),
   },
 
   scheduler: {
@@ -97,6 +105,17 @@ if (missing.length) {
 
 if (config.isProduction && config.jwt.secret.includes('change-me')) {
   console.error('💥 JWT_SECRET is still the development placeholder. Refusing to start in production.');
+  process.exit(1);
+}
+
+// A deployed login page without the human check is exposed to password
+// guessing from bots, and nobody would notice it was missing. Only local
+// development may run without it.
+if (!config.isDevelopment && !config.turnstile.enabled) {
+  console.error(
+    `💥 TURNSTILE_SECRET_KEY is empty, so the login page would have no Cloudflare check.\n` +
+      `   Set it in .env.${NODE_ENV} (Cloudflare dashboard → Turnstile → your widget → Secret key).`
+  );
   process.exit(1);
 }
 

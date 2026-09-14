@@ -76,9 +76,10 @@ async function resolveRecipients(type, employee, context = {}) {
  * Apply the non-production guard.
  *
  * Mirrors the ATS staging behaviour: every recipient is replaced with the test
- * inbox and cc is cleared. PEA applies this with NO exceptions — ATS exempts
- * internal alerts and operator-typed addresses, but every PEA recipient is a
- * colleague who never asked to be emailed by a test system.
+ * inbox and cc is cleared. Every evaluation email comes through here, with no
+ * exceptions. Account email (login details, password reset links) never comes
+ * through queueEmail: like ATS's NEVER_REDIRECT flows it goes to the account
+ * owner in every environment — see accountEmail.service.js.
  *
  * @param {{to: string[], cc: string[]}} recipients
  * @returns {{to: string[], cc: string[], redirected: boolean}}

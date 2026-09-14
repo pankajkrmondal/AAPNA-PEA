@@ -101,13 +101,16 @@ export function assertRecipientsAllowed(to = [], cc = []) {
  * @param {string} params.subject
  * @param {string} params.html
  * @param {string} [params.replyTo]
+ * @param {boolean} [params.allowRealRecipients=false] - skip the non-prod
+ *   allow-list. ONLY for account email (accountEmail.service.js), which goes to
+ *   the account owner in every environment, as ATS's NEVER_REDIRECT flows do.
  * @returns {Promise<{messageId: string|null}>}
  */
-export async function sendMail({ to, cc = [], subject, html, replyTo }) {
+export async function sendMail({ to, cc = [], subject, html, replyTo, allowRealRecipients = false }) {
   // Second, independent lock. notification.applyRedirect() already rewrites
   // recipients, but this is the last line before the wire: even a future code
   // path that forgets to call it cannot mail a real person outside production.
-  assertRecipientsAllowed(to, cc);
+  if (!allowRealRecipients) assertRecipientsAllowed(to, cc);
 
   const sender = config.microsoft.sender;
   if (!sender) throw new Error('No sender mailbox configured (PEA_SENDER_EMAIL / MS_DEFAULT_SENDER_EMAIL).');

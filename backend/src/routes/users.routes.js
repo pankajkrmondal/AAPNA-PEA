@@ -14,6 +14,13 @@ import { getModuleAccess, setModuleAccess } from '../services/modulePermissions.
  */
 const router = Router();
 
+/** Say where the login details went, so an admin never assumes an email arrived. */
+const emailNote = (e) => {
+  if (!e) return '';
+  if (e.status === 'sent') return ` Login details emailed to ${e.to}.`;
+  return ` The login details email could not be sent (${e.error}) — share the password with them directly.`;
+};
+
 router.use(authenticate, requireMinRole('admin'));
 
 router.get('/', catchAsync(async (_req, res) => success(res, await listUsers())));
@@ -22,7 +29,7 @@ router.post(
   '/',
   catchAsync(async (req, res) => {
     const user = await createUser(req.body, req.user);
-    return success(res, user, `${user.username} can now sign in`, 201);
+    return success(res, user, `${user.username} can now sign in.${emailNote(user.credentialEmail)}`, 201);
   })
 );
 
@@ -30,11 +37,8 @@ router.patch(
   '/:id',
   catchAsync(async (req, res) => {
     const user = await updateUser(req.params.id, req.body, req.user);
-    return success(
-      res,
-      user,
-      user.sessionsEnded ? `Saved — ${user.username} has been signed out everywhere` : 'Saved'
-    );
+    const saved = user.sessionsEnded ? `Saved — ${user.username} has been signed out everywhere.` : 'Saved.';
+    return success(res, user, `${saved}${emailNote(user.credentialEmail)}`);
   })
 );
 
@@ -42,7 +46,7 @@ router.post(
   '/:id/reset-password',
   catchAsync(async (req, res) => {
     const r = await resetPassword(req.params.id, req.body?.password, req.user);
-    return success(res, r, 'Password reset — they have been signed out everywhere');
+    return success(res, r, `Password reset — they have been signed out everywhere.${emailNote(r.credentialEmail)}`);
   })
 );
 

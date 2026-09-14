@@ -26,6 +26,8 @@ import AdminPortalIcon from './components/AdminPortalIcon.jsx';
 import ChangePasswordModal from './components/ChangePasswordModal.jsx';
 import AdminLayout from './layouts/AdminLayout.jsx';
 import Login from './pages/Login.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Employees from './pages/Employees.jsx';
 import EmployeeDetail from './pages/EmployeeDetail.jsx';
@@ -236,6 +238,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<Protected module="dashboard"><Dashboard /></Protected>} />
       <Route path="/employees" element={<Protected module="employees"><Employees /></Protected>} />
       <Route path="/employees/:id" element={<Protected module="employees"><EmployeeDetail /></Protected>} />
