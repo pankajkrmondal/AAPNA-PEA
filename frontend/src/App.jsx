@@ -26,6 +26,8 @@ import AdminPortalIcon from './components/AdminPortalIcon.jsx';
 import ChangePasswordModal from './components/ChangePasswordModal.jsx';
 import AdminLayout from './layouts/AdminLayout.jsx';
 import Login from './pages/Login.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import ResetPassword from './pages/ResetPassword.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Employees from './pages/Employees.jsx';
 import EmployeeDetail from './pages/EmployeeDetail.jsx';
@@ -210,9 +212,14 @@ function Protected({ module, children }) {
   return <Shell module={module}>{children}</Shell>;
 }
 
-/** The Admin Portal — its own shell, admin tier only, as ATS's AdminRoute. */
+/**
+ * The Admin Portal — its own shell, admin tier only, as ATS's AdminRoute.
+ * The sign-in check lives here, not in the route: a check in App's JSX is
+ * evaluated once and would still say "signed out" after the user signs in.
+ */
 function AdminPortal() {
   const user = useCurrentUser();
+  if (!signedIn()) return <Navigate to="/login" replace />;
   if (!isAdminTier(user.role)) return <Navigate to={homePath(user)} replace />;
   return (
     <AdminLayout user={user}>
@@ -236,6 +243,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<Protected module="dashboard"><Dashboard /></Protected>} />
       <Route path="/employees" element={<Protected module="employees"><Employees /></Protected>} />
       <Route path="/employees/:id" element={<Protected module="employees"><EmployeeDetail /></Protected>} />
@@ -246,7 +255,7 @@ export default function App() {
       <Route path="/settings" element={<Protected module="settings"><Settings /></Protected>} />
       <Route path="/email-templates" element={<Protected module="email_templates"><EmailTemplates /></Protected>} />
       <Route path="/no-access" element={<Protected><NoAccess /></Protected>} />
-      <Route path="/admin" element={signedIn() ? <AdminPortal /> : <Navigate to="/login" replace />} />
+      <Route path="/admin" element={<AdminPortal />} />
       {/* Users moved into the Admin Portal; old bookmarks still arrive. */}
       <Route path="/users" element={<Navigate to="/admin" replace />} />
       {/* PUBLIC — a reporting manager's own link. No HR shell, no HR session. */}

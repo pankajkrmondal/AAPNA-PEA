@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { getForm, submitForm } from '../controllers/evaluation.controller.js';
+import { noStore } from '../middleware/noStore.js';
 
 const router = Router();
 
@@ -29,6 +30,10 @@ const formLimiter = rateLimit({
 });
 
 router.use(formLimiter);
+
+// The page depends on state HR can change at any moment (pause, resume,
+// re-send, submit), so a browser must never reuse an earlier response.
+router.use(noStore);
 
 // Form bodies arrive urlencoded from the browser; app.js also parses JSON for
 // API clients.

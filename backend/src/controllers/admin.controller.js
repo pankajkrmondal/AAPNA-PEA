@@ -34,7 +34,10 @@ export const sweepNow = catchAsync(async (req, res) => {
     result,
     dryRun
       ? `Dry run: ${result.evaluations.due} evaluation(s) and ${result.reminders.due} reminder(s) would be sent`
-      : `Sweep complete: ${result.evaluations.sent} evaluation(s), ${result.reminders.sent} reminder(s)`
+      : `Sweep complete: ${result.evaluations.sent} evaluation(s), ${result.reminders.sent} reminder(s)` +
+          (result.evaluations.suppressed || result.reminders.suppressed
+            ? ` — ${result.evaluations.suppressed + result.reminders.suppressed} held because "Pause all email" is on; they go out at the first sweep after it is turned off`
+            : '')
   );
 });
 
@@ -101,6 +104,24 @@ export const sendEvaluationNow = catchAsync(async (req, res) => {
 
   const result = await queueEmail({ type: 'evaluation_link', cycle: refreshed });
 
+  // Nothing reached the manager — failed, or held by "Pause all email". Put the
+  // evaluation back exactly as it was (old link included), so it is not shown
+  // as "Awaiting response" and the sweep still picks it up once mail flows.
+  if (result.status === 'failed' || result.status === 'suppressed') {
+    await prisma.pea_evaluation_cycles.update({
+      where: { id: cycle.id },
+      data: {
+        token: cycle.token,
+        token_expires_at: cycle.token_expires_at,
+        status: cycle.status,
+        sent_at: cycle.sent_at,
+        reminder_count: cycle.reminder_count,
+        last_reminded_at: cycle.last_reminded_at,
+        modified_at: new Date(),
+      },
+    });
+  }
+
   if (result.status === 'failed') {
     throw new AppError(`Could not send: ${result.error}`, 502);
   }
@@ -115,7 +136,7 @@ export const sendEvaluationNow = catchAsync(async (req, res) => {
       redirected: result.redirected,
     },
     result.status === 'suppressed'
-      ? '"Pause all email" is on — the send was logged but no email left the system.'
+      ? '"Pause all email" is on — the send was logged but no email left the system. The evaluation is unchanged; send it again once the pause is off.'
       : `Evaluation ${seqNo} sent to ${result.to.join(', ')}`
   );
 });

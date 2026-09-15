@@ -152,13 +152,26 @@ export function shiftOffWeekend(date) {
  * @returns {Date}
  */
 export function todayIn(timeZone = 'Asia/Kolkata') {
+  return dateIn(new Date(), timeZone);
+}
+
+/**
+ * The calendar date an instant falls on in a given IANA timezone, as a
+ * UTC-midnight Date — so a timestamp (sent_at) can be compared with todayIn().
+ * Sent at 19:24 IST on 14 Sep is 13:54 UTC; both must count as 14 Sep.
+ *
+ * @param {Date} instant
+ * @param {string} [timeZone='Asia/Kolkata']
+ * @returns {Date}
+ */
+export function dateIn(instant, timeZone = 'Asia/Kolkata') {
   // en-CA formats as YYYY-MM-DD, which parses unambiguously.
   const ymd = new Intl.DateTimeFormat('en-CA', {
     timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).format(new Date());
+  }).format(new Date(instant));
   return toUtcMidnight(ymd);
 }
 

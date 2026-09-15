@@ -16,9 +16,9 @@
  * as well as <body> because mail clients cannot be trusted to inherit it.
  */
 
-/** Brand tokens — identical to ATS. */
+/** Brand tokens — aligned with PEA site primary brand green. */
 export const BRAND = Object.freeze({
-  accent: '#7a922e',
+  accent: '#5c8727',
   page: '#f4f6f9',
   card: '#ffffff',
   text: '#374151',

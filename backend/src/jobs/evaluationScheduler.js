@@ -31,17 +31,19 @@ import config from '../config/index.js';
 import { queueEmail } from '../services/notification.service.js';
 import { notifyStaff } from '../services/inAppNotification.service.js';
 import { runDeadlineAlerts } from '../services/confirmationDeadline.service.js';
-import { todayIn, toDateString, addDays, toUtcMidnight } from '../utils/dateUtils.js';
+import { todayIn, dateIn, toDateString, addDays } from '../utils/dateUtils.js';
 
 let task = null;
 
 /**
- * Reduce a timestamp to its calendar date at UTC midnight, so it can be
- * compared against `today` without the time of day affecting the answer.
+ * Reduce a timestamp to its calendar date in the scheduler timezone, at UTC
+ * midnight, so it can be compared against `today` (also in that timezone)
+ * without the time of day affecting the answer.
  * @param {Date} value
+ * @param {string} timeZone
  * @returns {Date}
  */
-const startOfDay = (value) => toUtcMidnight(value);
+const startOfDay = (value, timeZone) => dateIn(value, timeZone);
 
 /** Statuses meaning the link is out but no response has arrived. */
 const AWAITING = ['email_sent', 'opened'];
@@ -91,7 +93,7 @@ export async function runEvaluationSweep({ dryRun = false } = {}) {
 
   if (due.length === 0) {
     logger.info(`[sweep] nothing due as at ${toDateString(today)}`);
-    return { due: 0, sent: 0, failed: 0, rows: [] };
+    return { due: 0, sent: 0, failed: 0, suppressed: 0, rows: [] };
   }
 
   logger.info(`[sweep] ${due.length} evaluation(s) due as at ${toDateString(today)}`);
@@ -100,6 +102,7 @@ export async function runEvaluationSweep({ dryRun = false } = {}) {
   const rows = [];
   let sent = 0;
   let failed = 0;
+  let suppressed = 0;
 
   for (const cycle of due) {
     const label = `${cycle.employee.full_name} eval ${cycle.seq_no} (due ${toDateString(cycle.due_date)})`;
@@ -122,6 +125,14 @@ export async function runEvaluationSweep({ dryRun = false } = {}) {
         continue;
       }
 
+      if (result.status === 'suppressed') {
+        // "Pause all email" is on: nothing reached the manager. Leave it
+        // `pending` so the first sweep after the pause is lifted sends it.
+        suppressed += 1;
+        rows.push({ cycle: label, to: result.to.join(', '), action: 'suppressed' });
+        continue;
+      }
+
       await prisma.pea_evaluation_cycles.update({
         where: { id: cycle.id },
         data: {
@@ -141,7 +152,10 @@ export async function runEvaluationSweep({ dryRun = false } = {}) {
     }
   }
 
-  logger.info(`[sweep] evaluations — ${sent} sent, ${failed} failed of ${due.length} due`);
+  logger.info(
+    `[sweep] evaluations — ${sent} sent, ${failed} failed` +
+      `${suppressed ? `, ${suppressed} held by "Pause all email"` : ''} of ${due.length} due`
+  );
 
   if (failed > 0) {
     // A failed send is left pending and retried tomorrow — which is correct, but
@@ -160,7 +174,7 @@ export async function runEvaluationSweep({ dryRun = false } = {}) {
     });
   }
 
-  return { due: due.length, sent, failed, rows };
+  return { due: due.length, sent, failed, suppressed, rows };
 }
 
 /**
@@ -216,6 +230,7 @@ export async function runReminderSweep({ dryRun = false } = {}) {
   const rows = [];
   let sent = 0;
   let failed = 0;
+  let suppressed = 0;
   let dueCount = 0;
 
   for (const cycle of outstanding) {
@@ -226,7 +241,7 @@ export async function runReminderSweep({ dryRun = false } = {}) {
     // A cycle in an AWAITING status always has sent_at; fall back to due_date
     // defensively so a hand-edited row cannot make this crash.
     const basis = cycle.sent_at || cycle.due_date;
-    const owedFrom = addDays(startOfDay(basis), offset);
+    const owedFrom = addDays(startOfDay(basis, config.scheduler.timezone), offset);
     if (owedFrom > today) continue;
 
     dueCount += 1;
@@ -251,6 +266,13 @@ export async function runReminderSweep({ dryRun = false } = {}) {
         continue;
       }
 
+      if (result.status === 'suppressed') {
+        // Paused: the reminder is still owed, so it is not counted as sent.
+        suppressed += 1;
+        rows.push({ cycle: label, to: result.to.join(', '), action: 'suppressed' });
+        continue;
+      }
+
       await prisma.pea_evaluation_cycles.update({
         where: { id: cycle.id },
         data: { reminder_count: n, last_reminded_at: new Date(), modified_at: new Date() },
@@ -265,8 +287,13 @@ export async function runReminderSweep({ dryRun = false } = {}) {
     }
   }
 
-  if (dueCount) logger.info(`[sweep] reminders — ${sent} sent, ${failed} failed of ${dueCount} due`);
-  return { due: dueCount, sent, failed, rows };
+  if (dueCount) {
+    logger.info(
+      `[sweep] reminders — ${sent} sent, ${failed} failed` +
+        `${suppressed ? `, ${suppressed} held by "Pause all email"` : ''} of ${dueCount} due`
+    );
+  }
+  return { due: dueCount, sent, failed, suppressed, rows };
 }
 
 /**

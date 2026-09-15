@@ -115,6 +115,8 @@ EMAIL_REDIRECT_TO_TEST=true
 EMAIL_STAGING_RECIPIENTS=aiautomationn8nuser@gmail.com
 PEA_SCHEDULER_ENABLED=true
 TZ=Asia/Kolkata
+# Cloudflare Turnstile widget for pea-staging.aapnainfotech.com → Secret key
+TURNSTILE_SECRET_KEY=<secret key>
 ```
 
 > 🚨 **Never run `prisma migrate`, `prisma db push`, or `prisma db pull` here.**
@@ -122,8 +124,9 @@ TZ=Asia/Kolkata
 > as drift and emit `DROP TABLE` for each — successfully. `schema.prisma` is
 > hand-written; schema changes go through a reviewed `.sql` file in `prisma/ddl/`.
 
-The app refuses to start if `JWT_SECRET` is still the dev placeholder, or if the
-email redirect is on with no recipient configured.
+The app refuses to start if `JWT_SECRET` is still the dev placeholder, if the
+email redirect is on with no recipient configured, or if `TURNSTILE_SECRET_KEY`
+is empty (the login page's Cloudflare check).
 
 ---
 
@@ -134,6 +137,18 @@ cd /var/www/html/pea-staging-aapnainfotech/frontend
 npm ci
 npm run build:staging        # → dist/
 ```
+
+The build reads `frontend/.env.staging`, which must contain the Turnstile
+**site key** (it is baked into the bundle, so a change needs a rebuild):
+
+```bash
+VITE_API_URL=/api
+VITE_TURNSTILE_SITE_KEY=<site key>
+```
+
+The Turnstile widget in Cloudflare must list `pea-staging.aapnainfotech.com`
+as a hostname, or the login box shows an error and nobody can sign in.
+Locally, both `.env.development` files use Cloudflare's always-pass test keys.
 
 ---
 

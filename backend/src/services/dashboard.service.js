@@ -17,7 +17,7 @@
  */
 import prisma from '../config/database.js';
 import config from '../config/index.js';
-import { todayIn, toDateString, addDays } from '../utils/dateUtils.js';
+import { todayIn, dateIn, toDateString, addDays } from '../utils/dateUtils.js';
 import { findDeadlineBreaches } from './confirmationDeadline.service.js';
 
 /**
@@ -154,7 +154,9 @@ export async function getDashboard() {
       rmEmail: c.employee.rm_email,
       seqNo: c.seq_no,
       sentAt: c.sent_at,
-      daysWaiting: c.sent_at ? daysLate(c.sent_at) : null,
+      // sent_at is an instant: take its local calendar date, or an evening send
+      // (after 00:00 UTC's day boundary vs IST) shows as "-1 days".
+      daysWaiting: c.sent_at ? daysLate(dateIn(c.sent_at, config.scheduler.timezone)) : null,
       remindersSent: c.reminder_count,
       opened: !!c.opened_at,
     })),

@@ -31,6 +31,17 @@ const SAMPLE_TO = {
 
 const fetchTemplates = () => api.get('/settings/templates').then(unwrap);
 
+/** Why a body cannot be saved, or null. Mirrors validate() in emailTemplate.service.js. */
+const bodyProblem = (html) => {
+  if (/<script[\s>]|\son\w+\s*=|javascript:/i.test(html || '')) {
+    return 'Scripts, event handlers and javascript: links are not allowed in an email.';
+  }
+  if (/<!DOCTYPE|<html[\s>]|<body[\s>]/i.test(html || '')) {
+    return 'Enter only the message body — the AAPNA header, logo and footer are added automatically.';
+  }
+  return null;
+};
+
 /**
  * Email Templates — the subject and wording of every email PEA sends, edited
  * from the site. Same screen as ATS: list on the left, Subject + Editor /
@@ -115,8 +126,14 @@ export default function EmailTemplates() {
   }, [tab, selectedKey, subject, body]);
 
   const save = useMutation({
-    mutationFn: () =>
-      api.put(`/settings/templates/${selectedKey}`, { subject, body: sanitizeFragment(body) }).then((r) => r.data),
+    mutationFn: () => {
+      // Refuse, don't silently strip: the clean-up below would remove these and
+      // report "saved", so the admin never learns part of the paste was lost.
+      // Same rules as the server (emailTemplate.service.js).
+      const problem = bodyProblem(body);
+      if (problem) return Promise.reject(Object.assign(new Error(problem), { friendlyMessage: problem }));
+      return api.put(`/settings/templates/${selectedKey}`, { subject, body: sanitizeFragment(body) }).then((r) => r.data);
+    },
     onSuccess: (res) => {
       message.success(res.message);
       setDirty(false);
@@ -129,7 +146,10 @@ export default function EmailTemplates() {
     mutationFn: () => api.delete(`/settings/templates/${selectedKey}`).then((r) => r.data),
     onSuccess: async (res) => {
       message.success(res.message);
-      const fresh = await qc.fetchQuery({ queryKey: ['email-templates'], queryFn: fetchTemplates });
+      // Fetch directly, not qc.fetchQuery: that can hand back the cached,
+      // still-customised list, and the editor would keep the old wording.
+      const fresh = await fetchTemplates();
+      qc.setQueryData(['email-templates'], fresh);
       const t = fresh.find((x) => x.key === selectedKey);
       if (t) load(t);
     },
