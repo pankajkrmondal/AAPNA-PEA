@@ -42,6 +42,7 @@ app.use(
         // Styles are inline in the form's <style> block and contain nothing
         // user-controlled; script injection is the risk worth being strict about.
         'style-src': ["'self'", "'unsafe-inline'"],
+        'img-src': ["'self'", 'data:', 'https://www.aapnainfotech.com'],
         // The form posts to this origin only.
         'form-action': ["'self'"],
         'frame-ancestors': ["'none'"],

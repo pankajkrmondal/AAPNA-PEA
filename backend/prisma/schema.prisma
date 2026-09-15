@@ -7,16 +7,18 @@
 //  PEA has its OWN database and reads no ATS data. ATS covers hiring; PEA
 //  covers probation after joining, however the person joined.
 //
-//  Since 15 Sep 2026 PEA runs on its own databases as `peauser`:
-//    peaStagingDB (staging / local) and peaProductionDB (production).
-//  It moved from the ATS staging database (recruitmentautomationdb), where its
-//  pea_ tables sat temporarily beside the ATS rpa_ tables.
+//  ⚠️ INTERIM: until IT can create PEA's own database, PEA runs on the ATS
+//  staging database (recruitmentautomationdb) as `appuser`, which OWNS the ATS
+//  rpa_ tables. PEA never queries them, but UNTIL PEA MOVES TO ITS OWN DATABASE:
+//    • `prisma db pull` would import every ATS table into this file;
+//    • `prisma migrate dev` / `db push` would treat the ATS tables as drift
+//      and emit DROP TABLE for each — and they would succeed.
+//  So: never run migrate / push / pull here. package.json has no such script.
 //
-//  Still SQL-first: never run `prisma migrate` / `db push` / `db pull`.
-//  package.json has no such script. Schema changes are a reviewed .sql file in
-//  prisma/ddl/, applied by hand, with the models below edited to match.
+//  Schema changes are a reviewed .sql file in prisma/ddl/, applied by hand,
+//  with the models below edited to match.
 //
-//  Source of truth for the physical schema:
+//  Source of truth for the physical schema on a NEW, dedicated PEA database:
 //    prisma/ddl/pea-dedicated-database.sql
 // ═══════════════════════════════════════════════════════════════════════════
 

@@ -42,74 +42,229 @@ const STYLES = `
   *, *::before, *::after { box-sizing: border-box; }
   body {
     margin: 0; padding: 0;
-    font-family: Calibri, -apple-system, "Segoe UI", Roboto, sans-serif;
-    font-size: 16px; line-height: 1.5; color: #22272b; background: #eef1f4;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 15px; line-height: 1.5; color: #1f2a17; background: #f5f8ee;
   }
   .wrap { max-width: 860px; margin: 0 auto; padding: 16px; }
-  header { background: #345C72; color: #fff; padding: 24px 16px; }
+  header {
+    background: linear-gradient(135deg, #5c8727 0%, #6b9a30 50%, #47691f 100%);
+    color: #fff;
+    padding: 30px 16px;
+    text-align: center;
+    box-shadow: 0 2px 10px rgba(34, 52, 15, 0.12);
+  }
   header .wrap { padding: 0 16px; }
-  header h1 { margin: 0 0 4px; font-size: 22px; font-weight: 600; }
-  header p { margin: 0; opacity: .85; font-size: 15px; }
+  header .brand { margin-bottom: 12px; }
+  header .brand img {
+    display: inline-block;
+    max-width: 180px;
+    height: auto;
+  }
+  header h1 {
+    margin: 0 0 6px;
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    color: #ffffff;
+  }
+  header p {
+    margin: 0;
+    color: #e8f1d7;
+    font-size: 14px;
+    font-weight: 500;
+  }
 
-  .card { background: #fff; border: 1px solid #d9e0e6; border-radius: 8px;
-          padding: 20px; margin: 16px 0; }
+  .card {
+    background: #ffffff;
+    border: 1px solid #e6ebdb;
+    border-radius: 12px;
+    padding: 24px;
+    margin: 16px 0;
+    box-shadow: 0 1px 3px rgba(34, 52, 15, 0.04), 0 6px 16px -8px rgba(34, 52, 15, 0.08);
+  }
 
-  .subject { display: grid; grid-template-columns: max-content 1fr; gap: 6px 20px; margin: 0; }
-  .subject dt { color: #5b6b78; font-size: 14px; }
-  .subject dd { margin: 0; font-weight: 600; }
+  .subject { display: grid; grid-template-columns: max-content 1fr; gap: 8px 24px; margin: 0; }
+  .subject dt { color: #6b7566; font-size: 14px; font-weight: 500; }
+  .subject dd { margin: 0; font-weight: 600; color: #1f2a17; }
 
-  table.scale { border-collapse: collapse; width: 100%; font-size: 14px; }
-  table.scale th, table.scale td { border: 1px solid #d9e0e6; padding: 7px 10px; text-align: left; }
-  table.scale th { background: #345C72; color: #fff; font-weight: 600; }
+  table.scale {
+    border-collapse: collapse;
+    width: 100%;
+    font-size: 14px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 1px solid #e6ebdb;
+  }
+  table.scale th, table.scale td { border: 1px solid #e6ebdb; padding: 9px 12px; text-align: left; }
+  table.scale th {
+    background: #5c8727;
+    color: #ffffff;
+    font-weight: 700;
+    letter-spacing: 0.01em;
+  }
+  table.scale tr:nth-child(even) td { background: #fafcf7; }
 
-  .q { border-top: 1px solid #e6ebef; padding: 18px 0; }
+  .q { border-top: 1px solid #e6ebdb; padding: 20px 0; }
   .q:first-of-type { border-top: 0; padding-top: 4px; }
-  .q h3 { margin: 0 0 10px; font-size: 16px; }
-  .q h3 .num { color: #7b8a96; font-weight: 400; margin-right: 6px; }
+  .q h3 { margin: 0 0 12px; font-size: 16px; color: #1f2a17; font-weight: 600; }
+  .q h3 .num { color: #5c8727; font-weight: 700; margin-right: 6px; }
 
-  .opts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+  .opts { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
   .opts label {
     flex: 1 1 150px; display: flex; align-items: flex-start; gap: 8px;
-    border: 1px solid #d9e0e6; border-radius: 6px; padding: 9px 11px;
-    cursor: pointer; background: #fbfcfd; font-size: 14px;
+    border: 1px solid #e6ebdb; border-radius: 8px; padding: 10px 12px;
+    cursor: pointer; background: #ffffff; font-size: 14px;
+    transition: border-color 0.15s, background-color 0.15s, box-shadow 0.15s;
   }
-  .opts label:hover { border-color: #345C72; }
-  .opts input { margin: 3px 0 0; flex: none; }
-  .opts .n { font-weight: 700; }
-  .opts .d { display: block; color: #6b7a86; font-size: 12.5px; }
-  .opts input:checked + span { color: #1d4258; }
-  .opts label:has(input:checked) { border-color: #345C72; background: #eaf1f5; box-shadow: inset 0 0 0 1px #345C72; }
+  .opts label:hover { border-color: #5c8727; background: #fafcf7; }
+  .opts input { margin: 3px 0 0; flex: none; accent-color: #5c8727; }
+  .opts .n { font-weight: 700; color: #1f2a17; }
+  .opts .d { display: block; color: #6b7566; font-size: 12.5px; margin-top: 2px; }
+  .opts input:checked + span .n { color: #22340f; }
+  .opts label:has(input:checked) {
+    border-color: #5c8727;
+    background: #f2f7e8;
+    box-shadow: inset 0 0 0 1.5px #5c8727;
+  }
 
   textarea, input[type=email], select {
-    width: 100%; font: inherit; font-size: 15px; padding: 9px 11px;
-    border: 1px solid #c9d3db; border-radius: 6px; background: #fff; color: inherit;
+    width: 100%; font: inherit; font-size: 15px; padding: 10px 12px;
+    border: 1px solid #d6ddc6; border-radius: 8px; background: #ffffff; color: #1f2a17;
+    transition: border-color 0.15s, box-shadow 0.15s;
   }
-  textarea { min-height: 64px; resize: vertical; }
-  label.fld { display: block; font-size: 14px; color: #5b6b78; margin-bottom: 5px; }
+  textarea:focus, input[type=email]:focus, select:focus {
+    outline: none;
+    border-color: #5c8727;
+    box-shadow: 0 0 0 3px rgba(92, 135, 39, 0.15);
+  }
+  textarea { min-height: 72px; resize: vertical; }
+  label.fld { display: block; font-size: 14px; font-weight: 600; color: #47691f; margin-bottom: 6px; }
 
-  .req { color: #b3261e; }
-  .hint { font-size: 13.5px; color: #6b7a86; margin: 6px 0 0; }
+  .req { color: #dc2626; }
+  .hint { font-size: 13.5px; color: #6b7566; margin: 6px 0 0; }
 
   button {
-    background: #345C72; color: #fff; border: 0; border-radius: 6px;
-    padding: 13px 26px; font: inherit; font-size: 16px; font-weight: 600; cursor: pointer;
+    background: #5c8727; color: #ffffff; border: 0; border-radius: 8px;
+    padding: 13px 28px; font: inherit; font-size: 16px; font-weight: 700; cursor: pointer;
+    transition: background-color 0.15s, transform 0.1s, box-shadow 0.15s;
+    box-shadow: 0 2px 6px rgba(92, 135, 39, 0.25);
   }
-  button:hover { background: #27485b; }
-  button:disabled { background: #9aa8b2; cursor: not-allowed; }
+  button:hover {
+    background: #47691f;
+    box-shadow: 0 4px 12px rgba(71, 105, 31, 0.3);
+  }
+  button:active { transform: translateY(1px); }
+  button:disabled { background: #a6c974; cursor: not-allowed; box-shadow: none; }
 
   .err {
-    background: #fdecea; border: 1px solid #f5c6c2; color: #8c1d18;
-    border-radius: 6px; padding: 12px 14px; margin: 0 0 16px;
+    background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+    border-radius: 8px; padding: 12px 16px; margin: 0 0 16px; font-size: 14.5px;
   }
-  .note { background: #fff8e6; border: 1px solid #f0dca8; border-radius: 6px;
-          padding: 12px 14px; font-size: 14.5px; }
-  footer { text-align: center; color: #7b8a96; font-size: 13px; padding: 8px 0 32px; }
+  .note {
+    background: #f2f7e8; border: 1px solid #d3e4b3; border-radius: 8px;
+    padding: 14px 18px; font-size: 14.5px; color: #22340f; line-height: 1.6;
+  }
+  footer { text-align: center; color: #6b7566; font-size: 13px; padding: 12px 0 36px; }
 
   @media (max-width: 560px) {
     .opts label { flex: 1 1 100%; }
     .subject { grid-template-columns: 1fr; gap: 2px 0; }
     .subject dd { margin-bottom: 8px; }
   }
+
+  /* ── Thank-You & Status Screen ───────────────────────────────────────── */
+  .header-compact {
+    background: linear-gradient(135deg, #5c8727 0%, #6b9a30 50%, #47691f 100%);
+    padding: 28px 16px 44px;
+    text-align: center;
+    color: #ffffff;
+    box-shadow: 0 2px 10px rgba(34, 52, 15, 0.12);
+  }
+  .header-compact .brand { margin-bottom: 8px; }
+  .header-compact .brand img { display: inline-block; max-width: 170px; height: auto; }
+  .header-tag { margin: 0; color: #e8f1d7; font-size: 13.5px; font-weight: 500; }
+
+  .wrap-thanks { max-width: 560px; margin: -26px auto 36px; padding: 0 16px; position: relative; z-index: 2; }
+  .thanks-card {
+    background: #ffffff;
+    border: 1px solid #e6ebdb;
+    border-radius: 16px;
+    padding: 36px 28px;
+    text-align: center;
+    box-shadow: 0 4px 24px -4px rgba(34, 52, 15, 0.12), 0 2px 6px rgba(34, 52, 15, 0.04);
+  }
+  .success-icon-wrap {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 68px; height: 68px; margin-bottom: 18px; border-radius: 50%;
+    background: #f2f7e8;
+  }
+  .success-icon { width: 52px; height: 52px; display: block; }
+  .error-icon-wrap {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 68px; height: 68px; margin-bottom: 18px; border-radius: 50%;
+    background: #fef2f2;
+  }
+  .error-icon { width: 44px; height: 44px; display: block; }
+
+  .thanks-title { font-size: 24px; font-weight: 700; color: #1f2a17; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .thanks-subtitle { font-size: 14.5px; color: #6b7566; margin: 0 0 22px; line-height: 1.5; }
+
+  .summary-box {
+    background: #fbfcf7;
+    border: 1px solid #e6ebdb;
+    border-radius: 12px;
+    padding: 18px 20px;
+    margin-bottom: 20px;
+    text-align: left;
+  }
+  .employee-row {
+    display: flex; align-items: center; gap: 14px; padding-bottom: 16px; border-bottom: 1px solid #e6ebdb;
+  }
+  .avatar {
+    width: 44px; height: 44px; border-radius: 50%; background: #5c8727; color: #ffffff;
+    display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 16px; flex-shrink: 0;
+    box-shadow: 0 2px 6px rgba(92, 135, 39, 0.25);
+  }
+  .employee-meta { flex: 1; min-width: 0; }
+  .emp-name { font-size: 16px; font-weight: 700; color: #1f2a17; line-height: 1.3; }
+  .emp-cycle { font-size: 13px; color: #6b7566; margin-top: 2px; }
+
+  .decision-badge {
+    padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .decision-badge.confirmed { background: #e0f5ed; color: #0d9f6e; border: 1px solid #a7f3d0; }
+  .decision-badge.extended { background: #fdefdd; color: #e08113; border: 1px solid #fed7aa; }
+  .decision-badge.not-confirmed { background: #fde9e9; color: #dc2626; border: 1px solid #fecaca; }
+
+  .score-card { display: flex; align-items: center; justify-content: space-between; padding-top: 14px; }
+  .score-left .score-label { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #6b7566; }
+  .score-left .score-rating-text { font-size: 14px; font-weight: 700; color: #5c8727; margin-top: 3px; }
+  .score-right { display: flex; align-items: baseline; gap: 4px; }
+  .score-value { font-size: 32px; font-weight: 800; color: #1f2a17; line-height: 1; }
+  .score-max { font-size: 16px; font-weight: 600; color: #9aa393; }
+
+  .notice-box {
+    display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; border-radius: 10px;
+    font-size: 13.5px; line-height: 1.5; margin-bottom: 22px; text-align: left;
+  }
+  .notice-box svg { width: 20px; height: 20px; flex-shrink: 0; margin-top: 2px; }
+  .notice-box.notice-success { background: #f2f7e8; border: 1px solid #d3e4b3; color: #22340f; }
+  .notice-box.notice-success svg { stroke: #5c8727; }
+  .notice-box.notice-warning { background: #fdefdd; border: 1px solid #fed7aa; color: #7c2d12; }
+  .notice-box.notice-warning svg { stroke: #e08113; }
+  .notice-box.notice-error { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+  .notice-box.notice-error svg { stroke: #dc2626; }
+
+  .thanks-action { margin-top: 4px; }
+  .btn-close {
+    background: #5c8727; color: #ffffff; border: 0; border-radius: 8px; padding: 11px 28px;
+    font-size: 15px; font-weight: 700; cursor: pointer; transition: background-color 0.15s, box-shadow 0.15s, transform 0.1s;
+    box-shadow: 0 2px 6px rgba(92, 135, 39, 0.25);
+  }
+  .btn-close:hover { background: #47691f; box-shadow: 0 4px 12px rgba(71, 105, 31, 0.3); }
+  .btn-close:active { transform: translateY(1px); }
+  .close-hint { font-size: 13px; color: #9aa393; margin: 10px 0 0; }
 `;
 
 function page(title, bodyHtml) {
@@ -152,7 +307,7 @@ export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}
   const ratings = submitted.ratings || {};
 
   const scaleRows = RATING_ROWS.map(
-    (r) => `<tr><td>${esc(r.label)} <span style="color:#6b7a86">(${esc(r.detail)})</span></td>
+    (r) => `<tr><td>${esc(r.label)} <span style="color:#6b7566">(${esc(r.detail)})</span></td>
              <td style="text-align:center"><strong>${r.value}</strong></td>
              <td style="text-align:center">${esc(r.percent)}</td></tr>`
   ).join('');
@@ -207,8 +362,11 @@ export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}
     `
 <header>
   <div class="wrap">
+    <div class="brand">
+      <img src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png" width="180" alt="AAPNA Infotech">
+    </div>
     <h1>Performance Evaluation ${cycle.seq_no}${cycle.is_extension ? ' (extended period)' : ''}</h1>
-    <p>AAPNA Infotech &middot; Human Resources</p>
+    <p>AAPNA Infotech &middot; Performance Evaluation</p>
   </div>
 </header>
 
@@ -286,40 +444,106 @@ export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}
  */
 export function renderThanks(result) {
   const extended = result.confirmation_status?.startsWith('Extend');
+  const avgNum = Number(result.average) || 0;
+  const pct = Math.round((avgNum / 5) * 100);
+
+  let ratingLabel = 'Satisfied';
+  for (const r of RATING_ROWS) {
+    if (avgNum >= r.value - 0.5) {
+      ratingLabel = r.label;
+      break;
+    }
+  }
+
+  const initials = String(result.employee || '')
+    .trim()
+    .split(/\s+/)
+    .map((p) => p[0]?.toUpperCase() || '')
+    .slice(0, 2)
+    .join('') || 'PE';
+
+  let decisionBadge = '';
+  if (result.confirmation_status) {
+    const isConf = result.confirmation_status === 'Confirmed';
+    const isNotConf = result.confirmation_status === 'Not Confirmed';
+    const badgeClass = isConf ? 'confirmed' : isNotConf ? 'not-confirmed' : 'extended';
+    decisionBadge = `<span class="decision-badge ${badgeClass}">${esc(result.confirmation_status)}</span>`;
+  }
+
+  const noticeBlock = extended
+    ? `
+    <div class="notice-box notice-warning">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+      <div>
+        <strong>Probation period extended (${esc(result.confirmation_status)}).</strong>
+        <div>${result.extensionCyclesCreated} additional evaluation${
+          result.extensionCyclesCreated === 1 ? '' : 's'
+        } ${
+          result.extensionCyclesCreated === 1 ? 'has' : 'have'
+        } been scheduled, and you will receive a new link when due.</div>
+      </div>
+    </div>`
+    : `
+    <div class="notice-box notice-success">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+      <div>
+        <strong>HR team has been notified.</strong>
+        <div>Your ratings and comments have been recorded. No further action is required from you.</div>
+      </div>
+    </div>`;
 
   return page(
     'Evaluation submitted',
     `
-<header>
+<header class="header-compact">
   <div class="wrap">
-    <h1>Thank you</h1>
-    <p>Your evaluation has been recorded.</p>
+    <div class="brand">
+      <img src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png" width="170" alt="AAPNA Infotech">
+    </div>
+    <p class="header-tag">AAPNA Infotech &middot; Performance Evaluation System</p>
   </div>
 </header>
 
-<div class="wrap">
-  <div class="card">
-    <dl class="subject">
-      <dt>Employee</dt><dd>${esc(result.employee)}</dd>
-      <dt>Evaluation</dt><dd>${esc(result.evaluation)}</dd>
-      <dt>Average rating</dt><dd>${esc(result.average)} / 5</dd>
-      ${result.confirmation_status ? `<dt>Decision</dt><dd>${esc(result.confirmation_status)}</dd>` : ''}
-    </dl>
+<div class="wrap wrap-thanks">
+  <div class="thanks-card">
+    <div class="success-icon-wrap">
+      <svg class="success-icon" viewBox="0 0 48 48" fill="none">
+        <circle cx="24" cy="24" r="22" fill="#e8f1d7" stroke="#5c8727" stroke-width="3"/>
+        <path d="M14 24L21 31L34 17" stroke="#5c8727" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <h1 class="thanks-title">Evaluation Submitted</h1>
+    <p class="thanks-subtitle">Thank you for your assessment. Your response has been recorded.</p>
+
+    <div class="summary-box">
+      <div class="employee-row">
+        <div class="avatar">${esc(initials)}</div>
+        <div class="employee-meta">
+          <div class="emp-name">${esc(result.employee)}</div>
+          <div class="emp-cycle">Performance Evaluation Round ${esc(result.evaluation)}</div>
+        </div>
+        ${decisionBadge}
+      </div>
+
+      <div class="score-card">
+        <div class="score-left">
+          <div class="score-label">Overall Average Rating</div>
+          <div class="score-rating-text">${esc(ratingLabel)} &middot; ${pct}%</div>
+        </div>
+        <div class="score-right">
+          <span class="score-value">${esc(result.average)}</span>
+          <span class="score-max">/ 5.0</span>
+        </div>
+      </div>
+    </div>
+
+    ${noticeBlock}
+
+    <div class="thanks-action">
+      <button type="button" onclick="window.close()" class="btn-close">Close This Window</button>
+      <p class="close-hint">You can safely close this browser tab.</p>
+    </div>
   </div>
-
-  ${
-    extended
-      ? `<div class="note">
-      You chose <strong>${esc(result.confirmation_status)}</strong>.
-      ${result.extensionCyclesCreated} further evaluation${
-        result.extensionCyclesCreated === 1 ? '' : 's'
-      } ${result.extensionCyclesCreated === 1 ? 'has' : 'have'} been scheduled, and you will
-      receive a link when ${result.extensionCyclesCreated === 1 ? 'it is' : 'they are'} due.
-    </div>`
-      : `<div class="note">HR has been notified. No further action is needed from you.</div>`
-  }
-
-  <p class="hint" style="text-align:center;margin-top:20px">You can close this page.</p>
 </div>`
   );
 }
@@ -331,23 +555,112 @@ export function renderThanks(result) {
  * @returns {string} HTML
  */
 export function renderError(message, status = 400) {
+  const isAlreadySubmitted = /already submitted/i.test(message || '');
+  const isExpired = /expired/i.test(message || '');
+  const isPaused = /paused/i.test(message || '');
+
+  let iconHtml = '';
+  let title = 'Unable to Open Evaluation';
+  let subtitle = 'We could not verify this evaluation link.';
+  let cardContentHtml = '';
+
+  if (isAlreadySubmitted) {
+    iconHtml = `
+      <div class="success-icon-wrap">
+        <svg class="success-icon" viewBox="0 0 48 48" fill="none">
+          <circle cx="24" cy="24" r="22" fill="#e8f1d7" stroke="#5c8727" stroke-width="3"/>
+          <path d="M14 24L21 31L34 17" stroke="#5c8727" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </div>`;
+    title = 'Evaluation Already Submitted';
+    subtitle = 'This evaluation has already been completed.';
+    cardContentHtml = `
+      <div class="summary-box">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-weight:700;font-size:14px;color:#1f2a17">Submission Record</span>
+          <span class="decision-badge confirmed">Submitted</span>
+        </div>
+        <p style="margin:0;font-size:14.5px;color:#374151;line-height:1.6">${esc(message)}</p>
+      </div>
+      <div class="notice-box notice-success">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <div>
+          <strong>No further action required</strong>
+          <div>Your ratings and feedback are securely saved. You can safely close this window.</div>
+        </div>
+      </div>`;
+  } else if (isExpired) {
+    iconHtml = `
+      <div class="error-icon-wrap" style="background:#fdefdd">
+        <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="#e08113" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      </div>`;
+    title = 'Evaluation Link Expired';
+    subtitle = 'The response window for this evaluation link has closed.';
+    cardContentHtml = `
+      <div class="notice-box notice-warning">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
+        <div>
+          <strong>Need a fresh link?</strong>
+          <div>${esc(message)} Please reach out to the HR team if you still need to complete this review.</div>
+        </div>
+      </div>`;
+  } else if (isPaused) {
+    iconHtml = `
+      <div class="error-icon-wrap" style="background:#e8effd">
+        <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="10" y1="15" x2="10" y2="9"/><line x1="14" y1="15" x2="14" y2="9"/></svg>
+      </div>`;
+    title = 'Evaluation On Hold';
+    subtitle = 'Evaluations for this employee are currently paused.';
+    cardContentHtml = `
+      <div class="notice-box" style="background:#e8effd;border:1px solid #bfdbfe;color:#1e3a8a">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>
+          <strong>Paused by HR</strong>
+          <div>${esc(message)} No evaluation submission is accepted at this time.</div>
+        </div>
+      </div>`;
+  } else {
+    iconHtml = `
+      <div class="error-icon-wrap">
+        <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      </div>`;
+    title = status === 410 ? 'Evaluation Link Inactive' : 'Unable to Open Evaluation';
+    subtitle = esc(message);
+    cardContentHtml = `
+      <div class="notice-box notice-error">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div>
+          <strong>Need assistance?</strong>
+          <div>If you believe this is a mistake or need a fresh link, please contact the <strong>AAPNA HR Team</strong>.</div>
+        </div>
+      </div>`;
+  }
+
   return page(
-    'Evaluation link',
+    title,
     `
-<header>
+<header class="header-compact">
   <div class="wrap">
-    <h1>${status === 410 ? 'This link is no longer active' : 'We could not open this evaluation'}</h1>
-    <p>AAPNA Infotech &middot; Human Resources</p>
+    <div class="brand">
+      <img src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png" width="170" alt="AAPNA Infotech">
+    </div>
+    <p class="header-tag">AAPNA Infotech &middot; Performance Evaluation System</p>
   </div>
 </header>
 
-<div class="wrap">
-  <div class="card">
-    <p style="margin:0">${esc(message)}</p>
+<div class="wrap wrap-thanks">
+  <div class="thanks-card">
+    ${iconHtml}
+    <h1 class="thanks-title">${title}</h1>
+    <p class="thanks-subtitle">${subtitle}</p>
+
+    ${cardContentHtml}
+
+    <div class="thanks-action">
+      <button type="button" onclick="window.close()" class="btn-close">Close This Window</button>
+      <p class="close-hint">You can safely close this browser tab.</p>
+    </div>
   </div>
-  <p class="hint" style="text-align:center">
-    If you believe this is a mistake, please contact the HR team.
-  </p>
 </div>`
   );
 }
