@@ -1,18 +1,17 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Row, Col, Table, Tag, DatePicker, Space, Spin, Alert, Empty, Typography } from 'antd';
+import { Card, Row, Col, Table, DatePicker, Space, Spin, Alert, Empty, Typography, Collapse } from 'antd';
 import dayjs from 'dayjs';
 import {
   ResponsiveContainer, ComposedChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend,
   PieChart, Pie, Cell,
 } from 'recharts';
-import {
-  CheckCircleOutlined, StarOutlined, FieldTimeOutlined, NotificationOutlined,
-} from '@ant-design/icons';
 import api, { unwrap } from '../api.js';
 import { useThemeMode } from '../theme.jsx';
 import StatCard from '../components/StatCard.jsx';
+import StatusPill from '../components/StatusPill.jsx';
 import HintIcon from '../components/HintIcon.jsx';
+import ResourceTrends from '../components/ResourceTrends.jsx';
 
 /**
  * Recharts draws SVG attributes, which do not reliably resolve CSS variables,
@@ -74,7 +73,12 @@ const rangePresets = () => {
   ];
 };
 
-export default function Analytics() {
+/**
+ * @param {{embedded?: boolean}} props - `embedded` drops the page heading, for
+ *   use inside Overview → Trends, which supplies its own. The screen keeps one
+ *   implementation either way: a second copy of these charts would drift.
+ */
+export default function Analytics({ embedded = false } = {}) {
   const [range, setRange] = useState(() => rangePresets().find((r) => r.label === 'Last 12 months').value);
   const p = usePalette();
 
@@ -97,11 +101,13 @@ export default function Analytics() {
 
   return (
     <>
-      <div className="pea-page-head">
-        <div>
-          <h2>Analytics</h2>
-          <p>Rating trends, parameter strengths and how quickly managers respond</p>
-        </div>
+      <div className={embedded ? 'pea-trend-range' : 'pea-page-head'}>
+        {!embedded && (
+          <div>
+            <h2>Analytics</h2>
+            <p>How each person is progressing, evaluation by evaluation</p>
+          </div>
+        )}
         <Space size={8} wrap>
           {isFetching && <Spin size="small" />}
           <DatePicker.RangePicker
@@ -116,42 +122,69 @@ export default function Analytics() {
         </Space>
       </div>
 
-      <div className="pea-stats">
+      {/* The proposal's compact figure strip: four figures on one line, rather
+          than four full tiles, which is heavier than Trends intends. */}
+      <div className="pea-stats pea-stats--compact">
         <StatCard
-          label="Evaluations completed"
+          compact
+          label="Evaluations submitted"
           value={s.completed ?? 0}
           accent="green"
-          icon={<CheckCircleOutlined />}
           hint="Total evaluations submitted by managers in the selected date range."
         />
         <StatCard
+          compact
           label="Average rating"
           value={s.average_rating ?? '—'}
           suffix={s.average_rating != null ? '/ 5' : undefined}
           accent="blue"
-          icon={<StarOutlined />}
           hint="Average of all completed evaluations in the range, out of 5. Shows — if none have ratings."
           share={s.average_rating != null ? s.average_rating / 5 : null}
         />
         <StatCard
-          label="Avg response time"
+          compact
+          label="Days managers take to reply"
           value={s.avg_response_days ?? '—'}
           suffix={s.avg_response_days != null ? 'days' : undefined}
           accent="orange"
-          icon={<FieldTimeOutlined />}
           hint="From the evaluation email being sent to the manager submitting. Only evaluations PEA actually sent."
         />
         <StatCard
-          label="Answered without a reminder"
+          compact
+          label="Replied without a reminder"
           value={s.onTimeRate != null ? `${s.onTimeRate}%` : '—'}
           accent="emerald"
-          icon={<NotificationOutlined />}
           share={s.onTimeRate != null ? s.onTimeRate / 100 : null}
           hint="Percentage of evaluations PEA sent that the manager submitted before any reminder went out. Imported history is excluded."
           foot={s.sent_by_pea ? `${s.without_reminder} of ${s.sent_by_pea} sent by PEA` : 'No evaluations sent by PEA yet'}
         />
       </div>
 
+      {/* R-06 — people before totals. Subhajit, 15-Sep (13:24): "resource-wise
+          analytics… will give us an idea whether that new joiner is growing or
+          not". Not date-ranged: a person's first evaluation is their baseline
+          whenever it happened. */}
+      <ResourceTrends />
+
+      {/* The existing process analytics, kept but demoted. Subhajit was explicit
+          that they are not useless — "I'm not saying whatever you have created
+          is absolutely not required" (13:05) — only that they are not what he
+          needs first. */}
+      <Collapse
+        className="pea-card"
+        style={{ marginTop: 16 }}
+        items={[{
+          key: 'overall',
+          label: (
+            <span className="pea-section-title">
+              Overall trends
+              <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400, marginLeft: 8 }}>
+                average by month, probation outcomes, parameter averages, rating spread, manager table
+              </Typography.Text>
+            </span>
+          ),
+          children: (
+            <>
       <Row gutter={[16, 16]}>
         <Col xs={24} xl={14}>
           <Card
@@ -286,20 +319,31 @@ export default function Analytics() {
               ),
               sorter: (a, b) => String(a.rm_name).localeCompare(String(b.rm_name)),
             },
-            { title: 'Team', dataIndex: 'employees', width: 70, sorter: (a, b) => a.employees - b.employees },
-            { title: 'Completed', dataIndex: 'completed', width: 100, sorter: (a, b) => a.completed - b.completed },
+            { title: 'Team', dataIndex: 'employees', width: 70, className: 'pea-num', sorter: (a, b) => a.employees - b.employees },
+            { title: 'Completed', dataIndex: 'completed', width: 100, className: 'pea-num', sorter: (a, b) => a.completed - b.completed },
             {
               title: 'Awaiting',
               dataIndex: 'awaiting',
               width: 90,
-              render: (v) => (v ? <Tag color="orange">{v}</Tag> : 0),
+              className: 'pea-num',
+              render: (v) => (v ? <StatusPill tone="warn">{v}</StatusPill> : 0),
               sorter: (a, b) => a.awaiting - b.awaiting,
             },
             {
+              // A figure to compare down the column, so it is a coloured number
+              // rather than a pill — same treatment as the employee page.
               title: 'Avg rating',
               dataIndex: 'average_rating',
               width: 100,
-              render: (v) => (v == null ? '—' : <Tag color={v >= 3.5 ? 'green' : v >= 2.5 ? 'blue' : 'red'}>{v}</Tag>),
+              className: 'pea-num',
+              render: (v) =>
+                v == null ? (
+                  '—'
+                ) : (
+                  <strong style={{ color: `var(--pea-${v >= 3.5 ? 'ok' : v >= 2.5 ? 'info' : 'crit'})` }}>
+                    {v}
+                  </strong>
+                ),
               sorter: (a, b) => (a.average_rating ?? 0) - (b.average_rating ?? 0),
             },
             {
@@ -319,6 +363,10 @@ export default function Analytics() {
           ]}
         />
       </Card>
+            </>
+          ),
+        }]}
+      />
     </>
   );
 }

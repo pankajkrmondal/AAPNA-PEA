@@ -21,6 +21,8 @@
  *   · halt_process — the Excel "Halt_Process" column
  *   · confirmation — skip unless empty or "Extend for …"
  *   · employment   — never chase someone who has left
+ *   · leaver flag  — R-02: Entra says the account is off and unlicensed, so the
+ *                    hold applies the same night, before HR confirms the exit
  *   · weekends     — handled at generation time, so due_date is already the
  *                    day the mail actually goes out
  */
@@ -55,6 +57,13 @@ async function numSetting(key, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+/** Read a boolean setting with a fallback. */
+async function boolSetting(key, fallback) {
+  const row = await prisma.pea_settings.findUnique({ where: { setting_key: key } });
+  if (row?.setting_value === undefined || row?.setting_value === null) return fallback;
+  return String(row.setting_value).trim().toLowerCase() === 'true';
+}
+
 /**
  * Employees eligible for any outbound mail at all.
  *
@@ -72,6 +81,44 @@ const ELIGIBLE_EMPLOYEE = {
 };
 
 /**
+ * The same rule, plus the automatic leaver hold — R-02.
+ *
+ * Subhajit, 15-Sep demo (5:39): "One of the resources, I forgot to pause the
+ * evaluation and the evaluation got triggered and email got shot. That's why we
+ * thought of getting this linked with the AD."
+ *
+ * `employment_status` is HR's decision and stays that way — it drives
+ * confirmation outcomes and is never written by the scan (joinerIntake.service
+ * §13.9). But waiting for that decision is what let the email go out. So the
+ * send is gated on the Entra SIGNAL instead: once the nightly check flags an
+ * account as switched off and unlicensed, evaluations stop the same night, and
+ * HR confirms the exit afterwards rather than beforehand.
+ *
+ * A flag HR has explicitly dismissed ("no, they are still here") does not hold
+ * anything — dismissal is compared against the flag time, so a genuine later
+ * exit is flagged afresh and holds again.
+ *
+ * @param {boolean} holdLeavers
+ * @returns {object} a Prisma `where` fragment
+ */
+function eligibleEmployee(holdLeavers) {
+  if (!holdLeavers) return ELIGIBLE_EMPLOYEE;
+
+  return {
+    ...ELIGIBLE_EMPLOYEE,
+    AND: [
+      {
+        OR: [
+          { leaver_flagged_at: null },
+          // Dismissed after it was raised — HR has said this person is still here.
+          { leaver_dismissed_at: { gte: prisma.pea_employees.fields.leaver_flagged_at } },
+        ],
+      },
+    ],
+  };
+}
+
+/**
  * Send evaluation links for everything now due.
  *
  * @param {{dryRun?: boolean}} [opts]
@@ -79,13 +126,14 @@ const ELIGIBLE_EMPLOYEE = {
  */
 export async function runEvaluationSweep({ dryRun = false } = {}) {
   const today = todayIn(config.scheduler.timezone);
+  const holdLeavers = await boolSetting('hold_evaluations_for_leavers', true);
 
   const due = await prisma.pea_evaluation_cycles.findMany({
     where: {
       status: 'pending',
       // <= not ==. This is the self-healing property. See the header.
       due_date: { lte: today },
-      employee: ELIGIBLE_EMPLOYEE,
+      employee: eligibleEmployee(holdLeavers),
     },
     include: { employee: true },
     orderBy: [{ due_date: 'asc' }, { employee_id: 'asc' }],
@@ -208,6 +256,9 @@ export async function runEvaluationSweep({ dryRun = false } = {}) {
 export async function runReminderSweep({ dryRun = false } = {}) {
   const today = todayIn(config.scheduler.timezone);
   const maxReminders = await numSetting('reminder_max_count', 2);
+  // A leaver must stop being chased as well as stop being sent to — otherwise
+  // the hold only half works and the manager still gets reminder mail.
+  const holdLeavers = await boolSetting('hold_evaluations_for_leavers', true);
 
   const offsetsRaw = await prisma.pea_settings.findUnique({
     where: { setting_key: 'reminder_offsets_days' },
@@ -221,7 +272,7 @@ export async function runReminderSweep({ dryRun = false } = {}) {
     where: {
       status: { in: AWAITING },
       reminder_count: { lt: maxReminders },
-      employee: ELIGIBLE_EMPLOYEE,
+      employee: eligibleEmployee(holdLeavers),
     },
     include: { employee: true },
     orderBy: { due_date: 'asc' },

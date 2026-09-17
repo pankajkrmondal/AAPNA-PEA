@@ -26,14 +26,26 @@ export const outranks = (requesterRole, targetRole) => rankOf(requesterRole) > r
  * Access; `key` must match backend/src/config/modules.js.
  */
 export const MODULES = [
-  { key: 'dashboard', path: '/', label: 'Dashboard', emoji: '📊', desc: 'Probation overview and what needs attention today' },
+  { key: 'dashboard', path: '/', label: 'Overview', emoji: '📊', desc: 'What needs action today, and how evaluations are trending' },
+  { key: 'evaluations', path: '/evaluations', label: 'Evaluations', emoji: '📋', desc: 'Every evaluation in one list — what is due, who it is waiting on, and what came back' },
   { key: 'employees', path: '/employees', label: 'Employees', emoji: '👥', desc: 'Search, update and manage employee probation records' },
-  { key: 'new_joiners', path: '/new-joiners', label: 'New joiners', emoji: '🆕', desc: 'Review joiners and leavers detected from Entra and ATS' },
-  { key: 'analytics', path: '/analytics', label: 'Analytics', emoji: '📈', desc: 'Track evaluation outcomes and confirmation trends' },
-  { key: 'import_sheet', path: '/import', label: 'Import sheet', emoji: '📤', desc: 'Preview and import the probation Excel sheet' },
-  { key: 'manager_portal', path: '/manager-portal', label: 'Manager portal', emoji: '🔗', desc: "Issue and revoke reporting managers' team links" },
-  { key: 'email_templates', path: '/email-templates', label: 'Email templates', emoji: '✉️', desc: 'View and preview the wording of every email PEA sends' },
-  { key: 'settings', path: '/settings', label: 'Settings', emoji: '⚙️', desc: 'View scheduler, reminder and email configuration' },
+  { key: 'new_joiners', path: '/new-joiners', label: 'New joiners', emoji: '🆕', desc: 'Review joiners and leavers found in Microsoft 365, and add anyone by hand' },
+  { key: 'manager_portal', path: '/manager-portal', label: 'Link generation', emoji: '🔗', desc: 'Create evaluation, team and employee links to share' },
+  { key: 'settings', path: '/settings', label: 'Settings', emoji: '⚙️', desc: 'Email wording, scheduling, access — and the sheet upload' },
+];
+
+/**
+ * Modules reachable through another screen rather than their own sidebar entry.
+ *
+ * `analytics` is Overview → Trends; `import_sheet` and `email_templates` are
+ * tabs inside Settings. Their access switches still apply — the tab is hidden
+ * for a user whose switch is off — so moving them changed where they live, not
+ * who can see them. Their routes are kept so existing bookmarks still work.
+ */
+export const NESTED_MODULES = [
+  { key: 'analytics', path: '/analytics', label: 'Trends', within: 'Overview' },
+  { key: 'import_sheet', path: '/import', label: 'Upload sheet', within: 'Settings' },
+  { key: 'email_templates', path: '/email-templates', label: 'Email templates', within: 'Settings' },
 ];
 
 /** @returns {object} the signed-in user as last stored, or {} */

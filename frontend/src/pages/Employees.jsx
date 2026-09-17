@@ -8,6 +8,7 @@ import {
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api, { unwrap } from '../api.js';
+import StatusPill from '../components/StatusPill.jsx';
 
 const { Option } = Select;
 
@@ -73,9 +74,9 @@ export default function Employees() {
       title: 'Type',
       dataIndex: 'is_experienced',
       width: 110,
-      render: (v) => <Tag>{v ? 'Experienced' : 'Fresher'}</Tag>,
+      render: (v) => <StatusPill tone="mute" nodot>{v ? 'Experienced' : 'Fresher'}</StatusPill>,
     },
-    { title: 'DOJ', dataIndex: 'doj', width: 110, render: (v) => String(v).slice(0, 10) },
+    { title: 'DOJ', dataIndex: 'doj', width: 110, className: 'pea-num', render: (v) => String(v).slice(0, 10) },
     { title: 'Reporting manager', dataIndex: 'rm_name' },
     {
       title: 'Progress',
@@ -89,8 +90,10 @@ export default function Employees() {
               size="small"
               format={() => `${p.completed}/${p.total}`}
             />
-            {p.overdue > 0 && <Tag color="red">{p.overdue} overdue</Tag>}
-            {p.awaitingResponse > 0 && <Tag color="orange">{p.awaitingResponse} awaiting</Tag>}
+            {p.overdue > 0 && <StatusPill tone="crit">{p.overdue} overdue</StatusPill>}
+            {p.awaitingResponse > 0 && (
+              <StatusPill tone="warn">{p.awaitingResponse} awaiting</StatusPill>
+            )}
           </Space>
         );
       },
@@ -99,6 +102,7 @@ export default function Employees() {
       title: 'Next due',
       dataIndex: ['progress', 'nextDue'],
       width: 110,
+      className: 'pea-num',
       render: (v) => (v ? String(v).slice(0, 10) : '—'),
     },
     {
@@ -107,13 +111,15 @@ export default function Employees() {
       width: 150,
       render: (v, r) =>
         r.halt_process ? (
-          <Tag color="default">Paused</Tag>
+          <StatusPill tone="warn">Paused</StatusPill>
         ) : r.employment_status === 'left' ? (
-          <Tag color="default">Left</Tag>
+          <StatusPill tone="mute">Left</StatusPill>
         ) : v ? (
-          <Tag color={v === 'Confirmed' ? 'green' : v === 'Not Confirmed' ? 'red' : 'orange'}>{v}</Tag>
+          <StatusPill tone={v === 'Confirmed' ? 'ok' : v === 'Not Confirmed' ? 'crit' : 'ext'}>
+            {v}
+          </StatusPill>
         ) : (
-          <Tag color="blue">In probation</Tag>
+          <StatusPill tone="info">In probation</StatusPill>
         ),
     },
   ];

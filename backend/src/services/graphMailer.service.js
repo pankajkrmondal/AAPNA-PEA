@@ -104,9 +104,16 @@ export function assertRecipientsAllowed(to = [], cc = []) {
  * @param {boolean} [params.allowRealRecipients=false] - skip the non-prod
  *   allow-list. ONLY for account email (accountEmail.service.js), which goes to
  *   the account owner in every environment, as ATS's NEVER_REDIRECT flows do.
+ * @param {Array<{name: string, contentType: string, content: Buffer|string}>} [params.attachments]
+ *   Files to attach — R-05. Sent inline via Graph's fileAttachment, which caps a
+ *   sendMail payload at roughly 3 MB once base64 expands it. An evaluation
+ *   report is a few KB, so the simple path is the right one; anything larger
+ *   would need an upload session, which is deliberately not built.
  * @returns {Promise<{messageId: string|null}>}
  */
-export async function sendMail({ to, cc = [], subject, html, replyTo, allowRealRecipients = false }) {
+export async function sendMail({
+  to, cc = [], subject, html, replyTo, allowRealRecipients = false, attachments = [],
+}) {
   // Second, independent lock. notification.applyRedirect() already rewrites
   // recipients, but this is the last line before the wire: even a future code
   // path that forgets to call it cannot mail a real person outside production.
@@ -119,6 +126,25 @@ export async function sendMail({ to, cc = [], subject, html, replyTo, allowRealR
   const token = await getAccessToken();
   const address = (a) => ({ emailAddress: { address: a } });
 
+  const files = (attachments || []).map((a) => ({
+    '@odata.type': '#microsoft.graph.fileAttachment',
+    name: a.name,
+    contentType: a.contentType || 'application/octet-stream',
+    contentBytes: Buffer.isBuffer(a.content)
+      ? a.content.toString('base64')
+      : Buffer.from(a.content).toString('base64'),
+  }));
+
+  // Graph rejects the whole send if the payload is too big, which would look
+  // like a mysterious failure. Fail here instead, naming the cause.
+  const attachedBytes = files.reduce((n, f) => n + f.contentBytes.length, 0);
+  if (attachedBytes > 3_000_000) {
+    throw new Error(
+      `Attachments total ${(attachedBytes / 1_048_576).toFixed(1)} MB after encoding, ` +
+        'which is over what a single Graph sendMail accepts.'
+    );
+  }
+
   const payload = {
     message: {
       subject,
@@ -126,6 +152,7 @@ export async function sendMail({ to, cc = [], subject, html, replyTo, allowRealR
       toRecipients: to.map(address),
       ...(cc.length ? { ccRecipients: cc.map(address) } : {}),
       ...(replyTo ? { replyTo: [address(replyTo)] } : {}),
+      ...(files.length ? { attachments: files } : {}),
     },
     saveToSentItems: true,
   };

@@ -1,4 +1,5 @@
 import * as employeeService from '../services/employee.service.js';
+import * as reportService from '../services/evaluationReport.service.js';
 import { buildSchedule } from '../services/cycleGenerator.service.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success, paginated } from '../utils/apiResponse.js';
@@ -14,6 +15,39 @@ export const list = catchAsync(async (req, res) => {
 export const getOne = catchAsync(async (req, res) =>
   success(res, await employeeService.getEmployee(req.params.id))
 );
+
+/**
+ * POST /api/employees/:id/share-report — R-05.
+ *
+ * Subhajit, 15-Sep (19:44): a senior leader asks for a resource's current
+ * status and HR answers "within one click". The recipient is typed here
+ * because it is whoever happened to ask.
+ */
+export const shareReport = catchAsync(async (req, res) => {
+  const result = await reportService.shareReport(req.params.id, req.body, req.user.username);
+
+  return success(
+    res,
+    result,
+    result.sent
+      ? `Report sent to ${result.to.join(', ')}`
+      : `The report could not be sent (${result.status}). Nothing was delivered.`
+  );
+});
+
+/**
+ * GET /api/employees/:id/report — the same report as a file, for HR to attach
+ * to a Teams chat or take into a meeting.
+ */
+export const downloadReport = catchAsync(async (req, res) => {
+  const report = await reportService.buildReport(req.params.id);
+  const buffer = reportService.buildWorkbook(report);
+  const filename = reportService.reportFilename(report);
+
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  return res.send(buffer);
+});
 
 /** POST /api/employees */
 export const create = catchAsync(async (req, res) => {

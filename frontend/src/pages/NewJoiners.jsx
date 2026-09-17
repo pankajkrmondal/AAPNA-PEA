@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Card, Table, Tag, Space, Button, Modal, Form, Input, DatePicker, Radio, Alert,
+  Card, Table, Space, Button, Modal, Form, Input, DatePicker, Radio, Alert,
   App, Tooltip, Typography, Empty, Popconfirm,
 } from 'antd';
 import {
@@ -12,6 +12,7 @@ import {
 import dayjs from 'dayjs';
 import api, { unwrap } from '../api.js';
 import HintIcon from '../components/HintIcon.jsx';
+import StatusPill from '../components/StatusPill.jsx';
 
 const fmt = (d) => (d ? String(d).slice(0, 10) : '—');
 
@@ -22,17 +23,48 @@ const fmt = (d) => (d ? String(d).slice(0, 10) : '—');
  * would be a lie of omission.
  */
 function Suggested({ value, source, hint }) {
-  if (!value) return <Typography.Text type="secondary">—</Typography.Text>;
+  if (!value) {
+    // A required field with nothing in it. This is the flag that BLOCKS
+    // confirming, so it is stated rather than left as a quiet dash.
+    return <StatusPill tone="crit">Missing</StatusPill>;
+  }
   return (
     <Space size={6}>
       <span>{value}</span>
       {source && (
         <Tooltip title={hint}>
-          <Tag color="gold" style={{ fontSize: 11 }}>unverified</Tag>
+          {/* "Check" rather than "unverified": Microsoft 365 filled this and is
+              often wrong, so it wants a glance — but it does not stop HR
+              confirming the row. */}
+          <StatusPill tone="warn">Check</StatusPill>
         </Tooltip>
       )}
     </Space>
   );
+}
+
+/**
+ * What a row needs before it can be confirmed, in plain words.
+ *
+ * The two flags mean different things and the distinction is the point:
+ *
+ *   · Missing — a required field is blank. Confirming is blocked.
+ *   · Check   — Microsoft 365 supplied a value that is often wrong. Worth a
+ *               look, but it does not block anything.
+ *
+ * A row with neither can be confirmed straight from the table.
+ */
+function toFix(r) {
+  const missing = [];
+  if (!r.suggested_doj) missing.push('date of joining');
+  if (!r.suggested_rm_email) missing.push('reporting manager');
+  if (!r.suggested_pl_email) missing.push('project leader');
+
+  const check = [];
+  if (r.suggested_doj && r.doj_source) check.push('date of joining');
+  if (r.suggested_rm_email && r.rm_source) check.push('manager');
+
+  return { missing, check, blocked: missing.length > 0 };
 }
 
 export default function NewJoiners() {
@@ -46,8 +78,18 @@ export default function NewJoiners() {
     queryFn: () => api.get('/intake/inbox').then(unwrap),
   });
 
+  // R-03 — the same problems the nightly email reports, shown the moment HR
+  // opens the page. An email can be missed; the screen they already use cannot.
+  const { data: sync } = useQuery({
+    queryKey: ['sync-problems'],
+    queryFn: () => api.get('/intake/sync-problems').then(unwrap),
+    // A reporting view must never break the page it reports on.
+    retry: false,
+  });
+
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['intake-inbox'] });
+    qc.invalidateQueries({ queryKey: ['sync-problems'] });
     qc.invalidateQueries({ queryKey: ['employees'] });
     qc.invalidateQueries({ queryKey: ['dashboard'] });
   };
@@ -68,6 +110,27 @@ export default function NewJoiners() {
     },
     onError: (err) => { message.error(err.friendlyMessage); },
   });
+
+  /**
+   * Add someone the Microsoft 365 check never found — the other half of the
+   * missed-sync remedy. The sheet upload handles a batch at go-live; this is
+   * for the single person the scan could not use.
+   */
+  const addByHand = useMutation({
+    mutationFn: (values) => api.post('/employees', values).then((r) => r.data),
+    onSuccess: (res) => {
+      message.success(res.message);
+      setAccepting(null);
+      form.resetFields();
+      refresh();
+    },
+    onError: (err) => { message.error(err.friendlyMessage); },
+  });
+
+  const openAddByHand = () => {
+    form.resetFields();
+    setAccepting({ byHand: true });
+  };
 
   const dismiss = useMutation({
     mutationFn: (id) => api.post(`/intake/joiners/${id}/dismiss`, { reason: 'Not a new joiner' }),
@@ -133,25 +196,62 @@ export default function NewJoiners() {
             </Button>
           </Tooltip>
           <Tooltip title="Runs the real Entra scan now (the nightly scan does the same if switched on in Settings → New joiners). Fills the inbox and records account status on employees. No email is sent; a bell notification is raised if something new is found.">
-            <Button type="primary" icon={<SyncOutlined />} onClick={() => scan.mutate(false)} loading={scan.isPending}>
+            <Button icon={<SyncOutlined />} onClick={() => scan.mutate(false)} loading={scan.isPending}>
               Scan now
+            </Button>
+          </Tooltip>
+          <Tooltip title="Add someone the Microsoft 365 check could not pick up — no manager in the directory, a different email domain, or an account created before they joined.">
+            <Button type="primary" icon={<UserAddOutlined />} onClick={openAddByHand}>
+              Add by hand
             </Button>
           </Tooltip>
         </Space>
       </div>
+
+      {/* R-03 — what the nightly alert would say, said here too. Subhajit,
+          15-Sep (16:14): "if any data is not being synced properly from the AD,
+          we should be getting an email alert so that we can take it up
+          manually." The remedy is the sheet upload, so it is linked from here. */}
+      {sync?.rows?.length > 0 && (
+        <Alert
+          type={sync.rows.some((p) => p.severity === 'critical') ? 'error' : 'warning'}
+          showIcon
+          style={{ borderRadius: 'var(--pea-radius)', marginBottom: 12 }}
+          message={
+            sync.rows.length === 1
+              ? 'The Microsoft 365 check found something that needs your attention'
+              : `The Microsoft 365 check found ${sync.rows.length} things that need your attention`
+          }
+          description={
+            <Space direction="vertical" size={6} style={{ width: '100%' }}>
+              <ul style={{ margin: 0, paddingLeft: 18 }}>
+                {sync.rows.map((p) => (
+                  <li key={p.key}>
+                    <strong>{p.title}</strong>
+                    {p.subject && p.subject !== '—' ? ` — ${p.subject}. ` : '. '}
+                    <span style={{ color: 'var(--pea-text-muted)' }}>{p.detail}</span>
+                  </li>
+                ))}
+              </ul>
+              {sync.rows.some((p) => p.fixable) && (
+                <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
+                  Add the missing details by hand below, or{' '}
+                  <Link to="/import">upload the sheet</Link> with them. Everything else
+                  carries on as normal.
+                </Typography.Text>
+              )}
+            </Space>
+          }
+        />
+      )}
 
       {data?.setupRequired && (
         <Alert
           type="error"
           showIcon
           style={{ borderRadius: 'var(--pea-radius)' }}
-          message="Entra intake is not set up on this database yet"
-          description={
-            <>
-              The tables this screen needs do not exist on this database. Create them
-              with the PEA schema DDL, then reload.
-            </>
-          }
+          message="New joiners isn’t available yet"
+          description="Ask your PEA admin to finish setting it up, then reload this page."
         />
       )}
 
@@ -254,18 +354,50 @@ export default function NewJoiners() {
                   <Suggested value={r.suggested_pl_email} source={r.pl_source} hint="Derived from the reporting manager." />
                 ) : (
                   <Tooltip title="Either the manager is unknown, or they map to more than one project leader.">
-                    <Tag>needs HR</Tag>
+                    <StatusPill tone="crit">Missing</StatusPill>
                   </Tooltip>
                 ),
+            },
+            {
+              // Says in plain words what each row needs, so HR can see at a
+              // glance which rows are ready and which want typing.
+              title: 'To fix',
+              width: 220,
+              render: (_, r) => {
+                const { missing, check } = toFix(r);
+                if (missing.length === 0 && check.length === 0) {
+                  return <Typography.Text type="secondary" style={{ fontSize: 12 }}>Nothing — ready to confirm</Typography.Text>;
+                }
+                return (
+                  <Space direction="vertical" size={2}>
+                    {missing.length > 0 && (
+                      <Typography.Text style={{ fontSize: 12 }}>
+                        Add the {missing.join(', ')}
+                      </Typography.Text>
+                    )}
+                    {check.length > 0 && (
+                      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+                        Check the {check.join(' and ')}
+                      </Typography.Text>
+                    )}
+                  </Space>
+                );
+              },
             },
             {
               title: '',
               width: 190,
               render: (_, r) => (
                 <Space size={6}>
-                  <Tooltip title="Open the confirm form to add this account as a new joiner.">
+                  <Tooltip
+                    title={
+                      toFix(r).blocked
+                        ? 'Open the form to fill in what is missing, then confirm.'
+                        : 'Everything needed is here — confirm this joiner.'
+                    }
+                  >
                     <Button size="small" type="primary" icon={<UserAddOutlined />} onClick={() => openAccept(r)}>
-                      Confirm
+                      {toFix(r).blocked ? 'Review' : 'Confirm'}
                     </Button>
                   </Tooltip>
                   <Popconfirm
@@ -326,8 +458,12 @@ export default function NewJoiners() {
               width: 200,
               render: (_, r) => (
                 <Space size={4} wrap>
-                  <Tag color="red">{r.azure_account_enabled === false ? 'disabled' : 'enabled'}</Tag>
-                  <Tag color="red">{r.license_assigned === false ? 'no licence' : 'licensed'}</Tag>
+                  <StatusPill tone="crit">
+                    {r.azure_account_enabled === false ? 'disabled' : 'enabled'}
+                  </StatusPill>
+                  <StatusPill tone="crit">
+                    {r.license_assigned === false ? 'no licence' : 'licensed'}
+                  </StatusPill>
                 </Space>
               ),
             },
@@ -360,24 +496,40 @@ export default function NewJoiners() {
 
       {/* ── Confirm-and-add ────────────────────────────────────────────── */}
       <Modal
-        title={`Confirm ${accepting?.display_name || 'new joiner'}`}
+        title={
+          accepting?.byHand
+            ? 'Add a joiner by hand'
+            : `Confirm ${accepting?.display_name || 'new joiner'}`
+        }
         open={!!accepting}
         onCancel={() => { setAccepting(null); form.resetFields(); }}
         onOk={() => form.submit()}
-        confirmLoading={accept.isPending}
+        confirmLoading={accept.isPending || addByHand.isPending}
         okText="Add and schedule"
         width={620}
       >
+        {accepting?.byHand && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 14 }}
+            message="For anyone the Microsoft 365 check could not pick up"
+            description="Their evaluation schedule is worked out from the joining date, exactly as it is for a joiner found automatically."
+          />
+        )}
         <Form
           form={form}
           layout="vertical"
           requiredMark={false}
-          onFinish={(v) =>
-            accept.mutate({
-              id: accepting.id,
-              values: { ...v, doj: dayjs(v.doj).format('YYYY-MM-DD') },
-            })
-          }
+          onFinish={(v) => {
+            const values = { ...v, doj: dayjs(v.doj).format('YYYY-MM-DD') };
+            // Same form, two destinations: a found account is confirmed through
+            // the intake inbox so the candidate row is closed out; a manual one
+            // goes straight to the employee endpoint, which has no candidate to
+            // reconcile.
+            if (accepting.byHand) addByHand.mutate(values);
+            else accept.mutate({ id: accepting.id, values });
+          }}
         >
           <Form.Item name="full_name" label="Full name" rules={[{ required: true }]}>
             <Input />

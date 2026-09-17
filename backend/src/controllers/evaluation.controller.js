@@ -18,9 +18,18 @@ const wantsJson = (req) =>
 /**
  * Turn the flat form POST (rating_<key>, comments_<key>) into the nested shape
  * the service expects. A JSON client can post the nested shape directly.
+ *
+ * Either way `submitted_by` is stripped — R-01. The submitter is the reporting
+ * manager the single-use link was issued to, which the service reads from the
+ * token; accepting it from the body would let a POST name someone else as the
+ * author of an evaluation. Dropped on BOTH paths, so the JSON route is no
+ * weaker than the browser one.
  */
-function parseBody(body) {
-  if (body.ratings) return body;
+export function parseBody(body) {
+  if (body.ratings) {
+    const { submitted_by: _ignored, ...rest } = body;
+    return rest;
+  }
 
   const ratings = {};
   for (const [field, value] of Object.entries(body)) {
@@ -39,7 +48,6 @@ function parseBody(body) {
     ratings,
     remarks: body.remarks,
     confirmation_status: body.confirmation_status,
-    submitted_by: body.submitted_by,
   };
 }
 

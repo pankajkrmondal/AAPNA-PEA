@@ -10,6 +10,7 @@ import assert from 'node:assert/strict';
 import {
   TEMPLATE_KEYS,
   TEMPLATE_DEFS,
+  PLACEHOLDERS,
   compile,
   renderPreview,
   validateDraft,
@@ -23,6 +24,20 @@ describe('built-in templates', () => {
     test(`${key}: default wording passes its own validation`, () => {
       const def = TEMPLATE_DEFS[key];
       assert.doesNotThrow(() => validateDraft(key, { subject: def.subject, body: def.body }));
+    });
+
+    test(`${key}: every placeholder it declares is in the PLACEHOLDERS registry`, () => {
+      // listTemplateCatalog() reads PLACEHOLDERS[name].label for each declared
+      // placeholder. A template that names one the registry does not have took
+      // the ENTIRE Email templates screen down with "Cannot read properties of
+      // undefined (reading 'label')" — a whole page lost to one missing label.
+      // The lookup is defensive now; this makes the omission fail here instead.
+      const missing = TEMPLATE_DEFS[key].placeholders.filter((name) => !PLACEHOLDERS[name]);
+      assert.deepEqual(
+        missing,
+        [],
+        `template "${key}" declares placeholders missing from PLACEHOLDERS: ${missing.join(', ')}`
+      );
     });
 
     test(`${key}: preview fills every placeholder and uses the AAPNA shell`, () => {

@@ -55,7 +55,7 @@ export default function NotificationBell() {
       {data && !data.available ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="Notifications are not set up on this database yet (2026-09-13 DDL)."
+          description="Notifications aren’t available yet. Ask your PEA admin to finish setting them up."
         />
       ) : (
         <List

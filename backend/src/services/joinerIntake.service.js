@@ -187,6 +187,8 @@ export async function runIntakeScan({ dryRun = false, actor = 'system' } = {}) {
     leaversFlagged: 0,
     leaversCleared: 0,
     notFoundInEntra: 0,
+    /** Of those, how many were newly flagged because the account has gone. */
+    missingFlagged: 0,
     errors: [],
   };
 
@@ -307,11 +309,54 @@ export async function runIntakeScan({ dryRun = false, actor = 'system' } = {}) {
         null;
 
       if (!account) {
-        // No Entra account on this domain. That is *suggestive* — a deleted
-        // account usually means a leaver — but it is equally what a mail alias
-        // mismatch or a contractor looks like, and §13.9 measured nothing about
-        // this case. Counted so it is visible, deliberately not flagged.
+        // No Entra account on this domain.
+        //
+        // This case was previously counted and skipped, on the grounds that it
+        // is ambiguous: a deleted account usually means a leaver, but a mail
+        // alias mismatch or a contractor looks identical, and §13.9 measured
+        // nothing about it. That caution is still right — which is why nothing
+        // here marks anyone as having left.
+        //
+        // What changed is the cost of staying silent. Subhajit's actual words
+        // (15-Sep, 5:39) were "if the resource is not showing in the AD, his or
+        // her evolution will get paused automatically" — the disappeared
+        // account IS the case he described, and it was the one the old
+        // leaver rule never covered. So it is flagged like any other leaver
+        // signal: evaluations pause, HR is asked, and one click either confirms
+        // the exit or says "still here" and releases the hold.
         report.notFoundInEntra += 1;
+
+        // ⚠️ ONLY an account that was LINKED and has since gone counts.
+        //
+        // "Not showing in the AD" means an account that used to be there. An
+        // employee who never had one — a contractor, someone on a different mail
+        // domain, an imported spreadsheet row, a test record — has not
+        // disappeared; PEA simply never found them in the first place. Those are
+        // completely different facts and only the first is evidence of an exit.
+        //
+        // Flagging both was measured against real data and was wrong for every
+        // single row: 19 of 20 active employees were flagged in one scan,
+        // including people on other mail domains who had never been linked. A
+        // leaver signal that fires on almost everyone is worse than none,
+        // because it trains HR to dismiss it — and it silently stopped their
+        // evaluations meanwhile.
+        if (employee.azure_user_id && !employee.leaver_flagged_at) {
+          if (!dryRun) {
+            await prisma.pea_employees.update({
+              where: { id: employee.id },
+              data: {
+                leaver_flagged_at: new Date(),
+                // Deliberately NOT azure_account_enabled: false. There is no
+                // account to have read a state from, and writing one would
+                // fabricate a measurement.
+                azure_synced_at: new Date(),
+              },
+            });
+          }
+          report.leaversFlagged += 1;
+          report.missingFlagged += 1;
+        }
+
         continue;
       }
 
@@ -675,8 +720,32 @@ export async function confirmLeaver(employeeId, actor) {
     data: { leaver_flagged_at: null },
   });
 
-  logger.info(`Leaver confirmed by ${actor}: ${employee.full_name} <${employee.office_email}>`);
-  return updated;
+  // The pop-up promises "all outstanding evaluations stop immediately", and
+  // until now that was only half true: the sweep stopped sending, but a link
+  // already in a manager's inbox still opened and could still be submitted.
+  // Expiring the tokens makes the promise real.
+  //
+  // `skipped`, not `completed`: nobody rated this person, and recording a
+  // non-existent submission would corrupt every average that counts it.
+  const now = new Date();
+  const closed = await prisma.pea_evaluation_cycles.updateMany({
+    where: {
+      employee_id: id,
+      status: { in: ['pending', 'email_sent', 'opened'] },
+    },
+    data: {
+      status: 'skipped',
+      token_expires_at: now,
+      modified_at: now,
+    },
+  });
+
+  logger.info(
+    `Leaver confirmed by ${actor}: ${employee.full_name} <${employee.office_email}>` +
+      `${closed.count ? ` — ${closed.count} open evaluation(s) closed and their links expired` : ''}`
+  );
+
+  return { ...updated, evaluationsClosed: closed.count };
 }
 
 /**

@@ -88,6 +88,76 @@
   --pea-gradient-card: linear-gradient(145deg, rgba(26, 32, 20, .95) 0%, rgba(31, 39, 24, .85) 100%);
 }
 
+/**
+ * Screen-proposal tokens (17 Sep alignment).
+ *
+ * These are ALIASES, not replacements. The names on the left are what the
+ * proposal's stylesheet calls things; the values on the right are what PEA
+ * already had. `--pea-green-600` in particular is read at runtime by
+ * usePalette() in Analytics.jsx and EmployeeTrend.jsx — renaming it breaks
+ * chart colours with no build error, so it stays and gains an alias.
+ *
+ * Because each alias points at an existing token rather than a literal, the
+ * dark palette below needs no counterpart for it: the token it refers to is
+ * already redefined in the dark block above. Only the genuinely new values
+ * (the six states, the two extra accents) need a dark entry.
+ */
+:root {
+  /* Surfaces — aliases onto the existing names */
+  --pea-ground: var(--pea-bg);
+  --pea-line: var(--pea-border);
+  --pea-line-strong: var(--pea-border-strong);
+
+  /* Text */
+  --pea-ink: var(--pea-text);
+  --pea-muted: var(--pea-text-muted);
+  --pea-faint: var(--pea-text-faint);
+
+  /* Accent — already PEA's green, aliased not renamed */
+  --pea-accent: var(--pea-green-600);
+  --pea-accent-strong: var(--pea-green-700);
+  --pea-accent-soft: var(--pea-green-100);
+  --pea-on-accent: #ffffff;
+
+  /* States — the six the proposal names, each with a soft pill ground */
+  --pea-ok: #0a7f57;
+  --pea-ok-soft: var(--pea-emerald-soft);
+  --pea-warn: #a95f07;
+  --pea-warn-soft: var(--pea-orange-soft);
+  --pea-crit: #c11f1f;
+  --pea-crit-soft: var(--pea-red-soft);
+  --pea-info: #1f55cf;
+  --pea-info-soft: var(--pea-blue-soft);
+  --pea-ext: #6a2fd0;
+  --pea-ext-soft: var(--pea-violet-soft);
+  --pea-mute: var(--pea-text-muted);
+  --pea-mute-soft: var(--pea-surface-2);
+
+  /* Card chrome — the proposal's 12px hairline card, distinct from --pea-radius */
+  --pea-radius-card: 12px;
+  --pea-radius-control: 8px;
+
+  /* Type */
+  --pea-display: 'Instrument Sans', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pea-body: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --pea-mono: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+}
+
+/**
+ * Dark counterparts — only for the values defined literally above. The aliased
+ * tokens follow their target automatically. A state colour with no dark entry
+ * here would render as near-black on the dark ground, which is invisible in the
+ * one theme nobody reviews in, so all six are listed.
+ */
+:root[data-theme='dark'] {
+  --pea-ok: #52cc9d;
+  --pea-warn: #f0a54a;
+  --pea-crit: #f07a7a;
+  --pea-info: #86a9f7;
+  --pea-ext: #b894f6;
+  --pea-on-accent: #12170e;
+}
+
 body {
   background: var(--pea-bg);
   -webkit-font-smoothing: antialiased;
@@ -405,7 +475,7 @@ body {
   padding: 18px 18px 16px;
   border: 1px solid var(--pea-border);
   border-radius: var(--pea-radius);
-  background: linear-gradient(180deg, var(--pea-accent-soft), var(--pea-surface) 78%);
+  background: linear-gradient(180deg, var(--pea-stat-accent-soft), var(--pea-surface) 78%);
   transition: transform .18s ease, box-shadow .18s ease;
 }
 
@@ -414,7 +484,7 @@ body {
   position: absolute;
   inset: 0 0 auto;
   height: 3px;
-  background: var(--pea-accent);
+  background: var(--pea-stat-accent);
 }
 
 .pea-stat:hover {
@@ -430,8 +500,8 @@ body {
   place-items: center;
   font-size: 18px;
   color: #fff;
-  background: var(--pea-accent);
-  box-shadow: 0 6px 14px -6px var(--pea-accent);
+  background: var(--pea-stat-accent);
+  box-shadow: 0 6px 14px -6px var(--pea-stat-accent);
 }
 
 .pea-stat-label {
@@ -480,7 +550,286 @@ body {
   display: block;
   height: 100%;
   border-radius: 999px;
+  background: var(--pea-stat-accent);
+}
+
+/**
+ * Compact tile (17-Sep proposal). Overrides the full tile rather than
+ * redefining it, so the two stay in step where they agree.
+ */
+.pea-stat--compact {
+  padding: 12px 14px 13px;
+  border-radius: var(--pea-radius-card);
+  background: var(--pea-surface);
+}
+
+/* No accent rule and no icon chip — the figure carries the colour instead. */
+.pea-stat--compact::before {
+  display: none;
+}
+
+.pea-stat--compact:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* The label reads as a sentence, not a shouted column heading. */
+.pea-stat--compact .pea-stat-label {
+  margin-top: 0;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.pea-stat--compact .pea-stat-value {
+  margin-top: 2px;
+  font-family: var(--pea-display);
+  font-size: 26px;
+  font-weight: 650;
+  /* Figures sit in a row of tiles, so they must align rather than wobble. */
+  font-variant-numeric: tabular-nums;
+}
+
+.pea-stat--compact .pea-stat-value small {
+  font-size: 14px;
+}
+
+.pea-stat--compact .pea-stat-foot {
+  margin-top: 5px;
+  font-size: 11.5px;
+}
+
+/* The compact tile sets no per-card accent, so the bar takes the brand green. */
+.pea-stat--compact .pea-stat-bar {
+  margin-top: 9px;
+  height: 4px;
+}
+
+.pea-stat--compact .pea-stat-bar span {
   background: var(--pea-accent);
+}
+
+/* Compact tiles are lighter, so they sit tighter than the full ones. */
+.pea-stats--compact {
+  grid-template-columns: repeat(auto-fit, minmax(178px, 1fr));
+  gap: 12px;
+}
+
+/* ------------------------------------------------------------ settings --- */
+
+/**
+ * Label and help text left, control right. The control column keeps its own
+ * width so a long settings list scans as two columns rather than a ragged
+ * stack; below 720px it drops underneath, where there is no room for two.
+ */
+.pea-setting-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--pea-line);
+}
+
+.pea-setting-row:last-child {
+  border-bottom: 0;
+}
+
+.pea-setting-main {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.pea-setting-key {
+  font-size: 11px;
+  font-family: var(--pea-mono);
+}
+
+/* ------------------------------------------------ tabs, chips, numerals --- */
+
+/**
+ * Tabular figures. Applied per column rather than to every cell, because it is
+ * only wanted where figures stack into a column — prose set in tabular numerals
+ * reads oddly, with gappy digits.
+ */
+.pea-num,
+.pea-num.ant-table-cell {
+  font-variant-numeric: tabular-nums;
+}
+
+/* A count riding on its tab. Scoped to our own class, never to `.ant-tabs-tab`. */
+.pea-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pea-tab-chip {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--pea-surface-2);
+  box-shadow: inset 0 0 0 1px var(--pea-line);
+  color: var(--pea-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 17px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The active tab's chip takes the accent wash — the second signal, with the
+   underline, that says which list you are looking at. */
+.pea-tab-chip.is-active {
+  background: var(--pea-accent-soft);
+  box-shadow: none;
+  color: var(--pea-accent-strong);
+}
+
+/* A bulk-action strip, not a notice: accent wash rather than Ant's info blue. */
+.pea-bulk-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 7px 12px;
+  border: 1px solid var(--pea-accent-soft);
+  border-radius: var(--pea-radius-control);
+  background: var(--pea-accent-soft);
+  color: var(--pea-ink);
+  font-size: 12.5px;
+}
+
+/* ------------------------------------------- evaluations grouped by RM --- */
+
+.pea-manager-group + .pea-manager-group {
+  margin-top: 14px;
+}
+
+.pea-manager-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 7px 12px;
+  border: 1px solid var(--pea-line);
+  border-bottom: 0;
+  border-radius: var(--pea-radius-control) var(--pea-radius-control) 0 0;
+  background: var(--pea-surface-2);
+  font-size: 12.5px;
+}
+
+.pea-manager-group-email {
+  margin-left: 8px;
+  color: var(--pea-muted);
+  font-size: 11.5px;
+}
+
+/* ------------------------------------------------- overview side panels --- */
+
+/**
+ * "Act on these first" with the two small panels beside it. The aside is fixed
+ * so the action list keeps the width it needs; below 1100px the aside drops
+ * underneath rather than squeezing both.
+ */
+.pea-overview-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  align-items: start;
+  gap: 16px;
+}
+
+.pea-overview-aside {
+  display: grid;
+  gap: 16px;
+}
+
+@media (max-width: 1100px) {
+  .pea-overview-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.pea-side-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.pea-side-list li {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--pea-line);
+  font-size: 12.5px;
+}
+
+.pea-side-list li:last-child {
+  border-bottom: 0;
+}
+
+.pea-side-meta {
+  flex: none;
+  color: var(--pea-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------------------------------------------------- status pill --- */
+
+/**
+ * The proposal's status pill. Scoped to `pea-` classes, never to `.ant-tag`:
+ * a global tag override would leak into the Admin Portal and every modal.
+ *
+ * Each tone sets --pill-ink and --pill-ground, so the shared rule below stays
+ * one block and the dot inherits the ink through currentColor.
+ */
+.pea-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.7;
+  white-space: nowrap;
+  color: var(--pill-ink);
+  background: var(--pill-ground);
+}
+
+.pea-status-pill::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  flex: none;
+}
+
+/* Classification pills (Fresher, Experienced, extension) carry no state, so no dot. */
+.pea-status-pill--nodot::before {
+  display: none;
+}
+
+.pea-status-pill--ok   { --pill-ink: var(--pea-ok);   --pill-ground: var(--pea-ok-soft); }
+.pea-status-pill--warn { --pill-ink: var(--pea-warn); --pill-ground: var(--pea-warn-soft); }
+.pea-status-pill--crit { --pill-ink: var(--pea-crit); --pill-ground: var(--pea-crit-soft); }
+.pea-status-pill--info { --pill-ink: var(--pea-info); --pill-ground: var(--pea-info-soft); }
+.pea-status-pill--ext  { --pill-ink: var(--pea-ext);  --pill-ground: var(--pea-ext-soft); }
+
+/* Mute is the neutral one: muted ink on the inset surface, plus a hairline so
+   it stays visible against a white card, where surface-2 is nearly invisible. */
+.pea-status-pill--mute {
+  --pill-ink: var(--pea-mute);
+  --pill-ground: var(--pea-mute-soft);
+  box-shadow: inset 0 0 0 1px var(--pea-line);
 }
 
 /* --------------------------------------------------------------- cards --- */
@@ -1958,4 +2307,16 @@ html.theme-transition *::after {
   .pea-admin-left > .pea-brand-mark { display: none; }
   .pea-admin-main { padding-inline: 14px; }
   .pea-admin-chip { padding: 0 4px; }
+}
+
+/* ── Resource trends (R-06) ──────────────────────────────────────────────
+   The Average row closes the parameter table: it is the figure the rest of
+   the app already shows, so it reads as a summary rather than one more
+   parameter competing with the seven above it. */
+.pea-trend-average-row > td {
+  background: var(--pea-surface-2);
+  font-weight: 600;
+}
+.pea-trend-average-row > td:first-child {
+  border-top: 1px solid var(--pea-border-strong);
 }

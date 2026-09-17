@@ -22,6 +22,7 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { runIntakeScan } from '../services/joinerIntake.service.js';
+import { runSyncAlerts } from '../services/syncAlert.service.js';
 
 let task = null;
 
@@ -69,8 +70,9 @@ export async function startIntakeScanner() {
   task = cron.schedule(
     expression,
     async () => {
+      let report = null;
       try {
-        const report = await runIntakeScan({ actor: 'scheduled-scan' });
+        report = await runIntakeScan({ actor: 'scheduled-scan' });
         logger.info(
           `🔎 Intake scan complete — ${report.candidatesNew} new joiner(s) in the inbox, ` +
             `${report.leaversFlagged} leaver flag(s) raised`
@@ -79,6 +81,16 @@ export async function startIntakeScanner() {
         // Loud, but never fatal: a failed directory read must not affect the
         // evaluation sweep, which is the job that actually matters.
         logger.error(`🔎 INTAKE SCAN FAILED: ${err.message}`, { stack: err.stack });
+      }
+
+      // R-03 — runs whether or not the scan above succeeded, because a failed
+      // scan is the single most important thing to tell HR about. A log line is
+      // not a notification: nobody reads the log, which is how a silent failure
+      // becomes a missed evaluation (Subhajit, 15-Sep, 16:14).
+      try {
+        await runSyncAlerts({ scan: report });
+      } catch (err) {
+        logger.error(`🔎 Sync alert pass failed: ${err.message}`, { stack: err.stack });
       }
     },
     { timezone: config.scheduler.timezone }

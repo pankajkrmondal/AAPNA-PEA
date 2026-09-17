@@ -36,7 +36,10 @@ describe('employee self-view — what each level discloses', () => {
   test('schedule: dates and status, and no rating of any kind', () => {
     const v = shapeSelfView(employee, 'schedule');
     assert.equal(v.evaluations.length, 2);
-    assert.equal(v.evaluations[0].status, 'Completed');
+    // The shared state names (frontend/src/evaluationStatus.js), told from the
+    // employee's own side: "Submitted" is the same state HR and the manager
+    // see under that name, so nobody meets two words for one thing.
+    assert.equal(v.evaluations[0].status, 'Submitted');
     assert.equal(v.evaluations[1].status, 'With your manager');
     assert.equal('average' in v.evaluations[0], false);
     assert.equal('decision' in v, false, 'the confirmation decision is not schedule information');

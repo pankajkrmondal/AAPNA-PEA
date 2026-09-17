@@ -423,8 +423,36 @@ export async function getEmployee(id) {
 
   const snapshot = await azureSnapshot(employee.id);
 
+  // R-02 — the detail screen needs these to decide whether to offer a manual
+  // pause and whether to explain an automatic hold. Carried on the employee
+  // response rather than read from /settings, which needs the settings module:
+  // an HR user without it must still see why evaluations have stopped.
+  const [pauseSetting, holdSetting] = await Promise.all([
+    prisma.pea_settings.findUnique({ where: { setting_key: 'manual_pause_enabled' } }),
+    prisma.pea_settings.findUnique({ where: { setting_key: 'hold_evaluations_for_leavers' } }),
+  ]);
+  const isOn = (row, fallback) =>
+    row?.setting_value === undefined || row?.setting_value === null
+      ? fallback
+      : String(row.setting_value).trim().toLowerCase() === 'true';
+
+  const holdLeavers = isOn(holdSetting, true);
+  const dismissed =
+    employee.leaver_dismissed_at && employee.leaver_flagged_at
+      ? employee.leaver_dismissed_at >= employee.leaver_flagged_at
+      : false;
+
   return {
     ...withProgress(employee),
+    evaluationHold: {
+      manualPauseEnabled: isOn(pauseSetting, false),
+      holdLeaversEnabled: holdLeavers,
+      // True when evaluations have stopped on their own, with nothing for HR to
+      // have done — the state the employee page has to be able to explain.
+      heldAsLeaver: holdLeavers && !!employee.leaver_flagged_at && !dismissed,
+      leaverFlaggedAt: employee.leaver_flagged_at,
+      leaverDismissedAt: employee.leaver_dismissed_at,
+    },
     // Per-field Azure provenance for the detail screen: where the value came
     // from, whether HR has locked it, and whether Entra currently disagrees.
     azure: {

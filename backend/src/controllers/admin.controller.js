@@ -18,6 +18,7 @@ import { queueEmail, shadowReport, isShadowMode } from '../services/notification
 import { verifyConnection } from '../services/graphMailer.service.js';
 import { verifyDirectoryAccess } from '../services/entraDirectory.service.js';
 import { findByOfficeEmail } from '../services/employee.service.js';
+import { leaverHoldApplies } from '../services/evaluation.service.js';
 import { addDays, toDateString, todayIn } from '../utils/dateUtils.js';
 import config from '../config/index.js';
 
@@ -60,10 +61,18 @@ export const sendEvaluationNow = catchAsync(async (req, res) => {
   if (!employee) throw new AppError(`No employee found with office email ${officeEmail}`, 404);
 
   if (employee.halt_process) {
-    throw new AppError(`Evaluations are paused for ${employee.full_name}. Resume them first.`, 409);
+    throw new AppError(`Evaluations are on hold for ${employee.full_name}. Resume them first.`, 409);
   }
   if (employee.employment_status !== 'active') {
     throw new AppError(`${employee.full_name} is marked as having left.`, 409);
+  }
+  if (await leaverHoldApplies(employee)) {
+    throw new AppError(
+      `Evaluations for ${employee.full_name} are on hold: Microsoft 365 shows the account ` +
+        'switched off and unlicensed. Confirm the exit, or mark them as still here, on the ' +
+        'New joiners screen first.',
+      409
+    );
   }
 
   const cycle = await prisma.pea_evaluation_cycles.findFirst({

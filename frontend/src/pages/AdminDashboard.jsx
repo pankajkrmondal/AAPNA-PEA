@@ -24,7 +24,7 @@ import {
 } from '@ant-design/icons';
 import api, { unwrap } from '../api.js';
 import RoleBadge from '../components/RoleBadge.jsx';
-import { MODULES, ROLE_LABEL, initialsOf, isAdminTier, isSuperadmin, outranks } from '../auth.js';
+import { MODULES, NESTED_MODULES, ROLE_LABEL, initialsOf, isAdminTier, isSuperadmin, outranks } from '../auth.js';
 
 const { Title, Text } = Typography;
 
@@ -622,11 +622,23 @@ export default function AdminDashboard({ me }) {
                       type="warning"
                       showIcon
                       message="Module access is read-only until the database update is applied"
-                      description="Apply prisma/ddl/2026-09-13b-pea-admin-portal.sql. Until then every HR user can open every module."
+                      description="Per-user module access isn’t available yet — ask your PEA admin to finish setting it up. Until then every HR user can open every module."
                     />
                   )}
 
-                  {MODULES.map((m) => {
+                  {/* Sidebar modules first, then the ones reached through
+                      another screen. All of them stay switchable — moving a
+                      screen inside Settings changed where it lives, not who may
+                      open it, and dropping its switch here would quietly take
+                      that control away. */}
+                  {[
+                    ...MODULES,
+                    ...NESTED_MODULES.map((n) => ({
+                      ...n,
+                      emoji: '↳',
+                      desc: `Inside ${n.within}`,
+                    })),
+                  ].map((m) => {
                     const enabled = Boolean(access.data?.modules.find((x) => x.key === m.key)?.is_enabled);
                     return (
                       <div key={m.key} className={`pea-module-row${enabled ? ' pea-module-row--on' : ''}`}>

@@ -57,12 +57,16 @@ export function shapeSelfView(employee, level) {
   const showAverages = level === 'averages' || level === 'full';
   const showDetail = level === 'full';
 
+  // The same states the rest of PEA uses (frontend/src/evaluationStatus.js),
+  // told from the employee's side. "Waiting for manager" would read oddly to
+  // the person being evaluated, so it stays "With your manager" — but the
+  // states themselves match, so nobody sees two names for one thing.
   const STATUS = {
-    pending: 'Not yet due',
+    pending: 'Scheduled',
     email_sent: 'With your manager',
     opened: 'With your manager',
-    completed: 'Completed',
-    skipped: 'Not needed',
+    completed: 'Submitted',
+    skipped: 'Closed',
   };
 
   return {

@@ -51,7 +51,15 @@ export async function getDashboard() {
     prisma.pea_employees.count({ where: { employment_status: 'active' } }),
     prisma.pea_employees.count({ where: { is_experienced: false, employment_status: 'active' } }),
     prisma.pea_employees.count({ where: { is_experienced: true, employment_status: 'active' } }),
-    prisma.pea_employees.count({ where: { confirmation_status: null, employment_status: 'active' } }),
+    // Still in probation = no decision yet, OR extended. An extension IS a
+    // probation that is still running, so counting only the nulls quietly
+    // dropped every extended person and made the figure read low.
+    prisma.pea_employees.count({
+      where: {
+        employment_status: 'active',
+        OR: [{ confirmation_status: null }, { confirmation_status: { startsWith: 'Extend' } }],
+      },
+    }),
     prisma.pea_employees.count({ where: { confirmation_status: 'Confirmed' } }),
     prisma.pea_employees.count({ where: { confirmation_status: 'Not Confirmed' } }),
     prisma.pea_employees.count({ where: { confirmation_status: { startsWith: 'Extend' } } }),
@@ -70,7 +78,21 @@ export async function getDashboard() {
       where: { status: 'pending', due_date: { gt: today, lte: soon }, employee: activeEmployee },
     }),
     prisma.pea_evaluation_cycles.count({ where: { status: 'completed' } }),
-    prisma.pea_evaluation_cycles.count(),
+    // "Submitted of those DUE", not of every cycle ever scheduled.
+    //
+    // The old denominator counted future evaluations and ones closed as no
+    // longer needed, so a team where every manager had answered on time still
+    // read something like 128 / 311 — a number that looks like failure and is
+    // really just a probation calendar stretching months ahead.
+    prisma.pea_evaluation_cycles.count({
+      where: {
+        OR: [
+          { status: 'completed' },
+          { status: { in: ['email_sent', 'opened'] } },
+          { status: 'pending', due_date: { lte: today } },
+        ],
+      },
+    }),
   ]);
 
   // The action lists. Overdue is ordered oldest-first because that is the one

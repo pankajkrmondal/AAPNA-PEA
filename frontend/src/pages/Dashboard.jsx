@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Row, Col, Card, Table, Tag, Space, Button, Alert, Spin, App, Tooltip,
+  Row, Col, Card, Table, Tag, Space, Button, Alert, Spin, App, Tooltip, Modal, Typography,
 } from 'antd';
 import {
   WarningOutlined, ClockCircleOutlined, CheckCircleOutlined, DownloadOutlined,
@@ -11,8 +11,7 @@ import {
 import api, { unwrap, TOKEN_KEY, USER_KEY } from '../api.js';
 import StatCard from '../components/StatCard.jsx';
 import HintIcon from '../components/HintIcon.jsx';
-
-const fmt = (d) => (d ? String(d).slice(0, 10) : '—');
+import { formatDate as fmt } from '../formatDate.js';
 
 const greeting = (h) => (h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening');
 
@@ -61,6 +60,53 @@ export default function Dashboard() {
       qc.invalidateQueries({ queryKey: ['dashboard'] });
     },
     onError: (err) => { message.error(err.friendlyMessage); },
+  });
+
+  /**
+   * "Run sweep now" used to send immediately on one click — real email, to real
+   * managers, with nothing shown first but a count that vanished after a few
+   * seconds. It now runs the dry run FIRST and asks about the actual numbers,
+   * so the decision is made against what would really happen rather than a
+   * remembered glance at a toast.
+   */
+  const confirmAndSweep = useMutation({
+    mutationFn: () => api.post('/admin/sweep?dryRun=true').then((r) => r.data),
+    onError: (err) => { message.error(err.friendlyMessage); },
+    onSuccess: (res) => {
+      const d = res.data || {};
+      const evaluations = d.evaluations?.due ?? 0;
+      const reminders = d.reminders?.due ?? 0;
+
+      if (evaluations + reminders === 0) {
+        message.info('Nothing is due right now, so no email would be sent.');
+        return;
+      }
+
+      Modal.confirm({
+        title: 'Send these emails now?',
+        width: 520,
+        okText: `Send ${evaluations + reminders} email(s) now`,
+        cancelText: 'Cancel',
+        content: (
+          <div>
+            <p style={{ marginTop: 8 }}>This sends real email to reporting managers:</p>
+            <ul style={{ paddingLeft: 18 }}>
+              {evaluations > 0 && (
+                <li><strong>{evaluations}</strong> evaluation request(s) now due</li>
+              )}
+              {reminders > 0 && (
+                <li><strong>{reminders}</strong> reminder(s) for evaluations already sent</li>
+              )}
+            </ul>
+            <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
+              The daily sweep would send these at 11:00 anyway. Running it now does not
+              send anything twice.
+            </Typography.Text>
+          </div>
+        ),
+        onOk: () => sweep.mutateAsync(false),
+      });
+    },
   });
 
   const download = async () => {
@@ -113,14 +159,14 @@ export default function Dashboard() {
               Preview sweep
             </Button>
           </Tooltip>
-          <Tooltip title="Runs the real daily sweep now instead of at 11:00: sends due evaluation emails and reminders, and raises deadline alerts. Emails ARE sent.">
+          <Tooltip title="Runs the real daily sweep now instead of at 11:00. Shows exactly what would be sent and asks before sending anything.">
             <Button
               type="primary"
               icon={<SyncOutlined />}
-              onClick={() => sweep.mutate(false)}
-              loading={sweep.isPending}
+              onClick={() => confirmAndSweep.mutate()}
+              loading={confirmAndSweep.isPending || sweep.isPending}
             >
-              Run sweep now
+              Send due emails now…
             </Button>
           </Tooltip>
         </div>
@@ -141,7 +187,7 @@ export default function Dashboard() {
           value={emp.inProbation}
           icon={<SolutionOutlined />}
           accent="blue"
-          hint="Active employees with no confirmation decision yet."
+          hint="Active employees whose probation is still running — no decision yet, or extended."
           foot={`${emp.confirmed} confirmed · ${emp.extended} extended`}
           share={ratio(emp.inProbation, emp.active)}
         />
@@ -173,12 +219,12 @@ export default function Dashboard() {
           share={ratio(ev.dueInNext14Days, ev.total)}
         />
         <StatCard
-          label="Completed"
+          label="Submitted"
           value={ev.completed}
           suffix={`/ ${ev.total}`}
           icon={<CheckCircleOutlined />}
           accent="emerald"
-          hint="Submitted evaluations out of all evaluations. The footer shows the average rating across completed ones."
+          hint="Evaluations submitted, out of those that have actually fallen due. Evaluations scheduled for later are not counted against you."
           foot={
             ev.averageRating != null
               ? `Average rating ${ev.averageRating.toFixed(2)}`

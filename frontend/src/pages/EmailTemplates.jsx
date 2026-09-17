@@ -48,7 +48,11 @@ const bodyProblem = (html) => {
  * HTML Code / Live Preview on the right. The AAPNA header, logo and footer are
  * added by the server and cannot be edited, so they cannot be broken.
  */
-export default function EmailTemplates() {
+/**
+ * @param {{embedded?: boolean}} props - `embedded` drops the page heading, for
+ *   use as a Settings tab. One implementation either way.
+ */
+export default function EmailTemplates({ embedded = false } = {}) {
   const { message, modal } = App.useApp();
   const qc = useQueryClient();
   const { mode } = useThemeMode();
@@ -172,12 +176,14 @@ export default function EmailTemplates() {
 
   return (
     <div className="email-page">
-      <div className="pea-page-head">
-        <div>
-          <h2>Email templates</h2>
-          <p>The subject and wording of every email PEA sends. The AAPNA header, logo and footer are added automatically.</p>
+      {!embedded && (
+        <div className="pea-page-head">
+          <div>
+            <h2>Email templates</h2>
+            <p>The subject and wording of every email PEA sends. The AAPNA header, logo and footer are added automatically.</p>
+          </div>
         </div>
-      </div>
+      )}
 
       {!canEdit && (
         <Alert
