@@ -1,27 +1,3 @@
-// ═══════════════════════════════════════════════════════════════════════════
-//  PEA — Prisma schema
-//
-//  🚨 THIS FILE IS HAND-WRITTEN. DO NOT RUN `prisma db pull`.
-//
-//  ── PEA and ATS are separate projects (decision D5, 13 Sep 2026) ─────────
-//  PEA has its OWN database and reads no ATS data. ATS covers hiring; PEA
-//  covers probation after joining, however the person joined.
-//
-//  ⚠️ INTERIM: until IT can create PEA's own database, PEA runs on the ATS
-//  staging database (recruitmentautomationdb) as `appuser`, which OWNS the ATS
-//  rpa_ tables. PEA never queries them, but UNTIL PEA MOVES TO ITS OWN DATABASE:
-//    • `prisma db pull` would import every ATS table into this file;
-//    • `prisma migrate dev` / `db push` would treat the ATS tables as drift
-//      and emit DROP TABLE for each — and they would succeed.
-//  So: never run migrate / push / pull here. package.json has no such script.
-//
-//  Schema changes are a reviewed .sql file in prisma/ddl/, applied by hand,
-//  with the models below edited to match.
-//
-//  Source of truth for the physical schema on a NEW, dedicated PEA database:
-//    prisma/ddl/pea-dedicated-database.sql
-// ═══════════════════════════════════════════════════════════════════════════
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -31,177 +7,132 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Authentication — PEA's own users and sessions. PEA and ATS are separate
-// applications with separate sign-in. Plan §5.4.
-// ───────────────────────────────────────────────────────────────────────────
-
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model pea_users {
-  id              Int                 @id @default(autoincrement())
-  notifications   pea_notifications[]
+  id                 Int                      @id @default(autoincrement())
+  username           String                   @db.VarChar(100)
+  email              String                   @db.VarChar(255)
+  password_hash      String
+  first_name         String?                  @db.VarChar(100)
+  last_name          String?                  @db.VarChar(100)
+  role               String                   @default("hr") @db.VarChar(50)
+  is_active          Boolean                  @default(true)
+  azure_object_id    String?                  @db.VarChar(100)
+  last_login_at      DateTime?                @db.Timestamptz(6)
+  created_at         DateTime                 @default(now()) @db.Timestamptz(6)
+  modified_at        DateTime                 @default(now()) @db.Timestamptz(6)
   module_permissions pea_module_permissions[]
-  username        String         @unique @db.VarChar(100)
-  email           String         @unique @db.VarChar(255)
-  password_hash   String
-  first_name      String?        @db.VarChar(100)
-  last_name       String?        @db.VarChar(100)
-  role            String         @default("hr") @db.VarChar(50) // superadmin | admin | hr
-  is_active       Boolean        @default(true)
-  azure_object_id String?        @db.VarChar(100) // unused: SSO removed 13 Sep; column kept so no DB change is needed
-  last_login_at   DateTime?      @db.Timestamptz(6)
-  created_at      DateTime       @default(now()) @db.Timestamptz(6)
-  modified_at     DateTime       @default(now()) @db.Timestamptz(6)
-  sessions        pea_sessions[]
+  notifications      pea_notifications[]
+  sessions           pea_sessions[]
 
-  // NOTE: the database enforces uniqueness on lower(username) / lower(email)
-  // via expression indexes, which Prisma cannot express. Always lowercase
-  // before querying so the index is used and the semantics match.
   @@map("pea_users")
 }
 
 model pea_sessions {
   id         Int        @id @default(autoincrement())
-  token      String     @unique
+  token      String     @unique(map: "uq_pea_sessions_token")
   user_id    Int?
   role       String?    @db.VarChar(50)
   expires_at DateTime   @db.Timestamptz(6)
   created_at DateTime   @default(now()) @db.Timestamptz(6)
-  user       pea_users? @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  user       pea_users? @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id], map: "idx_pea_sessions_user")
   @@index([expires_at], map: "idx_pea_sessions_expires")
   @@map("pea_sessions")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// The master record — replaces Excel Sheet1 columns A–H.
-// ───────────────────────────────────────────────────────────────────────────
-
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model pea_employees {
-  id             BigInt  @id @default(autoincrement())
-  full_name      String  @db.VarChar(150)
-  office_email   String  @db.VarChar(255)
+  id                    BigInt                  @id @default(autoincrement())
+  full_name             String                  @db.VarChar(150)
+  office_email          String                  @db.VarChar(255)
   /// Personal (CV) email. ATS stores ONLY this kind — it has no office-email
   /// column anywhere — so this is what makes an ATS link possible. Plan R4.
-  personal_email String? @db.VarChar(255)
-
+  personal_email        String?                 @db.VarChar(255)
   /// Excel "Experience": Yes = true. Drives the 30-day vs 60-day cadence.
-  is_experienced Boolean  @default(false)
+  is_experienced        Boolean                 @default(false)
   /// A real DATE, which is what kills the dd-MM-yyyy format bug. Plan §3.2.
-  doj            DateTime @db.Date
-
-  rm_name  String @db.VarChar(150)
-  rm_email String @db.VarChar(255)
-  pl_email String @db.VarChar(255)
-
+  doj                   DateTime                @db.Date
+  rm_name               String                  @db.VarChar(150)
+  rm_email              String                  @db.VarChar(255)
+  pl_email              String                  @db.VarChar(255)
   /// Excel "Halt_Process" — pauses all evaluations for this person.
-  halt_process        Boolean @default(false)
+  halt_process          Boolean                 @default(false)
   /// NULL = still in probation. Confirmed | Not Confirmed |
   /// Extend for 1 month | Extend for 2 months (CHECK-constrained in the DB).
-  confirmation_status String? @db.VarChar(50)
-  employment_status   String  @default("active") @db.VarChar(20) // active | left
-
-  source String @default("manual") @db.VarChar(20) // manual | excel | azure
-  // ⚠️ DELIBERATELY NOT MODELLED: ats_pipeline_id. It was a link into the ATS
-  //    database, which PEA no longer reads (decision D5, 13 Sep 2026). The
-  //    column still exists on the temporary co-located database and is simply
-  //    ignored; the dedicated PEA database does not have it.
-  azure_user_id    String?  @db.VarChar(100)
-  license_assigned Boolean?
-  /// Fields HR has explicitly corrected; the Azure sync must never overwrite
-  /// these. Plan §6.5 ("what if the AD data is wrong?").
-  locked_fields    String[]
-
+  confirmation_status   String?                 @db.VarChar(50)
+  employment_status     String                  @default("active") @db.VarChar(20)
+  source                String                  @default("manual") @db.VarChar(20)
+  azure_user_id         String?                 @db.VarChar(100)
+  license_assigned      Boolean?
   /// The two Entra leaver signals, kept apart on purpose. "No licence" alone
   /// flags 68 of 91 sampled users — resource accounts, guests, unlicensed staff.
   /// Requiring accountEnabled = false AS WELL gives a clean 16. Plan §13.9.
   azure_account_enabled Boolean?
-  azure_synced_at       DateTime? @db.Timestamptz(6)
+  azure_synced_at       DateTime?               @db.Timestamptz(6)
+  azure_display_name    String?                 @db.VarChar(150)
+  azure_mail            String?                 @db.VarChar(255)
+  /// Fields HR has explicitly corrected; the Azure sync must never overwrite
+  /// these. Plan §6.5 ("what if the AD data is wrong?").
+  locked_fields         String[]                @default([])
   /// Set when both signals say gone. A suggestion for HR's inbox — nothing in
   /// PEA changes employment_status on its own.
-  leaver_flagged_at     DateTime? @db.Timestamptz(6)
+  leaver_flagged_at     DateTime?               @db.Timestamptz(6)
   /// HR said "no, they are still here". An instant, not a boolean, so someone
   /// who genuinely leaves later is flagged afresh rather than silenced forever.
-  leaver_dismissed_at   DateTime? @db.Timestamptz(6)
+  leaver_dismissed_at   DateTime?               @db.Timestamptz(6)
+  created_at            DateTime                @default(now()) @db.Timestamptz(6)
+  modified_at           DateTime                @default(now()) @db.Timestamptz(6)
+  emails                pea_email_log[]
+  audit                 pea_employee_audit[]
+  cycles                pea_evaluation_cycles[]
+  candidates            pea_joiner_candidates[]
 
-  // ⚠️ DELIBERATELY NOT MODELLED: azure_display_name, azure_mail
-  //    (added by prisma/ddl/2026-09-13-pea-phase2-features.sql).
-  //    Prisma selects every modelled column on every query, so declaring them
-  //    here would break EVERY employee read on a database where that DDL has
-  //    not yet run. They are read and written with raw SQL in
-  //    joinerIntake.service.js and employee.service.js instead, which degrade
-  //    cleanly when the columns are absent. Model them only once every
-  //    environment, production included, has the DDL.
-
-  created_at  DateTime @default(now()) @db.Timestamptz(6)
-  modified_at DateTime @default(now()) @db.Timestamptz(6)
-
-  cycles     pea_evaluation_cycles[]
-  audit      pea_employee_audit[]
-  emails     pea_email_log[]
-  candidates pea_joiner_candidates[]
-
-  // office_email is unique on lower(trim(...)) in the DB — an expression index
-  // Prisma cannot model, so there is no @unique here. Use findFirst with a
-  // normalised value rather than findUnique.
   @@index([employment_status, halt_process], map: "idx_pea_employees_sweep")
   @@index([azure_user_id], map: "idx_pea_employees_azure")
   @@map("pea_employees")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// One row per employee per evaluation (1..8).
-// Replaces the "Evaluation N" / "EN Status" column pairs in Excel Sheet1.
-// ───────────────────────────────────────────────────────────────────────────
-
 model pea_evaluation_cycles {
-  id           BigInt  @id @default(autoincrement())
-  employee_id  BigInt
-  seq_no       Int     @db.SmallInt
-  is_extension Boolean @default(false)
-
+  id                  BigInt                  @id @default(autoincrement())
+  employee_id         BigInt
+  seq_no              Int                     @db.SmallInt
+  is_extension        Boolean                 @default(false)
   /// The sweep matches due_date <= CURRENT_DATE. The Power Automate original
   /// matched an EXACT day count (== 30), so one failed run skipped that
   /// evaluation permanently and silently. Plan §3.1.
-  due_date    DateTime  @db.Date
-  period_from DateTime? @db.Date
-  period_to   DateTime? @db.Date
-
+  due_date            DateTime                @db.Date
+  period_from         DateTime?               @db.Date
+  period_to           DateTime?               @db.Date
   /// pending | email_sent | opened | completed | skipped
-  status String @default("pending") @db.VarChar(20)
-
+  status              String                  @default("pending") @db.VarChar(20)
   /// The manager's credential for the form. No login required — this mirrors
   /// the ATS interviewer-scorecard pattern that replaces MS Forms.
-  token            String    @unique @default(uuid()) @db.Uuid
-  token_expires_at DateTime? @db.Timestamptz(6)
-
-  sent_at            DateTime? @db.Timestamptz(6)
-  opened_at          DateTime? @db.Timestamptz(6)
-  submitted_at       DateTime? @db.Timestamptz(6)
-  submitted_by_email String?   @db.VarChar(255)
-  submitted_ip       String?   @db.VarChar(64)
-
+  token               String                  @unique(map: "uq_pea_evaluation_cycles_token") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token_expires_at    DateTime?               @db.Timestamptz(6)
+  sent_at             DateTime?               @db.Timestamptz(6)
+  opened_at           DateTime?               @db.Timestamptz(6)
+  submitted_at        DateTime?               @db.Timestamptz(6)
+  submitted_by_email  String?                 @db.VarChar(255)
+  submitted_ip        String?                 @db.VarChar(64)
   /// Two reminders per cycle at due_date +2 and +4 days. Reconstructed from the
   /// PPT user guide because the reminder flow was never exported. Plan §2.3b.
-  reminder_count   Int       @default(0) @db.SmallInt
-  last_reminded_at DateTime? @db.Timestamptz(6)
-
-  avg_rating          Decimal? @db.Decimal(3, 2)
+  reminder_count      Int                     @default(0) @db.SmallInt
+  last_reminded_at    DateTime?               @db.Timestamptz(6)
+  avg_rating          Decimal?                @db.Decimal(3, 2)
   remarks             String?
   /// Captured on the final cycle only.
-  confirmation_status String?  @db.VarChar(50)
-
+  confirmation_status String?                 @db.VarChar(50)
   /// Verbatim pre-migration text for legacy rows we deliberately do NOT parse
   /// (Sheet1 free-text blobs, Sheet3's 4-parameter scale). Plan R5, tier 3.
-  legacy_raw    String?
-  legacy_format String? @db.VarChar(30)
-
-  created_at  DateTime @default(now()) @db.Timestamptz(6)
-  modified_at DateTime @default(now()) @db.Timestamptz(6)
-
-  employee pea_employees           @relation(fields: [employee_id], references: [id], onDelete: Cascade)
-  scores   pea_evaluation_scores[]
-  emails   pea_email_log[]
+  legacy_raw          String?
+  legacy_format       String?                 @db.VarChar(30)
+  created_at          DateTime                @default(now()) @db.Timestamptz(6)
+  modified_at         DateTime                @default(now()) @db.Timestamptz(6)
+  emails              pea_email_log[]
+  employee            pea_employees           @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  scores              pea_evaluation_scores[]
 
   @@unique([employee_id, seq_no], map: "uq_pea_evaluation_cycles_emp_seq")
   @@index([due_date, status], map: "idx_pea_evaluation_cycles_due")
@@ -209,35 +140,26 @@ model pea_evaluation_cycles {
   @@map("pea_evaluation_cycles")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Per-parameter ratings. Mirrors rpa_interview_scorecard_skill.
-// ───────────────────────────────────────────────────────────────────────────
-
 model pea_evaluation_scores {
-  id        BigInt @id @default(autoincrement())
-  cycle_id  BigInt
-  param_key String @db.VarChar(60)
+  id          BigInt                @id @default(autoincrement())
+  cycle_id    BigInt
+  param_key   String                @db.VarChar(60)
   /// Snapshotted at submit time so renaming a question later never rewrites
   /// what a manager actually saw and answered.
-  param_label String   @db.VarChar(150)
-  rating      Decimal? @db.Decimal(2, 1)
+  param_label String                @db.VarChar(150)
+  rating      Decimal?              @db.Decimal(2, 1)
   comments    String?
-  sort_order  Int      @default(0) @db.SmallInt
-
-  cycle pea_evaluation_cycles @relation(fields: [cycle_id], references: [id], onDelete: Cascade)
+  sort_order  Int                   @default(0) @db.SmallInt
+  cycle       pea_evaluation_cycles @relation(fields: [cycle_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([cycle_id, param_key], map: "uq_pea_evaluation_scores_cycle_param")
   @@index([cycle_id], map: "idx_pea_evaluation_scores_cycle")
   @@map("pea_evaluation_scores")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// The form definition as DATA, so HR can change questions without a deploy.
-// ───────────────────────────────────────────────────────────────────────────
-
 model pea_evaluation_params {
   id          BigInt  @id @default(autoincrement())
-  template    String  @db.VarChar(20) // fresher | experienced | legacy_4param
+  template    String  @db.VarChar(20)
   param_key   String  @db.VarChar(60)
   param_label String  @db.VarChar(150)
   sort_order  Int     @default(0) @db.SmallInt
@@ -247,42 +169,33 @@ model pea_evaluation_params {
   @@map("pea_evaluation_params")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Audit of every send. Nothing equivalent exists in the Excel system.
-// ───────────────────────────────────────────────────────────────────────────
-
 model pea_email_log {
-  id              BigInt  @id @default(autoincrement())
+  id              BigInt                 @id @default(autoincrement())
   cycle_id        BigInt?
   employee_id     BigInt?
   /// evaluation_link | reminder | acknowledgement | extend_alert | hr_notification | it_report |
   /// manager_portal | deadline_alert | user_created | user_password_changed | password_reset_request
-  email_type      String  @db.VarChar(50)
-  recipient_email String  @db.VarChar(255)
+  email_type      String                 @db.VarChar(50)
+  recipient_email String                 @db.VarChar(255)
   cc_emails       String?
-  subject         String? @db.VarChar(500)
+  subject         String?                @db.VarChar(500)
   /// sent | failed | suppressed. 'suppressed' is what shadow mode writes
   /// instead of sending, so PEA's "would have sent" list can be diffed against
   /// Power Automate's actual sends before cutover. Plan R6, stage 1.
-  status          String  @db.VarChar(20)
+  status          String                 @db.VarChar(20)
   error_message   String?
-  sent_at         DateTime @default(now()) @db.Timestamptz(6)
-
-  cycle    pea_evaluation_cycles? @relation(fields: [cycle_id], references: [id])
-  employee pea_employees?         @relation(fields: [employee_id], references: [id])
+  sent_at         DateTime               @default(now()) @db.Timestamptz(6)
+  cycle           pea_evaluation_cycles? @relation(fields: [cycle_id], references: [id], onUpdate: NoAction)
+  employee        pea_employees?         @relation(fields: [employee_id], references: [id], onUpdate: NoAction)
 
   @@index([cycle_id], map: "idx_pea_email_log_cycle")
   @@index([sent_at(sort: Desc)], map: "idx_pea_email_log_sent")
   @@map("pea_email_log")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Config — everything the Power Automate flows hardcoded.
-// ───────────────────────────────────────────────────────────────────────────
-
 model pea_settings {
   id            BigInt   @id @default(autoincrement())
-  setting_key   String   @unique @db.VarChar(100)
+  setting_key   String   @unique(map: "uq_pea_settings_key") @db.VarChar(100)
   setting_value String?
   description   String?
   modified_at   DateTime @default(now()) @db.Timestamptz(6)
@@ -290,33 +203,22 @@ model pea_settings {
   @@map("pea_settings")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Who changed what, when, from which source. The concrete answer to
-// "what if the AD data is wrong?" — corrections are attributable and
-// reversible, which the Excel file never was. Plan §6.5.
-// ───────────────────────────────────────────────────────────────────────────
-
 model pea_employee_audit {
-  id          BigInt  @id @default(autoincrement())
-  employee_id BigInt
-  field_name  String  @db.VarChar(60)
-  old_value   String?
-  new_value   String?
+  id            BigInt        @id @default(autoincrement())
+  employee_id   BigInt
+  field_name    String        @db.VarChar(60)
+  old_value     String?
+  new_value     String?
   /// PEA username, or 'azure-sync' / 'system' for automated changes.
-  changed_by  String? @db.VarChar(255)
+  changed_by    String?       @db.VarChar(255)
   /// manual | azure | excel_import | ats | system
-  change_source String   @db.VarChar(20)
-  changed_at    DateTime @default(now()) @db.Timestamptz(6)
-
-  employee pea_employees @relation(fields: [employee_id], references: [id], onDelete: Cascade)
+  change_source String        @db.VarChar(20)
+  changed_at    DateTime      @default(now()) @db.Timestamptz(6)
+  employee      pea_employees @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([employee_id, changed_at(sort: Desc)], map: "idx_pea_employee_audit_employee")
   @@map("pea_employee_audit")
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Phase 2 — Azure/Entra sync run log.
-// ───────────────────────────────────────────────────────────────────────────
 
 model pea_azure_sync_log {
   id                 BigInt   @id @default(autoincrement())
@@ -326,7 +228,6 @@ model pea_azure_sync_log {
   users_flagged_left Int?
   status             String?  @db.VarChar(20)
   error_message      String?
-
   /// scan | dry_run. A run that found nothing and a run that failed halfway
   /// both leave "0 created", so record what the run actually did.
   mode               String?  @db.VarChar(20)
@@ -340,97 +241,51 @@ model pea_azure_sync_log {
   @@map("pea_azure_sync_log")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Phase 2 — the New Joiner Inbox. Plan §13.8.
-//
-// PEA detects a new Microsoft account, prefills what Entra can tell it, and HR
-// confirms the rest. Measured coverage decides what each field may promise:
-// displayName and mail are 100%; manager is 73% on accounts under six months
-// and correct 88% of the time when set; createdDateTime is a DOJ proxy only
-// (70% within ±3 days, worst case −799 days for a rejoiner); employeeHireDate
-// and employeeType are 0% and contribute nothing. Plan §13.2, §13.4, §13.6.
-//
-// Hence every suggestion carries its source, so the UI can say "unverified —
-// from Entra" instead of presenting a guess as a fact.
-// ───────────────────────────────────────────────────────────────────────────
-
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model pea_joiner_candidates {
-  id     BigInt @id @default(autoincrement())
+  id                 BigInt         @id @default(autoincrement())
   /// Entra objectId — the identity of the row. A rescan updates, never
   /// duplicates.
-  azure_user_id String? @db.VarChar(100)
-  source        String  @default("azure") @db.VarChar(20) // azure
-
-  display_name       String?   @db.VarChar(150)
-  office_email       String?   @db.VarChar(255)
-  account_created_at DateTime? @db.Timestamptz(6)
-
-  suggested_doj      DateTime? @db.Date
-  doj_source         String?   @db.VarChar(20) // ats_offer | account_created
-  suggested_rm_name  String?   @db.VarChar(150)
-  suggested_rm_email String?   @db.VarChar(255)
-  rm_source          String?   @db.VarChar(20) // entra_manager
-  suggested_pl_email String?   @db.VarChar(255)
-  pl_source          String?   @db.VarChar(20) // rm_map
-
-  // Fresher/experienced is deliberately never suggested: employeeType is 0%
-  // populated, so PEA has no basis for it at all. HR always answers it.
-
-  // ⚠️ NOT MODELLED: ats_pipeline_id, personal_email, position_applied. They
-  //    held accepted ATS offers queued into this inbox, which PEA no longer
-  //    reads (decision D5). They remain, unused, on the temporary co-located
-  //    database; the dedicated PEA database does not have them.
-
-  status           String    @default("pending") @db.VarChar(20) // pending | accepted | dismissed
-  dismissed_reason String?
-  employee_id      BigInt?
-  reviewed_by      String?   @db.VarChar(255)
-  reviewed_at      DateTime? @db.Timestamptz(6)
-
+  azure_user_id      String?        @db.VarChar(100)
+  source             String         @default("azure") @db.VarChar(20)
+  display_name       String?        @db.VarChar(150)
+  office_email       String?        @db.VarChar(255)
+  account_created_at DateTime?      @db.Timestamptz(6)
+  suggested_doj      DateTime?      @db.Date
+  doj_source         String?        @db.VarChar(20)
+  suggested_rm_name  String?        @db.VarChar(150)
+  suggested_rm_email String?        @db.VarChar(255)
+  rm_source          String?        @db.VarChar(20)
+  suggested_pl_email String?        @db.VarChar(255)
+  pl_source          String?        @db.VarChar(20)
+  status             String         @default("pending") @db.VarChar(20)
+  dismissed_reason   String?
+  employee_id        BigInt?
+  reviewed_by        String?        @db.VarChar(255)
+  reviewed_at        DateTime?      @db.Timestamptz(6)
   /// Exactly the Graph fields PEA selected, verbatim. When HR disputes a
   /// prefilled value the question is always "what did Entra actually say?".
-  raw_graph Json?
+  raw_graph          Json?
+  first_seen_at      DateTime       @default(now()) @db.Timestamptz(6)
+  last_seen_at       DateTime       @default(now()) @db.Timestamptz(6)
+  employee           pea_employees? @relation(fields: [employee_id], references: [id], onUpdate: NoAction, map: "pea_joiner_candidates_employee_fk")
 
-  first_seen_at DateTime @default(now()) @db.Timestamptz(6)
-  last_seen_at  DateTime @default(now()) @db.Timestamptz(6)
-
-  employee pea_employees? @relation(fields: [employee_id], references: [id])
-
-  // azure_user_id is unique via a PARTIAL index (WHERE azure_user_id IS NOT
-  // NULL), which Prisma cannot express — so no @unique here. Upsert by hand.
   @@index([status, account_created_at(sort: Desc)], map: "idx_pea_joiner_candidates_status")
   @@map("pea_joiner_candidates")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Phase 2 — Project Leader derived from Reporting Manager. Plan §13.5.
-//
-// PL is not a Microsoft concept and does not need to be: across the 54 sheet
-// rows, 21 of 22 managers map to exactly one project leader — 89% of staff.
-// The one exception (ragupta@ → vtyagi@ ×4 vs aroy@ ×2) is recorded as
-// ambiguous rather than resolved by majority, because guessing silently CCs the
-// wrong project leader on somebody's performance review.
-// ───────────────────────────────────────────────────────────────────────────
-
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model pea_rm_pl_map {
   id           BigInt   @id @default(autoincrement())
   rm_email     String   @db.VarChar(255)
   pl_email     String?  @db.VarChar(255)
   is_ambiguous Boolean  @default(false)
   note         String?
-  source       String   @default("sheet") @db.VarChar(20) // sheet | manual
+  source       String   @default("sheet") @db.VarChar(20)
   modified_at  DateTime @default(now()) @db.Timestamptz(6)
 
-  // Unique on lower(trim(rm_email)) in the DB — an expression index Prisma
-  // cannot model. Query with a normalised value.
   @@map("pea_rm_pl_map")
 }
-
-// ───────────────────────────────────────────────────────────────────────────
-// Phase 2 — the in-app bell. One row per user per event, so read state is
-// personal. dedupe_key stops a nightly job re-announcing the same thing.
-// Source: prisma/ddl/2026-09-13-pea-phase2-features.sql
-// ───────────────────────────────────────────────────────────────────────────
 
 model pea_notifications {
   id         BigInt    @id @default(autoincrement())
@@ -439,47 +294,33 @@ model pea_notifications {
   title      String    @db.VarChar(200)
   body       String?
   link       String?   @db.VarChar(300)
-  severity   String    @default("info") @db.VarChar(10) // info | warning | critical
+  severity   String    @default("info") @db.VarChar(10)
   dedupe_key String?   @db.VarChar(200)
   read_at    DateTime? @db.Timestamptz(6)
   created_at DateTime  @default(now()) @db.Timestamptz(6)
+  user       pea_users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "pea_notifications_user_fk")
 
-  user pea_users @relation(fields: [user_id], references: [id], onDelete: Cascade)
-
-  // (user_id, dedupe_key) is unique via a PARTIAL index — not expressible here.
   @@index([user_id, read_at, created_at(sort: Desc)], map: "idx_pea_notifications_user")
   @@map("pea_notifications")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Admin Portal — Module Access. Which sidebar modules an HR user may open.
-// A MISSING row means the module is on; only is_enabled = false restricts.
-// Admins and super admins ignore this table.
-// Source: prisma/ddl/2026-09-13b-pea-admin-portal.sql
-// ───────────────────────────────────────────────────────────────────────────
-
 model pea_module_permissions {
-  id         Int      @id @default(autoincrement())
+  id         Int       @id @default(autoincrement())
   user_id    Int
-  module_key String   @db.VarChar(50) // config/modules.js key
-  is_enabled Boolean  @default(true)
-  updated_by String?  @db.VarChar(100)
-  updated_at DateTime @default(now()) @db.Timestamptz(6)
-
-  user pea_users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  module_key String    @db.VarChar(50)
+  is_enabled Boolean   @default(true)
+  updated_by String?   @db.VarChar(100)
+  updated_at DateTime  @default(now()) @db.Timestamptz(6)
+  user       pea_users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([user_id, module_key], map: "uq_pea_module_permissions_user_module")
   @@map("pea_module_permissions")
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// Phase 2 — a reporting manager's "my team" link. Same trust model as the
-// evaluation form: the UUID is the credential; managers get no account.
-// ───────────────────────────────────────────────────────────────────────────
-
+/// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model pea_manager_links {
   id           BigInt    @id @default(autoincrement())
-  token        String    @unique(map: "uq_pea_manager_links_token") @default(uuid()) @db.Uuid
+  token        String    @unique(map: "uq_pea_manager_links_token") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   rm_email     String    @db.VarChar(255)
   rm_name      String?   @db.VarChar(150)
   created_by   String?   @db.VarChar(255)

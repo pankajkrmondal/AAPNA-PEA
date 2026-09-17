@@ -74,7 +74,53 @@ export async function loadByToken(token) {
     throw new AppError('Evaluations for this employee are currently paused.', 410);
   }
 
+  // R-02 — a link already in a manager's inbox must stop working once the
+  // person has left, not merely stop being resent. The sweep guard alone would
+  // still let yesterday's email be opened and submitted today.
+  if (cycle.employee.employment_status === 'left') {
+    throw new AppError('This employee has left the organisation, so this evaluation is no longer required.', 410);
+  }
+
+  if (await leaverHoldApplies(cycle.employee)) {
+    throw new AppError(
+      'This evaluation is on hold: our Microsoft 365 records show this person may have left. ' +
+        'Please contact HR if that is not correct.',
+      410
+    );
+  }
+
   return cycle;
+}
+
+/**
+ * Is the automatic leaver hold in force for this employee? — R-02.
+ *
+ * True only when the setting is on, Entra has flagged the account, and HR has
+ * not since dismissed that flag. Read at request time rather than cached: HR
+ * dismissing a wrong flag should reopen the link immediately, not after a
+ * restart.
+ *
+ * @param {{leaver_flagged_at: Date|null, leaver_dismissed_at: Date|null}} employee
+ * @returns {Promise<boolean>}
+ */
+export async function leaverHoldApplies(employee) {
+  if (!employee?.leaver_flagged_at) return false;
+
+  const row = await prisma.pea_settings.findUnique({
+    where: { setting_key: 'hold_evaluations_for_leavers' },
+  });
+  // Default on: the failure this guard prevents (an evaluation mailed to
+  // someone who has left) is worse than the one it causes (a link held for a
+  // person HR can un-flag in one click).
+  const enabled = row?.setting_value === undefined || row?.setting_value === null
+    ? true
+    : String(row.setting_value).trim().toLowerCase() === 'true';
+  if (!enabled) return false;
+
+  const dismissed =
+    employee.leaver_dismissed_at && employee.leaver_dismissed_at >= employee.leaver_flagged_at;
+
+  return !dismissed;
 }
 
 /**
@@ -155,12 +201,19 @@ export async function getFormData(token) {
  * nothing.
  *
  * @param {string} token
- * @param {object} body - { ratings: {param_key: {rating, comments}}, remarks, confirmation_status, submitted_by }
+ * @param {object} body - { ratings: {param_key: {rating, comments}}, remarks, confirmation_status }
  * @param {string} [ip]
  * @returns {Promise<object>}
  */
 export async function submit(token, body, ip) {
   const cycle = await loadByToken(token);
+
+  // R-01 — Subhajit, 15-Sep demo (28:58): "You can remove this because it will
+  // be only with the RM. RM will only be filling." The submitter is whoever the
+  // single-use link was issued to, never a self-declared address: the old form
+  // field was optional, so it could be left blank (HR then could not tell who
+  // responded) or filled in with someone else's name.
+  const submittedBy = (cycle.employee.rm_email || '').trim().toLowerCase() || null;
 
   const template = cycle.employee.is_experienced ? 'experienced' : 'fresher';
   const params = await prisma.pea_evaluation_params.findMany({
@@ -222,7 +275,7 @@ export async function submit(token, body, ip) {
       data: {
         status: 'completed',
         submitted_at: new Date(),
-        submitted_by_email: (body.submitted_by || cycle.employee.rm_email || '').toLowerCase() || null,
+        submitted_by_email: submittedBy,
         submitted_ip: ip || null,
         avg_rating: avg,
         remarks: (body.remarks || '').trim() || null,
@@ -247,7 +300,7 @@ export async function submit(token, body, ip) {
           field_name: 'confirmation_status',
           old_value: cycle.employee.confirmation_status,
           new_value: confirmation,
-          changed_by: body.submitted_by || cycle.employee.rm_email,
+          changed_by: submittedBy || cycle.employee.rm_email,
           change_source: 'manual',
         },
       });
@@ -277,7 +330,7 @@ export async function submit(token, body, ip) {
     context: {
       average: avg,
       confirmation,
-      submittedBy: body.submitted_by,
+      submittedBy,
       remarks: (body.remarks || '').trim() || null,
     },
   });
@@ -287,7 +340,7 @@ export async function submit(token, body, ip) {
       type: 'extend_alert',
       cycleId: cycle.id,
       employeeId: cycle.employee_id,
-      context: { confirmation, submittedBy: body.submitted_by, extensionCycles: result.extensionCycles },
+      context: { confirmation, submittedBy, extensionCycles: result.extensionCycles },
     });
   }
 

@@ -42,24 +42,63 @@ async function resolveRecipients(type, employee, context = {}) {
   const ccList = split(await setting('cc_emails', ''));
   const hrList = split(await setting('hr_notification_emails', ''));
 
+  /**
+   * People who must not be copied merely for being the project leader.
+   *
+   * The old Power Automate flow deliberately left one address off; PEA copied
+   * everyone, which Subhajit noticed in the 15-Sep demo. This suppresses the
+   * PL slot only — being on the standing CC list, or being the reporting
+   * manager, still copies them, because those are different reasons to be on
+   * the mail.
+   */
+  const neverAsPl = new Set(
+    split(await setting('never_cc_as_pl', '')).map((s) => s.toLowerCase())
+  );
+  const plFor = (employee) => {
+    const pl = String(employee?.pl_email || '').trim();
+    return pl && !neverAsPl.has(pl.toLowerCase()) ? [pl] : [];
+  };
+
   switch (type) {
     case 'it_report':
       // To IT, cc HR so the correction is visible to the team that raised it.
       return { to: split(await setting('it_report_emails', '')), cc: hrList };
 
-    case 'manager_portal':
-      // A manager's own "my team" link goes to that manager and nobody else.
-      return { to: [context.rmEmail].filter(Boolean), cc: [] };
+    case 'manager_portal': {
+      // Subhajit, 15-Sep (18:40): "All the process which you have kept… Anuj
+      // will be there in the CC as well… along with the HR." The team link was
+      // the one evaluation email copying nobody, which made it the odd one out
+      // rather than a deliberate exception.
+      const copyTeamLinks = (await setting('cc_on_team_links', 'true')) !== 'false';
+      return {
+        to: [context.rmEmail].filter(Boolean),
+        cc: copyTeamLinks ? [...new Set([...hrList, ...ccList])] : [],
+      };
+    }
+
+    case 'evaluation_report':
+      // R-05. The one type whose recipients are typed at send time: the person
+      // who asked for the report is not a role PEA can know in advance
+      // (Subhajit, 19:44 — a senior leader emails him out of the blue). Already
+      // validated and domain-checked in evaluationReport.service.js.
+      return {
+        to: context.recipients?.to || [],
+        cc: context.recipients?.cc || [],
+      };
 
     case 'deadline_alert':
+    // R-03. To HR only: it reports a problem with PEA's own plumbing, which is
+    // not a manager's business and would only invite them to ignore PEA mail.
+    case 'sync_alert':
       return { to: hrList, cc: [] };
 
     case 'evaluation_link':
     case 'reminder':
       // To the reporting manager, cc the project leader plus the standing list.
+      // plFor() honours the "never copy as project leader" list.
       return {
         to: [employee.rm_email].filter(Boolean),
-        cc: [employee.pl_email, ...ccList].filter(Boolean),
+        cc: [...new Set([...plFor(employee), ...ccList].filter(Boolean))],
       };
 
     case 'acknowledgement':
@@ -110,15 +149,21 @@ export function applyRedirect({ to, cc }) {
  *
  * @param {object} params
  * @param {string} params.type - evaluation_link | reminder | acknowledgement | extend_alert |
- *   hr_notification | it_report | manager_portal | deadline_alert
+ *   hr_notification | it_report | manager_portal | deadline_alert | sync_alert
  * @param {object} [params.cycle] - cycle with `employee` included; required for templated types
  * @param {bigint} [params.cycleId]
  * @param {bigint} [params.employeeId]
  * @param {string} [params.subject] - overrides the template subject
  * @param {object} [params.context] - extra template variables
+ * @param {Array<{name: string, contentType: string, content: Buffer}>} [params.attachments]
+ *   Files to attach — R-05. Still subject to every guard below: in a non-
+ *   production environment the mail (and therefore the attachment) is diverted
+ *   to the test inbox, and in shadow mode nothing is sent at all.
  * @returns {Promise<{status: string, to: string[], redirected: boolean, error?: string}>}
  */
-export async function queueEmail({ type, cycle, cycleId, employeeId, subject, context = {} }) {
+export async function queueEmail({
+  type, cycle, cycleId, employeeId, subject, context = {}, attachments = [],
+}) {
   const resolvedCycleId = cycleId ?? cycle?.id ?? null;
   const resolvedEmployeeId = employeeId ?? cycle?.employee_id ?? null;
 
@@ -192,6 +237,7 @@ export async function queueEmail({ type, cycle, cycleId, employeeId, subject, co
       subject: rendered.subject,
       html: rendered.body,
       replyTo: config.microsoft.replyTo || undefined,
+      attachments,
     });
 
     await logRow({

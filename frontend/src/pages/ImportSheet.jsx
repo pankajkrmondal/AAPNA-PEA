@@ -15,7 +15,11 @@ import HintIcon from '../components/HintIcon.jsx';
  * reviewed, not silent — so the order is always preview → dry run → import,
  * and the rejected rows are the part HR must actually read.
  */
-export default function ImportSheet() {
+/**
+ * @param {{embedded?: boolean}} props - `embedded` drops the page heading, for
+ *   use as a Settings tab. One implementation either way.
+ */
+export default function ImportSheet({ embedded = false } = {}) {
   const { message } = App.useApp();
   const qc = useQueryClient();
   const [file, setFile] = useState(null);
@@ -61,12 +65,36 @@ export default function ImportSheet() {
 
   return (
     <>
-      <div className="pea-page-head">
-        <div>
-          <h2>Import master sheet</h2>
-          <p>Preview, dry run, then import — nothing is written until the last step</p>
+      {!embedded && (
+        <div className="pea-page-head">
+          <div>
+            <h2>Upload sheet</h2>
+            <p>
+              For go-live, and for anyone the Microsoft 365 check missed ·
+              preview, dry run, then import — nothing is written until the last step
+            </p>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* R-07 — Pankaj built this for the case where the automatic pick-up
+          misses someone (14:38), and Subhajit approved it as "a good addition"
+          (15:39) while saying the dependence on sync "scares me". It is the
+          remedy half of R-03: the alert says who is missing, this puts them in. */}
+      <Alert
+        type="info"
+        showIcon
+        style={{ borderRadius: 'var(--pea-radius)', marginBottom: 12 }}
+        message="When to use this"
+        description={
+          <>
+            Most people arrive on their own through the nightly Microsoft 365 check. Use this
+            screen to load the master sheet at go-live, or to add anyone that check could not
+            pick up — someone with no manager or no joining date in Microsoft 365. PEA emails
+            you when that happens, so you should not have to go looking.
+          </>
+        }
+      />
 
       <Card className="pea-card" size="small">
         <Steps

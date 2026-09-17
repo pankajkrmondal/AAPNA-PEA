@@ -19,7 +19,7 @@ import {
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api, { unwrap, TOKEN_KEY } from './api.js';
-import { MODULES, ROLE_LABEL, canUse, homePath, initialsOf, isAdminTier, signOut, useCurrentUser } from './auth.js';
+import { MODULES, NESTED_MODULES, ROLE_LABEL, canUse, homePath, initialsOf, isAdminTier, signOut, useCurrentUser } from './auth.js';
 import NotificationBell from './components/NotificationBell.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import AdminPortalIcon from './components/AdminPortalIcon.jsx';
@@ -28,12 +28,13 @@ import AdminLayout from './layouts/AdminLayout.jsx';
 import Login from './pages/Login.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import ResetPassword from './pages/ResetPassword.jsx';
-import Dashboard from './pages/Dashboard.jsx';
+import Overview from './pages/Overview.jsx';
 import Employees from './pages/Employees.jsx';
 import EmployeeDetail from './pages/EmployeeDetail.jsx';
 import NewJoiners from './pages/NewJoiners.jsx';
 import Analytics from './pages/Analytics.jsx';
 import ImportSheet from './pages/ImportSheet.jsx';
+import Evaluations from './pages/Evaluations.jsx';
 import ManagerLinks from './pages/ManagerLinks.jsx';
 import ManagerPortal from './pages/ManagerPortal.jsx';
 import Settings from './pages/Settings.jsx';
@@ -55,7 +56,12 @@ const ICONS = {
   settings: <SettingOutlined />,
 };
 
-const TITLES = { ...Object.fromEntries(MODULES.map((m) => [m.path, m.label])), '/no-access': 'No access' };
+// Nested modules keep their own titles: their routes still resolve, so a
+// bookmark to /email-templates must not show a blank heading.
+const TITLES = {
+  ...Object.fromEntries([...MODULES, ...NESTED_MODULES].map((m) => [m.path, m.label])),
+  '/no-access': 'No access',
+};
 
 const signedIn = () => Boolean(localStorage.getItem(TOKEN_KEY));
 
@@ -245,11 +251,12 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
-      <Route path="/" element={<Protected module="dashboard"><Dashboard /></Protected>} />
+      <Route path="/" element={<Protected module="dashboard"><Overview /></Protected>} />
       <Route path="/employees" element={<Protected module="employees"><Employees /></Protected>} />
       <Route path="/employees/:id" element={<Protected module="employees"><EmployeeDetail /></Protected>} />
       <Route path="/new-joiners" element={<Protected module="new_joiners"><NewJoiners /></Protected>} />
       <Route path="/analytics" element={<Protected module="analytics"><Analytics /></Protected>} />
+      <Route path="/evaluations" element={<Protected module="evaluations"><Evaluations /></Protected>} />
       <Route path="/import" element={<Protected module="import_sheet"><ImportSheet /></Protected>} />
       <Route path="/manager-portal" element={<Protected module="manager_portal"><ManagerLinks /></Protected>} />
       <Route path="/settings" element={<Protected module="settings"><Settings /></Protected>} />

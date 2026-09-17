@@ -83,6 +83,18 @@ export const PLACEHOLDERS = Object.freeze({
   today: { label: 'Today’s date' },
   overdue_table: { label: 'Table of every overdue probation', block: true },
   due_soon_line: { label: '"A further N reach their deadline…" — only when there are some', block: true },
+
+  // R-03 — Microsoft 365 check alert.
+  problem_count: { label: 'Number of problems found' },
+  headline: { label: 'One sentence saying what was found' },
+  problem_table: { label: 'Table: what is wrong, who it is about, what it means', block: true },
+  what_to_do: { label: '"What to do" paragraph — only when something is fixable by hand', block: true },
+  scan_summary: { label: 'Table: accounts read, people checked, joiners found, leavers flagged', block: true },
+
+  // R-05 — shared evaluation report.
+  shared_by: { label: 'Who shared the report' },
+  report_header_table: { label: 'Table: employee, manager, joined, type, decision, progress', block: true },
+  report_history_table: { label: 'Table of every submitted evaluation with its average and remarks', block: true },
 });
 
 export const CATEGORY_LABELS = Object.freeze({
@@ -197,6 +209,48 @@ const TEMPLATES = Object.freeze({
 {{due_soon_line}}`,
   },
 
+  evaluation_report: {
+    name: 'Evaluation report shared',
+    category: 'hr',
+    recipient: 'Whoever HR sends it to · CC as chosen',
+    description:
+      'Sent when HR shares one person\'s evaluation record from the employee page. Subhajit, ' +
+      '15 Sep: a senior leader asks for a resource\'s current status and HR answers "within one click".',
+    placeholders: [
+      'employee_name', 'manager_name', 'joining_date', 'decision', 'shared_by', 'note',
+      'report_header_table', 'report_history_table', 'note_block', 'today',
+    ],
+    requiredAny: [['report_history_table', 'report_header_table']],
+    subject: 'Evaluation report — {{employee_name}}',
+    body: `<p>Hello,</p>
+<p>Here is the evaluation record for <strong>{{employee_name}}</strong> so far, shared by {{shared_by}}.</p>
+{{note_block}}
+{{report_header_table}}
+{{report_history_table}}
+<p>The attached spreadsheet has the same information, plus every parameter score and the manager's comments.</p>`,
+  },
+
+  sync_alert: {
+    name: 'Microsoft 365 check alert',
+    category: 'hr',
+    recipient: 'HR notification recipients',
+    description:
+      'Sent when the nightly Microsoft 365 check fails, or finds records it cannot use. The point ' +
+      'is that a silent failure becomes a missed evaluation nobody notices — Subhajit, 15 Sep: ' +
+      '"if any data is not being synced properly from the AD, we should be getting an email alert".',
+    placeholders: [
+      'today', 'problem_count', 'headline', 'problem_table', 'what_to_do', 'scan_summary',
+    ],
+    requiredAny: [['problem_table', 'headline']],
+    subject: 'Microsoft 365 check needs attention — {{today}}',
+    body: `<p>Hello,</p>
+<p>{{headline}}</p>
+{{problem_table}}
+{{what_to_do}}
+{{scan_summary}}
+<p>This alert is sent once per problem. It will not repeat every night for the same record.</p>`,
+  },
+
   it_report: {
     name: 'Report to IT',
     category: 'it',
@@ -289,6 +343,64 @@ function buildBlocks(v) {
     due_soon_line: dueSoon.length
       ? `<p>A further <strong>${dueSoon.length}</strong> reach their deadline within two weeks.</p>`
       : '',
+
+    // ── R-03: the Microsoft 365 check alert ──────────────────────────────
+    problem_table: (v._problems || []).length
+      ? table(
+        `<tr><th style="${TH}">What is wrong</th><th style="${TH}">Who or what</th><th style="${TH}">What it means</th></tr>`
+          + v._problems.map(
+            (p) => `<tr><td style="${TD}"><strong>${esc(p.title)}</strong></td>`
+              + `<td style="${TD}">${esc(p.subject || '—')}</td>`
+              + `<td style="${TD}">${esc(p.detail)}</td></tr>`
+          ).join('')
+      )
+      : '',
+
+    what_to_do: (v._problems || []).some((p) => p.fixable)
+      ? `<p><strong>What to do:</strong> add the missing people by hand on the New joiners screen, `
+        + `or upload the sheet with their details. Everything else carries on as normal.</p>`
+      : '',
+
+    // ── R-05: the shared evaluation report ───────────────────────────────
+    report_header_table: v._report
+      ? table(pairs([
+        ['Employee', esc(v._report.employee.name)],
+        ['Reporting manager', esc(v._report.employee.rmName || '—')],
+        ['Joined', esc(v.joining_date || '—')],
+        ['Type', esc(v._report.employee.cohort)],
+        ['Probation decision', `<strong>${esc(v._report.employee.confirmationStatus || 'In probation')}</strong>`],
+        ['Evaluations submitted', `${v._report.completedCount} of ${v._report.totalCount}`],
+      ]))
+      : '',
+
+    report_history_table: v._report && v._report.cycles.some((c) => c.status === 'completed')
+      ? table(
+        `<tr><th style="${TH}">Evaluation</th><th style="${TH}">Submitted</th>`
+          + `<th style="${TH};text-align:center">Average</th><th style="${TH}">Decision</th><th style="${TH}">Remarks</th></tr>`
+          + v._report.cycles
+            .filter((c) => c.status === 'completed')
+            .map((c) => {
+              const label = c.isExtension ? `${c.seqNo} (extension)` : c.seqNo;
+              // Real cycles carry a Date; the preview's samples carry strings.
+              const when = c.submittedAt ? formatDisplay(new Date(c.submittedAt)) : '—';
+              return `<tr><td style="${TD}">${esc(label)}</td>`
+                + `<td style="${TD}">${esc(when)}</td>`
+                + `<td style="${TD};text-align:center"><strong>${c.avgRating ?? '—'}</strong></td>`
+                + `<td style="${TD}">${esc(c.confirmationStatus || '—')}</td>`
+                + `<td style="${TD}">${c.remarks ? multiline(c.remarks) : '—'}</td></tr>`;
+            })
+            .join('')
+      )
+      : '<p><em>No evaluation has been submitted yet.</em></p>',
+
+    scan_summary: v._scan
+      ? table(pairs([
+        ['Accounts read from Microsoft 365', esc(v._scan.accountsFetched ?? '—')],
+        ['People checked', esc(v._scan.employeesChecked ?? '—')],
+        ['New joiners found', esc(v._scan.candidatesNew ?? 0)],
+        ['Possible leavers flagged', esc(v._scan.leaversFlagged ?? 0)],
+      ]))
+      : '',
   };
 }
 
@@ -303,7 +415,20 @@ function buildBlocks(v) {
  */
 export function buildVars(cycle, context = {}) {
   const c = cycle || {};
-  const e = c.employee || context.employee || {};
+  // A shared report (R-05) has no cycle and no employee row loaded — its
+  // subject is the report itself, so fall back to that rather than render an
+  // email full of blanks.
+  const reportEmployee = context.report?.employee;
+  const e = c.employee || context.employee || (reportEmployee
+    ? {
+      full_name: reportEmployee.name,
+      office_email: reportEmployee.email,
+      doj: reportEmployee.doj,
+      rm_name: reportEmployee.rmName,
+      rm_email: reportEmployee.rmEmail,
+      pl_email: reportEmployee.plEmail,
+    }
+    : {});
   const base = config.frontendUrl.replace(/\/+$/, '');
   const date = (d) => (d ? formatDisplay(d) : '');
   const average = context.average ?? context.avg;
@@ -343,8 +468,14 @@ export function buildVars(cycle, context = {}) {
     overdue_count: context.overdue ? String(context.overdue.length) : '',
     due_soon_count: context.dueSoon ? String(context.dueSoon.length) : '',
     today: context.today || '',
+    problem_count: context.problems ? String(context.problems.length) : '',
+    headline: context.headline || '',
     _overdue: context.overdue || [],
     _dueSoon: context.dueSoon || [],
+    _problems: context.problems || [],
+    _scan: context.scan || null,
+    shared_by: context.sharedBy || '',
+    _report: context.report || null,
   };
 }
 
@@ -381,6 +512,39 @@ const SAMPLE_VARS = Object.freeze({
   today: '13-Sep-2026',
   _overdue: [{ full_name: 'Pooja Goel', doj: '2022-09-20', deadline: '2023-03-20', daysOverdue: 1272, rm_name: 'Aroy' }],
   _dueSoon: [],
+  problem_count: '2',
+  headline: 'The Microsoft 365 check ran last night but 2 records could not be used.',
+  _problems: [
+    {
+      title: 'No reporting manager',
+      subject: 'Kavya Pillai',
+      detail: 'Microsoft 365 has no manager for this account, so no evaluation can be sent.',
+      fixable: true,
+    },
+    {
+      title: 'No joining date',
+      subject: 'Arjun Nair',
+      detail: 'The account has no usable creation date, so the evaluation schedule cannot be worked out.',
+      fixable: true,
+    },
+  ],
+  _scan: { accountsFetched: 260, employeesChecked: 48, candidatesNew: 3, leaversFlagged: 1 },
+  shared_by: 'subhajit',
+  _report: {
+    employee: {
+      name: 'Priya Sharma',
+      rmName: 'Chhavi Verma',
+      cohort: 'Fresher',
+      confirmationStatus: null,
+    },
+    completedCount: 3,
+    totalCount: 6,
+    cycles: [
+      { seqNo: 1, status: 'completed', submittedAt: '2026-08-01', avgRating: 3.1, remarks: 'Settling in well.', confirmationStatus: null, isExtension: false },
+      { seqNo: 2, status: 'completed', submittedAt: '2026-08-31', avgRating: 3.5, remarks: 'Noticeably faster on delivery.', confirmationStatus: null, isExtension: false },
+      { seqNo: 3, status: 'completed', submittedAt: '2026-09-30', avgRating: 3.7, remarks: 'Client communication still developing.', confirmationStatus: null, isExtension: false },
+    ],
+  },
 });
 
 // ── Compile, store, render ────────────────────────────────────────────────
@@ -524,7 +688,16 @@ export async function listTemplateCatalog() {
       defaultBody: def.body,
       overridden: !!(s?.setting_value || b?.setting_value),
       modifiedAt: stamps.length ? new Date(Math.max(...stamps)) : null,
-      placeholders: def.placeholders.map((name) => ({ name, label: PLACEHOLDERS[name].label, block: !!PLACEHOLDERS[name].block })),
+      // Falls back rather than throwing: a placeholder added to a template but
+      // not to PLACEHOLDERS used to take the whole screen down with
+      // "Cannot read properties of undefined (reading 'label')", which told
+      // nobody which placeholder or which template was at fault. One unlabelled
+      // row is a far smaller failure than no page at all.
+      placeholders: def.placeholders.map((name) => ({
+        name,
+        label: PLACEHOLDERS[name]?.label || name,
+        block: !!PLACEHOLDERS[name]?.block,
+      })),
       requiredAny: def.requiredAny || [],
       wrapper: brandedWrapperParts({ title: subject, bodyHtml: body }),
     };

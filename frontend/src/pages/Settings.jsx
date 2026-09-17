@@ -2,11 +2,14 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Card, Tabs, Switch, InputNumber, Input, Select, Button, Space, Tag, Typography, Alert, App, Table, Spin,
+  Card, Tabs, Switch, InputNumber, Input, Select, Button, Space, Typography, Alert, App, Table, Spin,
 } from 'antd';
-import { SaveOutlined, ReloadOutlined, MailOutlined } from '@ant-design/icons';
+import { SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import api, { unwrap, USER_KEY } from '../api.js';
-import { isAdminTier } from '../auth.js';
+import { isAdminTier, canUse } from '../auth.js';
+import StatusPill from '../components/StatusPill.jsx';
+import EmailTemplates from './EmailTemplates.jsx';
+import ImportSheet from './ImportSheet.jsx';
 
 /** One editable setting. Saves on its own, so a bad value never blocks the rest. */
 function SettingRow({ s, canEdit, onSave, saving }) {
@@ -49,15 +52,16 @@ function SettingRow({ s, canEdit, onSave, saving }) {
   })();
 
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, padding: '14px 0', borderBottom: '1px solid var(--pea-border)' }}>
-      <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+    <div className="pea-setting-row">
+      <div className="pea-setting-main">
         <Space size={6} wrap>
           <Typography.Text strong>{s.label}</Typography.Text>
-          {s.critical && <Tag color="gold">announced to admins</Tag>}
-          {s.restart && <Tag color="purple">needs restart</Tag>}
+          {/* Both are classifications of the setting, not states of it — no dot. */}
+          {s.critical && <StatusPill tone="warn" nodot>announced to admins</StatusPill>}
+          {s.restart && <StatusPill tone="ext" nodot>needs restart</StatusPill>}
         </Space>
         <div><Typography.Text type="secondary" style={{ fontSize: 12.5 }}>{s.help}</Typography.Text></div>
-        <Typography.Text type="secondary" style={{ fontSize: 11, fontFamily: 'ui-monospace, Consolas, monospace' }}>{s.key}</Typography.Text>
+        <Typography.Text type="secondary" className="pea-setting-key">{s.key}</Typography.Text>
       </div>
       <Space align="start" wrap>
         {control}
@@ -109,7 +113,6 @@ export default function Settings() {
           <p>Everything the Power Automate flows hardcoded — changeable without a deployment</p>
         </div>
         <Space wrap>
-          <Link to="/email-templates"><Button icon={<MailOutlined />}>Email templates</Button></Link>
           <Button icon={<ReloadOutlined />} onClick={() => settings.refetch()}>Refresh</Button>
         </Space>
       </div>
@@ -144,6 +147,16 @@ export default function Settings() {
                 />
               )),
             })),
+            // The two screens that moved in from the sidebar. Each keeps its own
+            // access switch, so a user whose switch is off simply does not see
+            // the tab — moving them changed where they live, not who may open
+            // them.
+            ...(canUse(user, 'email_templates')
+              ? [{ key: 'email-templates', label: 'Email templates', children: <EmailTemplates embedded /> }]
+              : []),
+            ...(canUse(user, 'import_sheet')
+              ? [{ key: 'upload-sheet', label: 'Upload sheet', children: <ImportSheet embedded /> }]
+              : []),
             {
               key: 'not-in-effect',
               label: 'Not in effect',

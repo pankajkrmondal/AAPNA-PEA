@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { Card, Tag, Spin, Result, Space, Typography, Table, Collapse, Empty } from 'antd';
+import { Card, Spin, Result, Space, Typography, Table, Collapse, Empty } from 'antd';
+import StatusPill from '../components/StatusPill.jsx';
 
-const STATUS_COLOUR = {
-  'Not yet due': 'default',
-  'With your manager': 'orange',
-  Completed: 'green',
-  'Not needed': 'default',
+// Keyed on the wording selfView.service.js sends, which uses the shared state
+// names told from the employee's own side. The tones are the same six used on
+// every HR screen, so one state never changes colour with the audience.
+const STATUS_TONE = {
+  Scheduled: 'info',
+  'With your manager': 'warn',
+  Submitted: 'ok',
+  Closed: 'mute',
 };
 
 /**
@@ -71,9 +75,13 @@ export default function SelfView() {
           </p>
         </div>
         {showAverages && d.decision && (
-          <Tag color={d.decision === 'Confirmed' ? 'green' : 'orange'} style={{ fontSize: 14, padding: '6px 12px' }}>
+          <StatusPill
+            tone={
+              d.decision === 'Confirmed' ? 'ok' : d.decision === 'Not Confirmed' ? 'crit' : 'ext'
+            }
+          >
             {d.decision}
-          </Tag>
+          </StatusPill>
         )}
       </section>
 
@@ -89,11 +97,18 @@ export default function SelfView() {
               title: '#',
               dataIndex: 'number',
               width: 60,
-              render: (v, r) => <Space size={4}>{v}{r.extension && <Tag color="purple">ext</Tag>}</Space>,
+              render: (v, r) => (
+                <Space size={4}>{v}{r.extension && <StatusPill tone="ext" nodot>ext</StatusPill>}</Space>
+              ),
             },
             { title: 'Period', dataIndex: 'period', render: (v) => v || '—' },
-            { title: 'Due', dataIndex: 'due', width: 110 },
-            { title: 'Status', dataIndex: 'status', width: 170, render: (v) => <Tag color={STATUS_COLOUR[v]}>{v}</Tag> },
+            { title: 'Due', dataIndex: 'due', width: 110, className: 'pea-num' },
+            {
+              title: 'Status',
+              dataIndex: 'status',
+              width: 170,
+              render: (v) => <StatusPill tone={STATUS_TONE[v] || 'mute'}>{v}</StatusPill>,
+            },
             ...(showAverages
               ? [{ title: 'Average', dataIndex: 'average', width: 100, render: (v) => (v == null ? '—' : `${v} / 5`) }]
               : []),

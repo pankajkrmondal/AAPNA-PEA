@@ -10,15 +10,21 @@
  * moved into the Admin Portal, which is admin-tier by role.
  */
 export const MODULES = Object.freeze([
-  { key: 'dashboard', label: 'Dashboard' },
+  { key: 'dashboard', label: 'Overview' },
+  { key: 'evaluations', label: 'Evaluations' },
   { key: 'employees', label: 'Employees' },
   { key: 'new_joiners', label: 'New joiners' },
-  { key: 'analytics', label: 'Analytics' },
-  { key: 'import_sheet', label: 'Import sheet' },
-  { key: 'manager_portal', label: 'Manager portal' },
+  { key: 'analytics', label: 'Trends' },
+  { key: 'import_sheet', label: 'Upload sheet' },
+  { key: 'manager_portal', label: 'Link generation' },
   { key: 'email_templates', label: 'Email templates' },
   { key: 'settings', label: 'Settings' },
 ]);
+
+// `evaluations` is new in this release and needs no seeding: modulePermissions
+// treats a missing row as ON, so it starts available to everyone and only an
+// explicit switch-off restricts it — the screen proposal's "nobody loses
+// access" rule, already satisfied by the existing design.
 
 export const MODULE_KEYS = Object.freeze(MODULES.map((m) => m.key));
 

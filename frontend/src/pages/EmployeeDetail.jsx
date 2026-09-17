@@ -8,10 +8,16 @@ import {
 import {
   ArrowLeftOutlined, SendOutlined, PauseOutlined, PlayCircleOutlined, EditOutlined,
   LockOutlined, UnlockOutlined, WarningOutlined, MailOutlined, ShareAltOutlined, DeleteOutlined,
+  DownloadOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api, { unwrap, USER_KEY } from '../api.js';
 import { isAdminTier } from '../auth.js';
+import EmployeeTrend from '../components/EmployeeTrend.jsx';
+import ShareReportModal from '../components/ShareReportModal.jsx';
+import { evaluationStatus } from '../evaluationStatus.js';
+import StatusPill from '../components/StatusPill.jsx';
+import { formatDate as fmt } from '../formatDate.js';
 
 /** Same rule as the server: case and extra spaces do not matter. */
 const normName = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -60,23 +66,9 @@ function AzureProvenance({ field, info, onUnlock, onReport, unlocking }) {
   );
 }
 
-const fmt = (d) => (d ? String(d).slice(0, 10) : '—');
-
-const STATUS_COLOUR = {
-  pending: 'default',
-  email_sent: 'orange',
-  opened: 'blue',
-  completed: 'green',
-  skipped: 'default',
-};
-
-const STATUS_LABEL = {
-  pending: 'Not yet sent',
-  email_sent: 'Awaiting response',
-  opened: 'Opened, not submitted',
-  completed: 'Completed',
-  skipped: 'Not applicable',
-};
+// Status names and date wording live in shared modules, so this page and the
+// manager portal cannot drift apart on what the same evaluation is called or
+// when it happened.
 
 export default function EmployeeDetail() {
   const { id } = useParams();
@@ -114,6 +106,25 @@ export default function EmployeeDetail() {
   const [reportForm] = Form.useForm();
 
   const refresh = () => qc.invalidateQueries({ queryKey: ['employee', id] });
+
+  /**
+   * R-05 — fetched through the API client so the JWT goes with it. Opening the
+   * URL directly would send no Authorization header and simply 401.
+   */
+  const downloadReport = useMutation({
+    mutationFn: () => api.get(`/employees/${id}/report`, { responseType: 'blob' }),
+    onSuccess: (res) => {
+      const name = /filename="([^"]+)"/.exec(res.headers['content-disposition'] || '')?.[1]
+        || 'evaluation-report.xlsx';
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: (err) => { message.error(err.friendlyMessage); },
+  });
 
   const save = useMutation({
     mutationFn: (payload) => api.patch(`/employees/${id}`, payload).then((r) => r.data),
@@ -153,6 +164,7 @@ export default function EmployeeDetail() {
   const isAdmin = isAdminTier(JSON.parse(localStorage.getItem(USER_KEY) || '{}').role);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteName, setDeleteName] = useState('');
+  const [shareOpen, setShareOpen] = useState(false); // R-05
 
   const remove = useMutation({
     mutationFn: () => api.delete(`/employees/${id}`, { data: { confirm_name: deleteName } }).then((r) => r.data),
@@ -170,6 +182,10 @@ export default function EmployeeDetail() {
 
   const progress = e.progress || { total: 0, completed: 0, awaitingResponse: 0, overdue: 0, nextDue: null };
   const azure = e.azure || { linked: false, fields: {} };
+  // R-02. Defaults match the server's: the leaver hold is on, the manual pause
+  // is not — so an older server that does not send this block still behaves.
+  const hold = e.evaluationHold || { manualPauseEnabled: false, holdLeaversEnabled: true, heldAsLeaver: false };
+  const manualPauseEnabled = hold.manualPauseEnabled;
 
   const openEdit = () => {
     editForm.setFieldsValue({
@@ -226,10 +242,26 @@ export default function EmployeeDetail() {
             <h2>{e.full_name}</h2>
             <p>{e.office_email}</p>
           </div>
-          <Tag>{e.is_experienced ? 'Experienced' : 'Fresher'}</Tag>
-          {e.halt_process && <Tag color="default">Paused</Tag>}
+          {/* Fresher / Experienced classifies the person; the rest are states. */}
+          <StatusPill tone="mute" nodot>{e.is_experienced ? 'Experienced' : 'Fresher'}</StatusPill>
+          {e.halt_process && <StatusPill tone="warn">On hold</StatusPill>}
+          {hold.heldAsLeaver && (
+            <Tooltip title="Microsoft 365 shows this account switched off and unlicensed, so evaluations stopped on their own. Confirm the exit, or mark them as still here, on the New joiners screen.">
+              <StatusPill tone="crit">Held — may have left</StatusPill>
+            </Tooltip>
+          )}
           {e.confirmation_status && (
-            <Tag color={e.confirmation_status === 'Confirmed' ? 'green' : 'orange'}>{e.confirmation_status}</Tag>
+            <StatusPill
+              tone={
+                e.confirmation_status === 'Confirmed'
+                  ? 'ok'
+                  : e.confirmation_status === 'Not Confirmed'
+                    ? 'crit'
+                    : 'ext'
+              }
+            >
+              {e.confirmation_status}
+            </StatusPill>
           )}
         </Space>
         <Space wrap>
@@ -239,13 +271,51 @@ export default function EmployeeDetail() {
               Employee link
             </Button>
           </Tooltip>
-          <Button
-            icon={e.halt_process ? <PlayCircleOutlined /> : <PauseOutlined />}
-            onClick={() => toggleHalt.mutate(!e.halt_process)}
-            loading={toggleHalt.isPending}
-          >
-            {e.halt_process ? 'Resume evaluations' : 'Pause evaluations'}
-          </Button>
+          {/* R-05 — Subhajit, 15-Sep (21:13): "time and again it's required for
+              me actually." Download for a Teams chat or a meeting; Share for the
+              leader who emailed asking. */}
+          <Tooltip title="Download every submitted evaluation, parameter scores and remarks as a spreadsheet.">
+            <Button
+              icon={<DownloadOutlined />}
+              disabled={progress.completed === 0}
+              loading={downloadReport.isPending}
+              onClick={() => downloadReport.mutate()}
+            >
+              Download
+            </Button>
+          </Tooltip>
+          <Tooltip title="Email the whole evaluation record to whoever asked for it, with the spreadsheet attached.">
+            <Button
+              type="primary"
+              icon={<MailOutlined />}
+              disabled={progress.completed === 0}
+              onClick={() => setShareOpen(true)}
+            >
+              Share report…
+            </Button>
+          </Tooltip>
+          {/* R-02 — Subhajit, 15-Sep (7:15): "Pause evolutions only works when a
+              resource has left." Exits are now held automatically, so the manual
+              button is off unless HR switches it on for the long-leave case.
+              Resume always shows for anyone already paused: hiding it would
+              strand them with no way back. */}
+          {(e.halt_process || manualPauseEnabled) && (
+            <Tooltip
+              title={
+                e.halt_process
+                  ? 'Start sending evaluations for this person again.'
+                  : 'For long leave only — a sabbatical or maternity leave where the Microsoft 365 account stays active. People who have left are held automatically.'
+              }
+            >
+              <Button
+                icon={e.halt_process ? <PlayCircleOutlined /> : <PauseOutlined />}
+                onClick={() => toggleHalt.mutate(!e.halt_process)}
+                loading={toggleHalt.isPending}
+              >
+                {e.halt_process ? 'Resume evaluations' : 'Hold for long leave'}
+              </Button>
+            </Tooltip>
+          )}
           {isAdmin && (
             <Button
               danger
@@ -313,27 +383,57 @@ export default function EmployeeDetail() {
               </div>
               <Descriptions column={1} size="small" bordered>
                 <Descriptions.Item label="Decision">
+                  {/* Confirmed → ok, Not Confirmed → crit, an extension → ext,
+                      and no decision yet → the informational "In probation". */}
                   {e.confirmation_status ? (
-                    <Tag color={e.confirmation_status === 'Confirmed' ? 'green' : e.confirmation_status === 'Not Confirmed' ? 'red' : 'orange'}>
+                    <StatusPill
+                      tone={
+                        e.confirmation_status === 'Confirmed'
+                          ? 'ok'
+                          : e.confirmation_status === 'Not Confirmed'
+                            ? 'crit'
+                            : 'ext'
+                      }
+                    >
                       {e.confirmation_status}
-                    </Tag>
+                    </StatusPill>
                   ) : (
-                    <Tag color="blue">In probation</Tag>
+                    <StatusPill tone="info">In probation</StatusPill>
                   )}
                 </Descriptions.Item>
                 <Descriptions.Item label="Next evaluation due">{progress.nextDue ? fmt(progress.nextDue) : '—'}</Descriptions.Item>
                 <Descriptions.Item label="Waiting on manager">
-                  {progress.awaitingResponse ? <Tag color="orange">{progress.awaitingResponse}</Tag> : 0}
+                  {progress.awaitingResponse
+                    ? <StatusPill tone="warn">{progress.awaitingResponse}</StatusPill>
+                    : 0}
                 </Descriptions.Item>
                 <Descriptions.Item label="Overdue (not yet sent)">
-                  {progress.overdue ? <Tag color="red">{progress.overdue}</Tag> : 0}
+                  {progress.overdue ? <StatusPill tone="crit">{progress.overdue}</StatusPill> : 0}
                 </Descriptions.Item>
-                <Descriptions.Item label="Evaluations paused">{e.halt_process ? <Tag>Yes</Tag> : 'No'}</Descriptions.Item>
+                <Descriptions.Item label="Evaluations">
+                  {hold.heldAsLeaver ? (
+                    <Tooltip title="Confirm the exit, or mark them as still here, on the New joiners screen.">
+                      <StatusPill tone="crit">Held — Microsoft 365 says they may have left</StatusPill>
+                    </Tooltip>
+                  ) : e.halt_process ? (
+                    <StatusPill tone="warn">On hold by HR</StatusPill>
+                  ) : hold.holdLeaversEnabled ? (
+                    <Tooltip title="Evaluations stop on their own if the Microsoft 365 check finds this person has left.">
+                      <span>Running</span>
+                    </Tooltip>
+                  ) : (
+                    'Running'
+                  )}
+                </Descriptions.Item>
               </Descriptions>
             </Space>
           </Card>
         </Col>
       </Row>
+
+      {/* R-06 — "whether that new joiner is growing or not" (Subhajit, 13:24).
+          Above the timeline: the judgement comes first, the audit trail after. */}
+      <EmployeeTrend employeeId={id} />
 
       <Card className="pea-card" size="small" title={<span className="pea-section-title">Evaluation timeline</span>}>
         <Table
@@ -349,7 +449,9 @@ export default function EmployeeDetail() {
               render: (v, r) => (
                 <Space size={4}>
                   {v}
-                  {r.is_extension && <Tooltip title="Extension"><Tag color="purple">ext</Tag></Tooltip>}
+                  {r.is_extension && (
+                    <Tooltip title="Extension"><StatusPill tone="ext" nodot>ext</StatusPill></Tooltip>
+                  )}
                 </Space>
               ),
             },
@@ -358,41 +460,79 @@ export default function EmployeeDetail() {
               width: 200,
               render: (_, r) => `${fmt(r.period_from)} → ${fmt(r.period_to)}`,
             },
-            { title: 'Due', dataIndex: 'due_date', width: 110, render: fmt },
+            { title: 'Due', dataIndex: 'due_date', width: 110, className: 'pea-num', render: fmt },
             {
               title: 'Status',
               dataIndex: 'status',
               width: 170,
-              render: (v) => <Tag color={STATUS_COLOUR[v]}>{STATUS_LABEL[v] || v}</Tag>,
+              render: (_, r) => {
+                const s = evaluationStatus(r);
+                return <StatusPill state={s.key}>{s.label}</StatusPill>;
+              },
             },
             {
               title: 'Average',
               dataIndex: 'avg_rating',
               width: 90,
+              className: 'pea-num',
+              // A rating is a figure to compare down the column, so it is shown
+              // as a number in the state colour rather than boxed in a pill.
               render: (v) =>
-                v == null ? '—' : <Tag color={v >= 3.5 ? 'green' : v >= 2.5 ? 'blue' : 'red'}>{Number(v)}</Tag>,
+                v == null ? (
+                  '—'
+                ) : (
+                  <strong style={{ color: `var(--pea-${v >= 3.5 ? 'ok' : v >= 2.5 ? 'info' : 'crit'})` }}>
+                    {Number(v).toFixed(2)}
+                  </strong>
+                ),
             },
-            { title: 'Submitted', dataIndex: 'submitted_at', width: 110, render: fmt },
+            { title: 'Submitted', dataIndex: 'submitted_at', width: 110, className: 'pea-num', render: fmt },
             {
               title: 'Chased',
               dataIndex: 'reminder_count',
               width: 80,
+              className: 'pea-num',
               render: (v) => (v ? `${v}×` : '—'),
             },
             {
               title: '',
               width: 120,
-              render: (_, r) =>
-                ['pending', 'email_sent', 'opened'].includes(r.status) && !e.halt_process ? (
-                  <Button
-                    size="small"
-                    icon={<SendOutlined />}
-                    loading={resend.isPending}
-                    onClick={() => resend.mutate(r.seq_no)}
+              render: (_, r) => {
+                if (!['pending', 'email_sent', 'opened'].includes(r.status)) return null;
+                if (e.halt_process) return null;
+                // R-02 — the hold has to cover the manual send too, or HR can
+                // undo it by accident from the very screen that reports it.
+                if (hold.heldAsLeaver) {
+                  return (
+                    <Tooltip title="On hold — Microsoft 365 shows this person may have left. Resolve it on the New joiners screen first.">
+                      <Button size="small" icon={<SendOutlined />} disabled>Send</Button>
+                    </Tooltip>
+                  );
+                }
+                // One click used to email a real manager with no confirmation
+                // and no indication of who would receive it. The popconfirm
+                // names the recipient, because that is the fact worth checking
+                // before an evaluation request goes out under HR's name.
+                return (
+                  <Popconfirm
+                    title={r.status === 'pending' ? 'Send this evaluation now?' : 'Send this link again?'}
+                    description={
+                      <div style={{ maxWidth: 320 }}>
+                        Evaluation {r.seq_no} for <strong>{e.full_name}</strong> goes to{' '}
+                        <strong>{e.rm_email}</strong>
+                        {e.pl_email ? <>, copying {e.pl_email}</> : null}.
+                      </div>
+                    }
+                    okText={r.status === 'pending' ? 'Send now' : 'Resend now'}
+                    cancelText="Cancel"
+                    onConfirm={() => resend.mutate(r.seq_no)}
                   >
-                    {r.status === 'pending' ? 'Send' : 'Resend'}
-                  </Button>
-                ) : null,
+                    <Button size="small" icon={<SendOutlined />} loading={resend.isPending}>
+                      {r.status === 'pending' ? 'Send' : 'Resend'}
+                    </Button>
+                  </Popconfirm>
+                );
+              },
             },
           ]}
           expandable={{
@@ -651,6 +791,13 @@ export default function EmployeeDetail() {
           </Form.Item>
         </Form>
       </Modal>
+
+      <ShareReportModal
+        open={shareOpen}
+        onClose={() => setShareOpen(false)}
+        employee={e}
+        progress={progress}
+      />
     </>
   );
 }

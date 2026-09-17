@@ -407,13 +407,6 @@ export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}
       <textarea id="remarks" name="remarks" style="min-height:110px"
         placeholder="A short summary of ${esc(employee.full_name.split(' ')[0])}'s performance this period."
       >${esc(submitted.remarks || '')}</textarea>
-
-      <div style="margin-top:16px">
-        <label class="fld" for="submitted_by">Your email <span class="hint">(so HR knows who responded)</span></label>
-        <input type="email" id="submitted_by" name="submitted_by"
-               value="${esc(submitted.submitted_by || '')}"
-               placeholder="you@aapnainfotech.com">
-      </div>
     </div>
 
     <div style="margin: 4px 0 28px">

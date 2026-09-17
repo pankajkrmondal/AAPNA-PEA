@@ -3,13 +3,9 @@ import { useParams } from 'react-router-dom';
 import { Card, Tag, Button, Spin, Result, Space, Typography, Table, Alert } from 'antd';
 import { FormOutlined } from '@ant-design/icons';
 
-const STATUS = {
-  pending: { label: 'Not yet due', color: 'default' },
-  email_sent: { label: 'Waiting for you', color: 'orange' },
-  opened: { label: 'Opened, not submitted', color: 'gold' },
-  completed: { label: 'Submitted', color: 'green' },
-  skipped: { label: 'Not applicable', color: 'default' },
-};
+import { evaluationStatus } from '../evaluationStatus.js';
+import StatusPill from '../components/StatusPill.jsx';
+import { formatDate } from '../formatDate.js';
 
 /**
  * PUBLIC page — a reporting manager's team, opened from their personal link.
@@ -72,7 +68,7 @@ export default function ManagerPortal() {
           <span className="pea-pill"><span className="pea-pill-dot" />Your team</span>
           <h2 className="pea-hero-title">Hello, {data.manager}</h2>
           <p className="pea-hero-sub">
-            {data.people.length} team member(s) · link valid until {new Date(data.expiresAt).toLocaleDateString()}
+            {data.people.length} team member(s) · link valid until {formatDate(data.expiresAt)}
           </p>
         </div>
         {data.waitingOnYou > 0 && (
@@ -94,11 +90,14 @@ export default function ManagerPortal() {
           title={
             <Space wrap>
               <span className="pea-section-title">{person.name}</span>
-              <Tag>{person.type}</Tag>
+              {/* Fresher / Experienced is a classification, not a state — no dot. */}
+              <StatusPill tone="mute" nodot>{person.type}</StatusPill>
               <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>joined {person.doj}</Typography.Text>
-              {person.paused && <Tag>Paused by HR</Tag>}
+              {person.paused && <StatusPill tone="warn">Paused by HR</StatusPill>}
               {person.decision && (
-                <Tag color={person.decision === 'Confirmed' ? 'green' : 'orange'}>{person.decision}</Tag>
+                <StatusPill tone={person.decision === 'Confirmed' ? 'ok' : 'crit'}>
+                  {person.decision}
+                </StatusPill>
               )}
             </Space>
           }
@@ -115,21 +114,27 @@ export default function ManagerPortal() {
                 dataIndex: 'number',
                 width: 60,
                 render: (v, r) => (
-                  <Space size={4}>{v}{r.extension && <Tag color="purple">ext</Tag>}</Space>
+                  <Space size={4}>{v}{r.extension && <StatusPill tone="ext" nodot>ext</StatusPill>}</Space>
                 ),
               },
               { title: 'Period', dataIndex: 'period', render: (v) => v || '—' },
-              { title: 'Due', dataIndex: 'due', width: 110 },
+              { title: 'Due', dataIndex: 'due', width: 120, render: (v) => formatDate(v) },
               {
                 title: 'Status',
                 dataIndex: 'status',
                 width: 190,
-                render: (v, r) => (
-                  <Space size={4}>
-                    <Tag color={STATUS[v]?.color}>{STATUS[v]?.label || v}</Tag>
-                    {r.overdue && <Tag color="red">overdue</Tag>}
-                  </Space>
-                ),
+                render: (_, r) => {
+                  // Same names HR sees, addressed to the manager. The separate
+                  // red "overdue" tag is gone: an overdue evaluation now says
+                  // so in the status itself rather than needing two tags read
+                  // together. `overdue` comes from the server, which compares
+                  // against its own date rather than the reader's clock.
+                  const s = evaluationStatus(
+                    { status: r.overdue ? 'not_sent' : r.status },
+                    { audience: 'manager' }
+                  );
+                  return <StatusPill state={s.key}>{s.label}</StatusPill>;
+                },
               },
               {
                 title: 'Your average',

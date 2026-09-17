@@ -7,6 +7,7 @@ import authRoutes from './auth.routes.js';
 import employeeRoutes from './employee.routes.js';
 import importRoutes from './import.routes.js';
 import evaluationRoutes from './evaluation.routes.js';
+import evaluationListRoutes from './evaluationList.routes.js';
 import adminRoutes from './admin.routes.js';
 import intakeRoutes from './intake.routes.js';
 import notificationRoutes from './notification.routes.js';
@@ -69,6 +70,10 @@ router.use('/admin', adminRoutes);
 router.use('/intake', intakeRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/analytics', analyticsRoutes);
+// Plural. `/evaluation` (singular, below) is the PUBLIC token-authenticated
+// form; this is the signed-in HR list. Keeping both is deliberate — renaming
+// the public one would break links already sitting in managers' inboxes.
+router.use('/evaluations', evaluationListRoutes);
 router.use('/settings', settingsRoutes);
 router.use('/users', usersRoutes);
 router.use('/self-view-links', selfViewLinksRouter);

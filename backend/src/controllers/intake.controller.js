@@ -7,11 +7,23 @@
  */
 import * as intake from '../services/joinerIntake.service.js';
 import * as rmPlMap from '../services/rmPlMap.service.js';
+import { runSyncAlerts } from '../services/syncAlert.service.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
 
 /** GET /api/intake/inbox */
 export const inbox = catchAsync(async (_req, res) => success(res, await intake.getInbox()));
+
+/**
+ * GET /api/intake/sync-problems — R-03.
+ *
+ * What the nightly alert would report, read live. The New joiners screen shows
+ * it so a problem is visible the moment HR opens the page, rather than only in
+ * an email they may have missed.
+ */
+export const syncProblems = catchAsync(async (_req, res) =>
+  success(res, await runSyncAlerts({ dryRun: true }))
+);
 
 /**
  * POST /api/intake/scan?dryRun=true
@@ -23,6 +35,17 @@ export const inbox = catchAsync(async (_req, res) => success(res, await intake.g
 export const scan = catchAsync(async (req, res) => {
   const dryRun = req.query.dryRun === 'true';
   const report = await intake.runIntakeScan({ dryRun, actor: req.user.username });
+
+  // R-03 — a scan HR ran by hand should surface the same problems the nightly
+  // one would. Never allowed to fail the scan itself: the scan succeeded, and
+  // reporting on it is secondary.
+  if (!dryRun) {
+    try {
+      await runSyncAlerts({ scan: report });
+    } catch {
+      // Already logged inside the service.
+    }
+  }
 
   return success(
     res,

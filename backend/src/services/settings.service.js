@@ -49,6 +49,17 @@ export const REGISTRY = Object.freeze([
     label: '"Report to IT" recipients',
     help: 'Where directory corrections are sent. Required before Report to IT works in production.',
   },
+  {
+    key: 'never_cc_as_pl', group: 'Email', type: 'email_list',
+    label: 'Never copy these as project leader',
+    help: 'People who should not be copied on evaluation emails just because they are listed as the project leader. The old Power Automate flow left one address off on purpose; PEA copied everyone until now. They are still copied if they are the reporting manager, or if they are on the CC list above.',
+  },
+  {
+    key: 'cc_on_team_links', group: 'Email', type: 'boolean',
+    default: 'true',
+    label: 'Copy HR on manager team-link emails',
+    help: 'On: the "my team" link sent to a manager is copied to the HR notification recipients and the CC list, like every other evaluation email. Subhajit, 15 Sep: "Anuj will be there in the CC as well… along with the HR."',
+  },
 
   // ── Evaluations ────────────────────────────────────────────────────────
   {
@@ -114,6 +125,24 @@ export const REGISTRY = Object.freeze([
     key: 'azure_field_sync_enabled', group: 'New joiners', type: 'boolean', critical: true,
     label: 'Let the scan update names and emails',
     help: 'Overwrites unlocked names and office emails with Entra’s values. Run a dry-run scan first to see how many would change.',
+  },
+  {
+    key: 'hold_evaluations_for_leavers', group: 'New joiners', type: 'boolean', critical: true,
+    default: 'true',
+    label: 'Hold evaluations when Microsoft 365 says someone has left',
+    help: 'On: the moment the nightly check finds an account switched off and unlicensed, that person’s evaluation emails stop — before HR confirms the exit. This is the case Subhajit described on 15 Sep, where a forgotten pause let an evaluation go out to someone who had left. Off: emails keep going until HR marks them as left by hand.',
+  },
+  {
+    key: 'sync_alert_enabled', group: 'New joiners', type: 'boolean', critical: true,
+    default: 'true',
+    label: 'Email HR when the Microsoft 365 check goes wrong',
+    help: 'On: HR is emailed when the nightly check fails, has not run, or finds a joiner that cannot be used — someone with no manager or no joining date. Each problem is reported once, not every night. Off: problems are only visible in the app, which means a failure can go unnoticed.',
+  },
+  {
+    key: 'manual_pause_enabled', group: 'New joiners', type: 'boolean',
+    default: 'false',
+    label: 'Show the manual pause button',
+    help: 'Off by default. Exits are handled automatically by the setting above, so the only remaining use is long leave — a sabbatical or maternity leave where the Microsoft 365 account stays active. Anyone already paused keeps their pause and can still be resumed whether this is on or off.',
   },
 
   // ── Access ─────────────────────────────────────────────────────────────
