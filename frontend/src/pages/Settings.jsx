@@ -8,7 +8,6 @@ import { SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import api, { unwrap, USER_KEY } from '../api.js';
 import { isAdminTier, canUse } from '../auth.js';
 import StatusPill from '../components/StatusPill.jsx';
-import EmailTemplates from './EmailTemplates.jsx';
 import ImportSheet from './ImportSheet.jsx';
 
 /** One editable setting. Saves on its own, so a bad value never blocks the rest. */
@@ -147,13 +146,13 @@ export default function Settings() {
                 />
               )),
             })),
-            // The two screens that moved in from the sidebar. Each keeps its own
-            // access switch, so a user whose switch is off simply does not see
-            // the tab — moving them changed where they live, not who may open
-            // them.
-            ...(canUse(user, 'email_templates')
-              ? [{ key: 'email-templates', label: 'Email templates', children: <EmailTemplates embedded /> }]
-              : []),
+            // Upload sheet keeps its own access switch, so a user whose switch
+            // is off simply does not see the tab — living here changed where it
+            // is, not who may open it.
+            //
+            // Email templates is NOT a tab here any more: it has its own
+            // sidebar entry, because it is a screen HR edits in its own right
+            // rather than a setting.
             ...(canUse(user, 'import_sheet')
               ? [{ key: 'upload-sheet', label: 'Upload sheet', children: <ImportSheet embedded /> }]
               : []),

@@ -119,10 +119,19 @@
   --pea-accent-soft: var(--pea-green-100);
   --pea-on-accent: #ffffff;
 
-  /* States — the six the proposal names, each with a soft pill ground */
-  --pea-ok: #0a7f57;
+  /*
+   * States — the six the proposal names, each with a soft pill ground.
+   *
+   * `ok` and `warn` are a shade darker than the proposal's own #0a7f57 and
+   * #a95f07. Measured on the built pills, those two came out at 4.41 and 4.29
+   * against their soft grounds — just under the 4.5 WCAG AA floor, and these
+   * are 11.5px pills, which is exactly where that margin matters. The darker
+   * inks read as the same colours and clear AA (5.38 and 5.20). The other four
+   * are the proposal's values unchanged; all six pass in dark mode already.
+   */
+  --pea-ok: #08704c;
   --pea-ok-soft: var(--pea-emerald-soft);
-  --pea-warn: #a95f07;
+  --pea-warn: #965406;
   --pea-warn-soft: var(--pea-orange-soft);
   --pea-crit: #c11f1f;
   --pea-crit-soft: var(--pea-red-soft);
@@ -469,6 +478,20 @@ body {
   gap: 16px;
 }
 
+/*
+ * The Overview strip is five tiles. At a 215px minimum only four fit on a
+ * typical laptop, leaving the fifth alone on a second row looking like an
+ * afterthought. Forcing five columns keeps the strip one line where there is
+ * room; below this width it falls back to the auto-fit rule and wraps.
+ *
+ * Scoped to --five so the four-tile strip on Trends is unaffected.
+ */
+@media (min-width: 1180px) {
+  .pea-stats--five {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+
 .pea-stat {
   position: relative;
   overflow: hidden;
@@ -704,6 +727,30 @@ body {
   font-size: 12.5px;
 }
 
+/**
+ * "You are looking at one person" — shown when the Overview linked here about a
+ * specific row. Quieter than the bulk bar: it reports a state rather than
+ * offering an action on the selection.
+ */
+.pea-focus-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 6px 12px;
+  border: 1px dashed var(--pea-line-strong);
+  border-radius: var(--pea-radius-control);
+  background: var(--pea-surface-2);
+  color: var(--pea-muted);
+  font-size: 12.5px;
+}
+
+.pea-focus-bar strong {
+  color: var(--pea-ink);
+}
+
 /* ------------------------------------------- evaluations grouped by RM --- */
 
 .pea-manager-group + .pea-manager-group {
@@ -733,52 +780,44 @@ body {
 /* ------------------------------------------------- overview side panels --- */
 
 /**
- * "Act on these first" with the two small panels beside it. The aside is fixed
- * so the action list keeps the width it needs; below 1100px the aside drops
- * underneath rather than squeezing both.
+ * "Coming up" and "Recently submitted", side by side under the action list.
+ *
+ * Both are real tables with column headers now, so neither fits the 300px
+ * sidebar they used to share. Equal columns, and one column below 1100px.
  */
-.pea-overview-split {
+.pea-overview-pair {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
-  align-items: start;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* stretch, not start: the two cards match heights (see below) */
+  align-items: stretch;
   gap: 16px;
-}
-
-.pea-overview-aside {
-  display: grid;
-  gap: 16px;
+  margin-top: 16px;
 }
 
 @media (max-width: 1100px) {
-  .pea-overview-split {
+  .pea-overview-pair {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-.pea-side-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-.pea-side-list li {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--pea-line);
-  font-size: 12.5px;
-}
-
-.pea-side-list li:last-child {
-  border-bottom: 0;
-}
-
-.pea-side-meta {
-  flex: none;
-  color: var(--pea-muted);
+/* The count in a panel header reads as a quantity, not a label. */
+.pea-side-panel .ant-card-extra {
   font-variant-numeric: tabular-nums;
+}
+
+/* A date is one token: "01-Oct-2026" broken across two lines reads as two. */
+.pea-side-panel .pea-num {
+  white-space: nowrap;
+}
+
+/*
+ * The two panels hold unrelated lists, so one is often much shorter than the
+ * other — two upcoming against ten submitted leaves a ragged pair. Matching
+ * their heights keeps the row level; the shorter one simply has space beneath
+ * its rows rather than the whole block ending early.
+ */
+.pea-overview-pair > .pea-side-panel {
+  height: 100%;
 }
 
 /* ---------------------------------------------------------- status pill --- */

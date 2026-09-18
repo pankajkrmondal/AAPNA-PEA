@@ -16,7 +16,7 @@
  *     actions and are deliberately named differently.
  */
 import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card, Table, Tag, Space, Button, Input, Select, DatePicker, Tabs, App, Tooltip,
@@ -132,14 +132,36 @@ function EmailsSent() {
 export default function Evaluations() {
   const { message } = App.useApp();
   const qc = useQueryClient();
+  const [params, setParams] = useSearchParams();
+
+  /*
+   * The tab and the search box are read from the URL, because the Overview
+   * links here to answer a specific question — "the four that have not been
+   * sent", "this person's evaluation 2". Arriving on the default tab with no
+   * filter loses that question: HR clicked a row about one person and got an
+   * unfiltered list of twenty, with no sign of which row they meant.
+   *
+   * The URL stays the source of truth afterwards, so Back returns to the list
+   * as it was and the link can be shared.
+   */
+  const scope = params.get('scope') || 'waiting';
+  const focus = params.get('employee') || '';
 
   const [view, setView] = useState('Evaluations');
-  const [scope, setScope] = useState('waiting');
   const [filters, setFilters] = useState({ page: 1, limit: 50 });
   const [selected, setSelected] = useState([]);
   const [groupByManager, setGroupByManager] = useState(false);
 
-  const query = { ...filters, scope };
+  const setScope = (key) => {
+    // Changing tab by hand clears the single-person focus: the reader has moved
+    // on from the row they arrived from.
+    const next = new URLSearchParams(params);
+    next.set('scope', key);
+    next.delete('employee');
+    setParams(next, { replace: true });
+  };
+
+  const query = { ...filters, scope, ...(focus ? { search: focus } : {}) };
 
   const { data, isLoading, isFetching } = useQuery({
     queryKey: ['evaluations', query],
@@ -390,6 +412,30 @@ export default function Evaluations() {
                 </Checkbox>
               </Tooltip>
             </Space>
+
+            {/*
+              Arriving from an Overview row filters to that person. Saying so —
+              and offering the way out — is the difference between "why is there
+              only one row?" and "this is the row I clicked".
+            */}
+            {focus && (
+              <div className="pea-focus-bar">
+                <span>
+                  Showing <strong>{focus}</strong> only, from the Overview.
+                </span>
+                <Button
+                  size="small"
+                  type="link"
+                  onClick={() => {
+                    const next = new URLSearchParams(params);
+                    next.delete('employee');
+                    setParams(next, { replace: true });
+                  }}
+                >
+                  Show all {data?.scopes?.find((s) => s.key === scope)?.label?.toLowerCase() || ''}
+                </Button>
+              </div>
+            )}
 
             {/* An accent strip rather than an Ant Alert: this is a bulk-action
                 bar, not a notice, and it should not read as a warning. */}

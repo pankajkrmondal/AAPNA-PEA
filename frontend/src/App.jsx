@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { Layout, Menu, Button, Tooltip, Dropdown, Tag, Result } from 'antd';
 import {
   DashboardOutlined,
+  ProfileOutlined,
   TeamOutlined,
   UserAddOutlined,
   LogoutOutlined,
@@ -47,6 +48,7 @@ const { Header, Content, Sider } = Layout;
 /** Sidebar icons by module. Which items a user sees is Module Access — see auth.js. */
 const ICONS = {
   dashboard: <DashboardOutlined />,
+  evaluations: <ProfileOutlined />,
   employees: <TeamOutlined />,
   new_joiners: <UserAddOutlined />,
   analytics: <BarChartOutlined />,

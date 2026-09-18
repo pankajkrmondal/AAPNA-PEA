@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card, Table, Space, Button, Select, Switch, Alert, App, Popconfirm, Typography, Tooltip,
-  Tabs, Empty, Modal,
+  Tabs, Empty,
 } from 'antd';
 import { LinkOutlined, CopyOutlined, StopOutlined, SendOutlined } from '@ant-design/icons';
 import api, { unwrap } from '../api.js';
@@ -159,7 +159,10 @@ export default function ManagerLinks() {
 
 /** A reporting manager's "my team" link — the original screen, now a tab. */
 function ManagerTeamTab() {
-  const { message } = App.useApp();
+  // `modal` from the App context, not the static Modal.confirm: a static one is
+  // rendered outside the ConfigProvider, so it keeps the default blue theme and
+  // a light background even in dark mode.
+  const { message, modal } = App.useApp();
   const qc = useQueryClient();
   const [rmEmail, setRmEmail] = useState();
   const [send, setSend] = useState(false);
@@ -224,7 +227,7 @@ function ManagerTeamTab() {
   const pendingManagers = (managers.data || []).filter((m) => m.in_probation > 0);
 
   const confirmBulk = () => {
-    Modal.confirm({
+    modal.confirm({
       title: 'Email team links to these managers?',
       width: 520,
       okText: `Email ${pendingManagers.length} manager(s)`,

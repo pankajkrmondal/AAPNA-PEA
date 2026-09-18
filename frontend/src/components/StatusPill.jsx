@@ -14,6 +14,8 @@
  * reader who cannot tell red from green loses nothing.
  */
 
+import { forwardRef } from 'react';
+
 /** The six tones. `mute` has no ink colour of its own — it reads as muted text. */
 const TONES = ['ok', 'warn', 'crit', 'info', 'ext', 'mute'];
 
@@ -40,6 +42,12 @@ export function toneForState(key) {
 }
 
 /**
+ * forwardRef, and the rest of the props passed through, because these pills sit
+ * inside Ant `<Tooltip>`s and `<Popconfirm>`s on several screens. Those clone
+ * their child to attach a ref and the hover handlers; a plain function
+ * component gives them nothing to hold, so Ant falls back to findDOMNode and
+ * React logs a StrictMode deprecation for every pill rendered in a tooltip.
+ *
  * @param {object}  props
  * @param {string}  [props.tone]   one of the six; ignored if `state` is given
  * @param {string}  [props.state]  an evaluationStatus key, which picks the tone
@@ -47,15 +55,27 @@ export function toneForState(key) {
  *                                 (Fresher, Experienced, extension) as opposed
  *                                 to state pills
  */
-export default function StatusPill({ tone, state, nodot = false, children }) {
+const StatusPill = forwardRef(function StatusPill(
+  { tone, state, nodot = false, className = '', children, ...rest },
+  ref
+) {
   const resolved = state ? toneForState(state) : tone;
   const safe = TONES.includes(resolved) ? resolved : 'mute';
 
   // `pea-status-pill`, not `pea-pill`: the latter is already the hero badge on
   // the manager portal and self-view, which is a different element.
+  const classes = [
+    'pea-status-pill',
+    `pea-status-pill--${safe}`,
+    nodot ? 'pea-status-pill--nodot' : '',
+    className,
+  ].filter(Boolean).join(' ');
+
   return (
-    <span className={`pea-status-pill pea-status-pill--${safe}${nodot ? ' pea-status-pill--nodot' : ''}`}>
+    <span ref={ref} className={classes} {...rest}>
       {children}
     </span>
   );
-}
+});
+
+export default StatusPill;
