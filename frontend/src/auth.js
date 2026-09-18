@@ -31,21 +31,25 @@ export const MODULES = [
   { key: 'employees', path: '/employees', label: 'Employees', emoji: '👥', desc: 'Search, update and manage employee probation records' },
   { key: 'new_joiners', path: '/new-joiners', label: 'New joiners', emoji: '🆕', desc: 'Review joiners and leavers found in Microsoft 365, and add anyone by hand' },
   { key: 'manager_portal', path: '/manager-portal', label: 'Link generation', emoji: '🔗', desc: 'Create evaluation, team and employee links to share' },
-  { key: 'settings', path: '/settings', label: 'Settings', emoji: '⚙️', desc: 'Email wording, scheduling, access — and the sheet upload' },
+  { key: 'email_templates', path: '/email-templates', label: 'Email templates', emoji: '✉️', desc: 'The subject and wording of every email PEA sends' },
+  { key: 'settings', path: '/settings', label: 'Settings', emoji: '⚙️', desc: 'Scheduling, access — and the sheet upload' },
 ];
 
 /**
  * Modules reachable through another screen rather than their own sidebar entry.
  *
- * `analytics` is Overview → Trends; `import_sheet` and `email_templates` are
- * tabs inside Settings. Their access switches still apply — the tab is hidden
- * for a user whose switch is off — so moving them changed where they live, not
- * who can see them. Their routes are kept so existing bookmarks still work.
+ * `analytics` is Overview → Trends; `import_sheet` is a tab inside Settings.
+ * Their access switches still apply — the tab is hidden for a user whose switch
+ * is off — so nesting them changed where they live, not who can see them. Their
+ * routes are kept so existing bookmarks still work.
+ *
+ * `email_templates` used to be here too. It is back in MODULES with its own
+ * sidebar entry: it is a screen HR edits in its own right, not a setting, and
+ * burying a full editor in a settings tab made it hard to find.
  */
 export const NESTED_MODULES = [
   { key: 'analytics', path: '/analytics', label: 'Trends', within: 'Overview' },
   { key: 'import_sheet', path: '/import', label: 'Upload sheet', within: 'Settings' },
-  { key: 'email_templates', path: '/email-templates', label: 'Email templates', within: 'Settings' },
 ];
 
 /** @returns {object} the signed-in user as last stored, or {} */

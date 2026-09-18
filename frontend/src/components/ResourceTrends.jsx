@@ -171,7 +171,7 @@ export default function ResourceTrends() {
                 <div style={{ fontSize: 11.5, color: 'var(--pea-text-muted)' }}>
                   {r.cohort === 'experienced' ? 'Experienced' : 'Fresher'}
                   {r.employmentStatus === 'left' && (
-                    <span style={{ marginLeft: 6 }}><StatusPill tone="mute">Left</StatusPill></span>
+                    <StatusPill tone="mute" style={{ marginLeft: 6 }}>Left</StatusPill>
                   )}
                 </div>
               </div>

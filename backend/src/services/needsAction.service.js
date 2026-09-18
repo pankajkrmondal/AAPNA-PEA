@@ -153,7 +153,9 @@ export async function getNeedsAction({ limit = 50 } = {}) {
         problem: 'Not sent yet',
         detail: `Due ${toDateString(c.due_date)}, no email has gone out.`,
         action: 'Send now',
-        link: '/evaluations?scope=not_sent',
+        // The name rides along so the list opens on THIS person rather than on
+        // every unsent evaluation — the row was about one of them.
+        link: `/evaluations?scope=not_sent&employee=${encodeURIComponent(e.full_name)}`,
         days: daysBetween(c.due_date, today),
         cycleId: String(c.id),
       });
@@ -173,7 +175,7 @@ export async function getNeedsAction({ limit = 50 } = {}) {
         `${chased === 0 ? 'No reminder sent yet' : `${chased} reminder${chased === 1 ? '' : 's'} sent`}`
         + ` · manager ${e.rm_name || e.rm_email}`,
       action: 'Remind now',
-      link: '/evaluations?scope=waiting',
+      link: `/evaluations?scope=waiting&employee=${encodeURIComponent(e.full_name)}`,
       days: waiting,
       cycleId: String(c.id),
     });
