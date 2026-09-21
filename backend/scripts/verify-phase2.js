@@ -78,7 +78,8 @@ const { listUsers } = await import('../src/services/users.service.js');
 const { currentLevel } = await import('../src/services/selfView.service.js');
 
 await check('settings', async () => {
-  const s = await listSettings();
+  // As a super admin, so the check also covers the internals-only parts.
+  const s = await listSettings({ role: 'superadmin' });
   const editable = s.groups.reduce((n, g) => n + g.settings.length, 0);
   return `${editable} editable in ${s.groups.length} group(s), ${s.notInEffect.length} not in effect`;
 });

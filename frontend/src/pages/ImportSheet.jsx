@@ -17,7 +17,8 @@ import HintIcon from '../components/HintIcon.jsx';
  */
 /**
  * @param {{embedded?: boolean}} props - `embedded` drops the page heading, for
- *   use as a Settings tab. One implementation either way.
+ *   rendering inside another screen. It has its own sidebar entry now, so the
+ *   normal case is the full page; the flag is kept for reuse elsewhere.
  */
 export default function ImportSheet({ embedded = false } = {}) {
   const { message } = App.useApp();

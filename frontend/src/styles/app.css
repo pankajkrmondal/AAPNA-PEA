@@ -670,6 +670,149 @@ body {
   font-family: var(--pea-mono);
 }
 
+/* ------------------------------------------------------- notice strip --- */
+
+/**
+ * The collapsed replacement for a stack of full-width Alert banners. Closed it
+ * is one line, so the tables below start near the top of the screen instead of
+ * below the fold. Every colour comes from a token, so dark mode follows without
+ * a second block.
+ */
+.pea-notice {
+  border: 1px solid var(--pea-notice-border);
+  background: var(--pea-notice-bg);
+  border-radius: var(--pea-radius-sm);
+  overflow: hidden;
+  transition: border-color .18s var(--pea-ease-out);
+}
+
+.pea-notice--info {
+  --pea-notice-bg: var(--pea-green-50);
+  --pea-notice-border: var(--pea-green-200);
+  --pea-notice-fg: var(--pea-green-600);
+}
+
+.pea-notice--warning {
+  --pea-notice-bg: var(--pea-orange-soft);
+  --pea-notice-border: var(--pea-orange);
+  --pea-notice-fg: var(--pea-orange);
+}
+
+.pea-notice--error {
+  --pea-notice-bg: var(--pea-red-soft);
+  --pea-notice-border: var(--pea-red);
+  --pea-notice-fg: var(--pea-red);
+}
+
+/* A softer edge than the full accent, which at 1px around a wide strip reads
+   as a box to be dealt with rather than a line to be read. */
+.pea-notice--warning,
+.pea-notice--error {
+  border-color: color-mix(in srgb, var(--pea-notice-border) 42%, transparent);
+}
+
+.pea-notice-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 14px;
+  border: 0;
+  background: none;
+  font: inherit;
+  text-align: left;
+  color: var(--pea-text);
+  cursor: pointer;
+}
+
+.pea-notice-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 15px;
+  color: var(--pea-notice-fg);
+}
+
+.pea-notice-summaries {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* One line closed. The detail view carries the full text, so clipping here
+   loses nothing — and a strip that reflows to three lines is the banner stack
+   this replaced. */
+.pea-notice:not([data-open]) .pea-notice-summaries {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.pea-notice-dot {
+  margin: 0 8px;
+  color: var(--pea-text-faint);
+}
+
+.pea-notice-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--pea-notice-fg);
+}
+
+.pea-notice-chevron {
+  font-size: 10px;
+  transition: transform .18s var(--pea-ease-out);
+}
+
+.pea-notice[data-open] .pea-notice-chevron {
+  transform: rotate(180deg);
+}
+
+.pea-notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 2px 14px 12px 39px;
+}
+
+.pea-notice-detail {
+  margin-top: 2px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--pea-text-muted);
+}
+
+.pea-notice-detail ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.pea-notice-detail li + li {
+  margin-top: 4px;
+}
+
+@media (max-width: 640px) {
+  /* Room is the scarce thing on a phone, and the summaries are the part worth
+     keeping — so the word goes and the chevron stays. */
+  .pea-notice-toggle {
+    font-size: 0;
+    gap: 0;
+  }
+
+  .pea-notice-chevron {
+    font-size: 11px;
+  }
+
+  .pea-notice-body {
+    padding-left: 14px;
+  }
+}
+
 /* ------------------------------------------------ tabs, chips, numerals --- */
 
 /**

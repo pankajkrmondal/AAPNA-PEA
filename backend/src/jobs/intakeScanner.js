@@ -28,9 +28,18 @@ let task = null;
 
 /**
  * Start the nightly scan, if both switches allow it.
+ *
+ * Safe to call again at any time: the previous task is stopped first, so
+ * switching the scan on or off, or changing its time, in Settings takes effect
+ * immediately rather than on the next restart. Reading both settings here means
+ * one call covers azure_scan_enabled and azure_scan_cron alike.
+ *
  * @returns {Promise<void>}
  */
 export async function startIntakeScanner() {
+  // Re-entrant: two live crons would run the scan twice a night.
+  stopIntakeScanner({ quiet: true });
+
   if (!config.scheduler.enabled) {
     logger.warn('🔎 Entra intake scan not started (PEA_SCHEDULER_ENABLED=false)');
     return;
@@ -99,11 +108,14 @@ export async function startIntakeScanner() {
   logger.info(`🔎 Entra intake scan started — "${expression}" (${config.scheduler.timezone})`);
 }
 
-/** Stop the cron on shutdown. */
-export function stopIntakeScanner() {
+/**
+ * Stop the cron — on shutdown, or before rescheduling.
+ * @param {{quiet?: boolean}} [opts]
+ */
+export function stopIntakeScanner({ quiet = false } = {}) {
   if (task) {
     task.stop();
     task = null;
-    logger.info('🔎 Entra intake scan stopped');
+    if (!quiet) logger.info('🔎 Entra intake scan stopped');
   }
 }

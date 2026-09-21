@@ -1,10 +1,12 @@
 /**
- * Overview — what needs action now, and how evaluations are trending.
+ * Dashboard — what needs action now, and how evaluations are trending.
  *
- * Replaces the separate Dashboard and Analytics screens. Called Overview rather
- * than Dashboard because it holds two genuinely different things, and the tab
- * names say which is which: "Needs action" is for this morning, "Trends" is for
- * looking back.
+ * Replaces the separate Dashboard and Analytics screens. It holds two genuinely
+ * different things and the tab names say which is which: "Needs action" is for
+ * this morning, "Trends" is for looking back.
+ *
+ * The file is still Overview.jsx: it was briefly called Overview, and renaming
+ * the file would churn every import for no gain.
  *
  * ── What changed from the old Dashboard ────────────────────────────────────
  *
@@ -286,7 +288,7 @@ export default function Overview() {
     <>
       <div className="pea-page-head">
         <div>
-          <h2>Overview</h2>
+          <h2>Dashboard</h2>
           <p>
             As at {formatDate(data.today)} · next automatic emails at 11:00 ({data.timezone})
           </p>
