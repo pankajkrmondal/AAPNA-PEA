@@ -7,6 +7,8 @@ import {
 } from 'antd';
 import { LinkOutlined, CopyOutlined, StopOutlined, SendOutlined } from '@ant-design/icons';
 import api, { unwrap } from '../api.js';
+import HintIcon from '../components/HintIcon.jsx';
+import NoticeStrip from '../components/NoticeStrip.jsx';
 import StatusPill from '../components/StatusPill.jsx';
 import { formatDateTime, formatDate } from '../formatDate.js';
 
@@ -43,24 +45,29 @@ function EmployeeLinkTab() {
 
   return (
     <Space direction="vertical" size={12} style={{ width: '100%' }}>
+      {/* Off is a problem — the links made here will not open — so it keeps a
+          strip. Anything else is a fact about the current setting, which sits
+          on one line rather than in a banner. */}
       {disclosure === 'off' ? (
-        <Alert
-          type="warning"
-          showIcon
-          message="Employee self-view is switched off"
-          description={
-            <>
-              Links can still be created but will not open. Turn it on in{' '}
-              <Link to="/settings">Settings → Access</Link> first.
-            </>
-          }
+        <NoticeStrip
+          items={[{
+            key: 'self-view-off',
+            tone: 'warning',
+            summary: 'Employee self-view is switched off',
+            detail: (
+              <>
+                Links can still be created but will not open. Turn it on in{' '}
+                <Link to="/settings">Settings → Access</Link> first.
+              </>
+            ),
+          }]}
         />
       ) : (
-        <Alert
-          type="info"
-          showIcon
-          message={`Employees currently see: ${disclosure || '…'}`}
-          description="What a link discloses is set once for everyone in Settings → Access, not per link."
+        <NoticeStrip
+          items={[{
+            key: 'self-view-level',
+            summary: <>Employees currently see: <strong>{disclosure || '…'}</strong></>,
+          }]}
         />
       )}
 
@@ -273,17 +280,30 @@ function ManagerTeamTab() {
 
   return (
     <>
-      {setupMissing && (
-        <Alert
-          type="error"
-          showIcon
-          style={{ borderRadius: 'var(--pea-radius)', marginBottom: 12 }}
-          message="Manager team links aren’t available yet"
-          description="Ask your PEA admin to finish setting it up, then reload this page."
-        />
-      )}
+      <NoticeStrip
+        items={[
+          setupMissing && {
+            key: 'setup',
+            tone: 'error',
+            summary: 'Manager team links aren’t available yet',
+            detail: 'Ask your PEA admin to finish setting it up, then reload this page.',
+          },
+        ]}
+      />
 
-      <Card className="pea-card" size="small" title={<span className="pea-section-title">Issue a link</span>}>
+      <Card
+        className="pea-card"
+        size="small"
+        title={
+          <span className="pea-section-title">
+            Issue a link
+            {/* Was a full banner under the buttons. It is true of every link
+                ever issued, so it belongs on the heading rather than taking a
+                block of the card each time the screen is opened. */}
+            <HintIcon title="Creating a new link revokes that manager's previous one. Outside production, 'Email it to them' only ever reaches the test inbox — never the real manager." />
+          </span>
+        }
+      >
         <Space wrap align="center">
           <Select
             showSearch
@@ -336,14 +356,6 @@ function ManagerTeamTab() {
             </Tooltip>
           </div>
         )}
-
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginTop: 14 }}
-          message="Creating a new link revokes that manager's previous one"
-          description="Outside production, 'Email it to them' only ever reaches the test inbox — never the real manager."
-        />
 
         {lastUrl && (
           <Alert

@@ -3,7 +3,15 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.e2e.example
 *.log
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/e2e/.auth/
 .vscode/
 .idea/
 .DS_Store

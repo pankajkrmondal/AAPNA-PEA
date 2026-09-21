@@ -381,16 +381,25 @@ export async function runSweep(opts = {}) {
 }
 
 /**
- * Start the daily cron.
+ * Start the daily cron, reading `sweep_cron` from pea_settings.
  *
  * The timezone is passed explicitly. The original ran on an 11:00 IST schedule
  * but did its date arithmetic in UTC, so for five and a half hours a day the
  * two disagreed about what "today" was — a likely contributor to the
  * intermittent misses. Plan R10.
  *
+ * Safe to call again at any time: the previous task is stopped first, which is
+ * how a change made in Settings takes effect without a restart. HR are not
+ * developers and have no way to restart a server, so a setting that only took
+ * effect on the next deployment was a setting they could not actually use.
+ *
  * @returns {Promise<void>}
  */
 export async function startScheduler() {
+  // Re-entrant: without this, changing the time twice would leave two crons
+  // running and every evaluation email would go out twice.
+  stopScheduler({ quiet: true });
+
   if (!config.scheduler.enabled) {
     logger.warn('⏰ Scheduler DISABLED (PEA_SCHEDULER_ENABLED=false) — no evaluations will be sent');
     return;
@@ -426,11 +435,15 @@ export async function startScheduler() {
   logger.info(`⏰ Scheduler started — "${expression}" (${timezone})`);
 }
 
-/** Stop the cron on shutdown. */
-export function stopScheduler() {
+/**
+ * Stop the cron — on shutdown, or before rescheduling.
+ * @param {{quiet?: boolean}} [opts] - quiet while rescheduling, where the
+ *   "started" line that follows is the one worth logging
+ */
+export function stopScheduler({ quiet = false } = {}) {
   if (task) {
     task.stop();
     task = null;
-    logger.info('⏰ Scheduler stopped');
+    if (!quiet) logger.info('⏰ Scheduler stopped');
   }
 }

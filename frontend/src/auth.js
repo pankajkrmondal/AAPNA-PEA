@@ -26,30 +26,33 @@ export const outranks = (requesterRole, targetRole) => rankOf(requesterRole) > r
  * Access; `key` must match backend/src/config/modules.js.
  */
 export const MODULES = [
-  { key: 'dashboard', path: '/', label: 'Overview', emoji: '📊', desc: 'What needs action today, and how evaluations are trending' },
+  { key: 'dashboard', path: '/', label: 'Dashboard', emoji: '📊', desc: 'What needs action today, and how evaluations are trending' },
   { key: 'evaluations', path: '/evaluations', label: 'Evaluations', emoji: '📋', desc: 'Every evaluation in one list — what is due, who it is waiting on, and what came back' },
   { key: 'employees', path: '/employees', label: 'Employees', emoji: '👥', desc: 'Search, update and manage employee probation records' },
   { key: 'new_joiners', path: '/new-joiners', label: 'New joiners', emoji: '🆕', desc: 'Review joiners and leavers found in Microsoft 365, and add anyone by hand' },
   { key: 'manager_portal', path: '/manager-portal', label: 'Link generation', emoji: '🔗', desc: 'Create evaluation, team and employee links to share' },
+  // Upload sheet sits directly after Link generation: it is a task HR performs,
+  // not a setting they adjust, and buried in a Settings tab it was the one
+  // screen people had to be told where to find.
+  { key: 'import_sheet', path: '/import', label: 'Upload sheet', emoji: '📤', desc: 'Load the master Excel workbook, or add anyone the Microsoft 365 check could not pick up' },
   { key: 'email_templates', path: '/email-templates', label: 'Email templates', emoji: '✉️', desc: 'The subject and wording of every email PEA sends' },
-  { key: 'settings', path: '/settings', label: 'Settings', emoji: '⚙️', desc: 'Scheduling, access — and the sheet upload' },
+  { key: 'settings', path: '/settings', label: 'Settings', emoji: '⚙️', desc: 'Email recipients, scheduling and access' },
 ];
 
 /**
  * Modules reachable through another screen rather than their own sidebar entry.
  *
- * `analytics` is Overview → Trends; `import_sheet` is a tab inside Settings.
- * Their access switches still apply — the tab is hidden for a user whose switch
- * is off — so nesting them changed where they live, not who can see them. Their
- * routes are kept so existing bookmarks still work.
+ * `analytics` is Dashboard → Trends. Its access switch still applies — the tab
+ * is hidden for a user whose switch is off — so nesting it changed where it
+ * lives, not who can see it. Its route is kept so existing bookmarks work.
  *
- * `email_templates` used to be here too. It is back in MODULES with its own
- * sidebar entry: it is a screen HR edits in its own right, not a setting, and
- * burying a full editor in a settings tab made it hard to find.
+ * `email_templates` and `import_sheet` both used to be here. Both are back in
+ * MODULES with their own sidebar entry, for the same reason: each is a screen
+ * HR works in rather than a value they adjust, and burying one in a settings
+ * tab made it hard to find.
  */
 export const NESTED_MODULES = [
-  { key: 'analytics', path: '/analytics', label: 'Trends', within: 'Overview' },
-  { key: 'import_sheet', path: '/import', label: 'Upload sheet', within: 'Settings' },
+  { key: 'analytics', path: '/analytics', label: 'Trends', within: 'Dashboard' },
 ];
 
 /** @returns {object} the signed-in user as last stored, or {} */

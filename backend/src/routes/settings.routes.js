@@ -25,7 +25,7 @@ const router = Router();
 
 router.use(authenticate, requireMinRole('hr'));
 
-router.get('/', requireModule('settings'), catchAsync(async (_req, res) => success(res, await listSettings())));
+router.get('/', requireModule('settings'), catchAsync(async (req, res) => success(res, await listSettings(req.user))));
 
 router.get(
   '/templates',
@@ -61,10 +61,17 @@ router.put(
   requireMinRole('admin'),
   catchAsync(async (req, res) => {
     const r = await updateSetting(req.params.key, req.body?.value, req.user.username);
+    // A schedule change is applied to the running cron as it is saved, so the
+    // usual answer is simply "Saved". `applied: false` means only the restart
+    // failed — the value itself is stored and will be picked up either way.
     return success(
       res,
       r,
-      !r.changed ? 'No change' : r.restart ? 'Saved — takes effect after the backend restarts' : 'Saved'
+      !r.changed
+        ? 'No change'
+        : r.applied
+          ? 'Saved'
+          : 'Saved — but the new schedule could not be applied yet; it will take effect at the next restart'
     );
   })
 );

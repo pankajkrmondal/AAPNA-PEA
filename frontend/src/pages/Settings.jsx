@@ -1,14 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card, Tabs, Switch, InputNumber, Input, Select, Button, Space, Typography, Alert, App, Table, Spin,
 } from 'antd';
 import { SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import api, { unwrap, USER_KEY } from '../api.js';
-import { isAdminTier, canUse } from '../auth.js';
+import { isAdminTier } from '../auth.js';
 import StatusPill from '../components/StatusPill.jsx';
-import ImportSheet from './ImportSheet.jsx';
 
 /** One editable setting. Saves on its own, so a bad value never blocks the rest. */
 function SettingRow({ s, canEdit, onSave, saving }) {
@@ -55,12 +53,13 @@ function SettingRow({ s, canEdit, onSave, saving }) {
       <div className="pea-setting-main">
         <Space size={6} wrap>
           <Typography.Text strong>{s.label}</Typography.Text>
-          {/* Both are classifications of the setting, not states of it — no dot. */}
+          {/* A classification of the setting, not a state of it — no dot. */}
           {s.critical && <StatusPill tone="warn" nodot>announced to admins</StatusPill>}
-          {s.restart && <StatusPill tone="ext" nodot>needs restart</StatusPill>}
         </Space>
         <div><Typography.Text type="secondary" style={{ fontSize: 12.5 }}>{s.help}</Typography.Text></div>
-        <Typography.Text type="secondary" className="pea-setting-key">{s.key}</Typography.Text>
+        {/* The pea_settings column name. Plumbing rather than a setting, so the
+            API sends it to a super admin only — see listSettings. */}
+        {s.showKey && <Typography.Text type="secondary" className="pea-setting-key">{s.key}</Typography.Text>}
       </div>
       <Space align="start" wrap>
         {control}
@@ -116,15 +115,12 @@ export default function Settings() {
         </Space>
       </div>
 
-      {data.emailRedirect && (
-        <Alert
-          type="info"
-          showIcon
-          style={{ borderRadius: 'var(--pea-radius)' }}
-          message={`Environment: ${data.environment} — every email goes only to ${data.emailRedirect.join(', ')}`}
-          description="This is enforced in code and cannot be changed from this screen. Real recipients are only ever emailed in production."
-        />
-      )}
+      {/* The environment banner that used to sit here is gone. Which
+          environment this is, and where its email goes, is a deployment fact
+          rather than something anyone reads a settings screen to learn — and on
+          production it said nothing at all. The one thing it was useful for,
+          "no real email is going out", is already in the header chip on every
+          screen, with the reasons behind it. */}
 
       {!canEdit && (
         <Alert type="warning" showIcon style={{ borderRadius: 'var(--pea-radius)' }} message="Read-only — only an admin can change settings" />
@@ -146,42 +142,46 @@ export default function Settings() {
                 />
               )),
             })),
-            // Upload sheet keeps its own access switch, so a user whose switch
-            // is off simply does not see the tab — living here changed where it
-            // is, not who may open it.
+            // Upload sheet is NOT a tab here any more: it has its own sidebar
+            // entry, below Link generation. It is a task HR performs, not a
+            // setting they adjust, and it was the one thing in this screen
+            // people had to be told where to find. Its access switch is
+            // unchanged, so who may open it is exactly as before.
             //
-            // Email templates is NOT a tab here any more: it has its own
-            // sidebar entry, because it is a screen HR edits in its own right
-            // rather than a setting.
-            ...(canUse(user, 'import_sheet')
-              ? [{ key: 'upload-sheet', label: 'Upload sheet', children: <ImportSheet embedded /> }]
+            // Email templates left for the same reason, earlier.
+            //
+            // "Not in effect" is a list of database rows that nothing reads.
+            // It exists so a maintainer does not change one in pgAdmin
+            // expecting an effect — a question only whoever maintains the
+            // system asks, so the API sends it to a super admin alone.
+            ...(data.notInEffect
+              ? [{
+                key: 'not-in-effect',
+                label: 'Not in effect',
+                children: (
+                  <>
+                    <Alert
+                      type="warning"
+                      showIcon
+                      style={{ marginBottom: 12 }}
+                      message="These rows exist in the database but nothing reads them"
+                      description="Shown so nobody changes one in pgAdmin expecting an effect. The right-hand column says where the real control is."
+                    />
+                    <Table
+                      size="small"
+                      rowKey="key"
+                      pagination={false}
+                      dataSource={data.notInEffect}
+                      columns={[
+                        { title: 'Key', dataIndex: 'key', render: (v) => <Typography.Text code>{v}</Typography.Text> },
+                        { title: 'Stored value', dataIndex: 'value', render: (v) => v || '—' },
+                        { title: 'Actually controlled by', dataIndex: 'reason' },
+                      ]}
+                    />
+                  </>
+                ),
+              }]
               : []),
-            {
-              key: 'not-in-effect',
-              label: 'Not in effect',
-              children: (
-                <>
-                  <Alert
-                    type="warning"
-                    showIcon
-                    style={{ marginBottom: 12 }}
-                    message="These rows exist in the database but nothing reads them"
-                    description="Shown so nobody changes one in pgAdmin expecting an effect. The right-hand column says where the real control is."
-                  />
-                  <Table
-                    size="small"
-                    rowKey="key"
-                    pagination={false}
-                    dataSource={data.notInEffect}
-                    columns={[
-                      { title: 'Key', dataIndex: 'key', render: (v) => <Typography.Text code>{v}</Typography.Text> },
-                      { title: 'Stored value', dataIndex: 'value', render: (v) => v || '—' },
-                      { title: 'Actually controlled by', dataIndex: 'reason' },
-                    ]}
-                  />
-                </>
-              ),
-            },
           ]}
         />
       </Card>

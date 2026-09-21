@@ -24,8 +24,11 @@ import { TEMPLATE_DEFS, listTemplateCatalog, validateDraft, renderPreview } from
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * The editable settings. `restart` marks values read once at boot.
- * `critical` changes are announced to every admin via the bell.
+ * The editable settings. `critical` changes are announced to every admin via
+ * the bell.
+ *
+ * Nothing here needs a restart. The three settings that drive a cron are
+ * applied to the running process the moment they are saved — see RELOADS_JOB.
  */
 export const REGISTRY = Object.freeze([
   // ── Email ──────────────────────────────────────────────────────────────
@@ -78,7 +81,7 @@ export const REGISTRY = Object.freeze([
     help: 'Comma-separated, ascending, e.g. 2,4. Reconstructed from the PPT user guide — HR to confirm.',
   },
   {
-    key: 'sweep_cron', group: 'Evaluations', type: 'cron', restart: true,
+    key: 'sweep_cron', group: 'Evaluations', type: 'cron',
     label: 'Daily sweep time (cron)',
     help: 'When evaluation emails and reminders go out, in IST. Default 0 11 * * * — 11:00, as the old flow.',
   },
@@ -102,12 +105,12 @@ export const REGISTRY = Object.freeze([
 
   // ── New joiners (Entra) ────────────────────────────────────────────────
   {
-    key: 'azure_scan_enabled', group: 'New joiners', type: 'boolean', restart: true,
+    key: 'azure_scan_enabled', group: 'New joiners', type: 'boolean',
     label: 'Nightly Entra scan',
     help: 'Finds new joiners every night. "Scan now" works regardless.',
   },
   {
-    key: 'azure_scan_cron', group: 'New joiners', type: 'cron', restart: true,
+    key: 'azure_scan_cron', group: 'New joiners', type: 'cron',
     label: 'Scan time (cron)',
     help: 'Default 0 9 * * * — two hours before the evaluation sweep.',
   },
@@ -178,6 +181,47 @@ const NOT_IN_EFFECT = Object.freeze({
 const byKey = new Map(REGISTRY.map((r) => [r.key, r]));
 
 /**
+ * Settings that change a running cron, and the job that owns each one.
+ *
+ * Saving one of these used to say "takes effect after the backend restarts",
+ * which put HR in the position of needing a developer to apply their own
+ * change. Both jobs read their settings inside their start function and stop
+ * any previous task first, so re-running that function is all it takes.
+ */
+const RELOADS_JOB = Object.freeze({
+  sweep_cron: 'scheduler',
+  azure_scan_cron: 'intake',
+  azure_scan_enabled: 'intake',
+});
+
+/**
+ * Apply a schedule change to the running process.
+ *
+ * Imported lazily because the jobs import this service — a static import would
+ * be a cycle. Never throws: the value is already saved, and failing to restart
+ * a cron must not make a successful save look like a failed one. The worst case
+ * is the old behaviour, a schedule that waits for the next restart.
+ *
+ * @param {string} job - 'scheduler' | 'intake'
+ * @returns {Promise<boolean>} whether the job was restarted
+ */
+async function reloadJob(job) {
+  try {
+    if (job === 'scheduler') {
+      const { startScheduler } = await import('../jobs/evaluationScheduler.js');
+      await startScheduler();
+    } else {
+      const { startIntakeScanner } = await import('../jobs/intakeScanner.js');
+      await startIntakeScanner();
+    }
+    return true;
+  } catch (err) {
+    logger.error(`⏰ Could not apply the new schedule without a restart: ${err.message}`);
+    return false;
+  }
+}
+
+/**
  * Validate and normalise one value.
  *
  * Pure, so the rules are testable without a database.
@@ -246,25 +290,47 @@ export function normaliseValue(def, raw) {
 
 /**
  * All settings, grouped, with what is and is not in effect.
+ *
+ * ── Why the database column names are withheld ──────────────────────────────
+ *
+ * `setting_key` is the pea_settings primary key — internal plumbing. It is
+ * meaningful to whoever maintains the system and noise to HR, who work from the
+ * label and the help text. "Not in effect" is the same thing taken further: it
+ * is a list of database rows that exist only to stop a maintainer changing one
+ * in pgAdmin expecting an effect, which is not a question HR ever asks.
+ *
+ * So both are served only to a super admin. Everyone else gets the same
+ * settings, the same labels and the same ability to change them — the screen
+ * loses a monospace caption, not a capability. Filtering here rather than in
+ * the browser means the keys are never sent, so they cannot be read out of the
+ * network response either.
+ *
+ * @param {{role?: string}} [viewer] - the signed-in user
  * @returns {Promise<object>}
  */
-export async function listSettings() {
+export async function listSettings(viewer = {}) {
   const rows = await prisma.pea_settings.findMany();
   const stored = new Map(rows.map((r) => [r.setting_key, r]));
+  const showsInternals = String(viewer.role || '').trim().toLowerCase() === 'superadmin';
 
   const editable = REGISTRY.map((def) => {
     const row = stored.get(def.key);
     return {
       ...def,
+      // Always present, because the browser saves by it. `key` is what the PUT
+      // addresses; `showKey` is what the screen is allowed to print.
+      showKey: showsInternals,
       value: row?.setting_value ?? def.default ?? '',
       modifiedAt: row?.modified_at ?? null,
       stored: !!row,
     };
   });
 
-  const notInEffect = rows
-    .filter((r) => NOT_IN_EFFECT[r.setting_key])
-    .map((r) => ({ key: r.setting_key, value: r.setting_value, reason: NOT_IN_EFFECT[r.setting_key] }));
+  const notInEffect = showsInternals
+    ? rows
+      .filter((r) => NOT_IN_EFFECT[r.setting_key])
+      .map((r) => ({ key: r.setting_key, value: r.setting_value, reason: NOT_IN_EFFECT[r.setting_key] }))
+    : null;
 
   return {
     environment: config.env,
@@ -314,7 +380,7 @@ export async function updateSetting(key, value, actor) {
   }
 
   const before = await prisma.pea_settings.findUnique({ where: { setting_key: key } });
-  if (before?.setting_value === next) return { key, value: next, changed: false, restart: !!def.restart };
+  if (before?.setting_value === next) return { key, value: next, changed: false, applied: true };
 
   await prisma.pea_settings.upsert({
     where: { setting_key: key },
@@ -338,7 +404,11 @@ export async function updateSetting(key, value, actor) {
     });
   }
 
-  return { key, value: next, changed: true, restart: !!def.restart };
+  // A schedule change is applied to the running process here, so HR never has
+  // to ask anyone to restart a server to make their own change take effect.
+  const applied = RELOADS_JOB[key] ? await reloadJob(RELOADS_JOB[key]) : true;
+
+  return { key, value: next, changed: true, applied };
 }
 
 // ── Email templates ─────────────────────────────────────────────────────────

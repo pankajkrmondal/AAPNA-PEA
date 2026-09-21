@@ -7,11 +7,12 @@ import {
 } from 'antd';
 import {
   SyncOutlined, EyeOutlined, UserAddOutlined, CloseOutlined, CheckOutlined,
-  LogoutOutlined, ClusterOutlined, InfoCircleOutlined,
+  LogoutOutlined, ClusterOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import api, { unwrap } from '../api.js';
 import HintIcon from '../components/HintIcon.jsx';
+import NoticeStrip from '../components/NoticeStrip.jsx';
 import StatusPill from '../components/StatusPill.jsx';
 
 const fmt = (d) => (d ? String(d).slice(0, 10) : '—');
@@ -208,80 +209,61 @@ export default function NewJoiners() {
         </Space>
       </div>
 
-      {/* R-03 — what the nightly alert would say, said here too. Subhajit,
-          15-Sep (16:14): "if any data is not being synced properly from the AD,
-          we should be getting an email alert so that we can take it up
-          manually." The remedy is the sheet upload, so it is linked from here. */}
-      {sync?.rows?.length > 0 && (
-        <Alert
-          type={sync.rows.some((p) => p.severity === 'critical') ? 'error' : 'warning'}
-          showIcon
-          style={{ borderRadius: 'var(--pea-radius)', marginBottom: 12 }}
-          message={
-            sync.rows.length === 1
-              ? 'The Microsoft 365 check found something that needs your attention'
-              : `The Microsoft 365 check found ${sync.rows.length} things that need your attention`
-          }
-          description={
-            <Space direction="vertical" size={6} style={{ width: '100%' }}>
-              <ul style={{ margin: 0, paddingLeft: 18 }}>
-                {sync.rows.map((p) => (
-                  <li key={p.key}>
-                    <strong>{p.title}</strong>
-                    {p.subject && p.subject !== '—' ? ` — ${p.subject}. ` : '. '}
-                    <span style={{ color: 'var(--pea-text-muted)' }}>{p.detail}</span>
-                  </li>
-                ))}
-              </ul>
-              {sync.rows.some((p) => p.fixable) && (
-                <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
-                  Add the missing details by hand below, or{' '}
-                  <Link to="/import">upload the sheet</Link> with them. Everything else
-                  carries on as normal.
-                </Typography.Text>
-              )}
-            </Space>
-          }
-        />
-      )}
+      {/* Three stacked banners became one strip. The wording is unchanged —
+          only the amount of screen it takes before HR reach the table below.
+          Everything that was a problem is still a problem here; what left is
+          the permanent explainer, which is now the ⓘ on "Detected in Entra"
+          because it is true every day and so should not cost a line every day. */}
+      <NoticeStrip
+        items={[
+          data?.setupRequired && {
+            key: 'setup',
+            tone: 'error',
+            summary: 'New joiners isn’t available yet',
+            detail: 'Ask your PEA admin to finish setting it up, then reload this page.',
+          },
 
-      {data?.setupRequired && (
-        <Alert
-          type="error"
-          showIcon
-          style={{ borderRadius: 'var(--pea-radius)' }}
-          message="New joiners isn’t available yet"
-          description="Ask your PEA admin to finish setting it up, then reload this page."
-        />
-      )}
+          // R-03 — what the nightly alert would say, said here too. Subhajit,
+          // 15-Sep (16:14): "if any data is not being synced properly from the
+          // AD, we should be getting an email alert so that we can take it up
+          // manually." The remedy is the sheet upload, so it is linked here.
+          sync?.rows?.length > 0 && {
+            key: 'sync',
+            tone: sync.rows.some((p) => p.severity === 'critical') ? 'error' : 'warning',
+            summary:
+              sync.rows.length === 1
+                ? 'The Microsoft 365 check found something that needs your attention'
+                : `The Microsoft 365 check found ${sync.rows.length} things that need your attention`,
+            detail: (
+              <>
+                <ul>
+                  {sync.rows.map((p) => (
+                    <li key={p.key}>
+                      <strong>{p.title}</strong>
+                      {p.subject && p.subject !== '—' ? ` — ${p.subject}. ` : '. '}
+                      {p.detail}
+                    </li>
+                  ))}
+                </ul>
+                {sync.rows.some((p) => p.fixable) && (
+                  <div style={{ marginTop: 6 }}>
+                    Add the missing details by hand below, or{' '}
+                    <Link to="/import">upload the sheet</Link> with them. Everything
+                    else carries on as normal.
+                  </div>
+                )}
+              </>
+            ),
+          },
 
-      <Alert
-        type="info"
-        showIcon
-        icon={<InfoCircleOutlined />}
-        style={{ borderRadius: 'var(--pea-radius)' }}
-        message="Two things always need a person"
-        description={
-          <>
-            Entra holds no joining date and no fresher/experienced flag — both attributes
-            are unpopulated across all 260 accounts. The suggested date is the date IT
-            created the Microsoft account, which is within a few days about 70% of the
-            time and, for a rejoiner whose old account was reused, has been out by over
-            two years. A wrong date moves every evaluation, so PEA asks rather than
-            assumes.
-          </>
-        }
+          counts.ambiguousPlMappings > 0 && {
+            key: 'ambiguous-pl',
+            tone: 'warning',
+            summary: `${counts.ambiguousPlMappings} reporting manager(s) map to more than one project leader`,
+            detail: 'Their project leader is left blank rather than guessed. Set it once on the employee and the mapping is remembered.',
+          },
+        ]}
       />
-
-      {counts.ambiguousPlMappings > 0 && (
-        <Alert
-          type="warning"
-          showIcon
-          style={{ borderRadius: 'var(--pea-radius)' }}
-          message={`${counts.ambiguousPlMappings} reporting manager(s) map to more than one project leader`}
-          description="Their project leader is left blank rather than guessed. Set it once on the employee and the mapping is remembered."
-        />
-      )}
 
       {/* ── Entra-detected joiners ─────────────────────────────────────── */}
       <Card
@@ -290,7 +272,7 @@ export default function NewJoiners() {
         title={
           <span className="pea-section-title">
             Detected in Entra
-            <HintIcon title="New Microsoft accounts waiting for HR to confirm (count at the top right). Turn a new account into a scheduled employee in two questions instead of typing eight columns." />
+            <HintIcon title="New Microsoft accounts waiting for HR to confirm (count at the top right). Turn a new account into a scheduled employee in two questions instead of typing eight columns. Two things always need a person: Entra holds no joining date and no fresher/experienced flag — both attributes are unpopulated across all 260 accounts. The suggested date is the date IT created the Microsoft account, which is within a few days about 70% of the time and, for a rejoiner whose old account was reused, has been out by over two years. A wrong date moves every evaluation, so PEA asks rather than assumes." />
           </span>
         }
         extra={<span className="pea-count">{counts.joiners ?? 0}</span>}
@@ -428,13 +410,8 @@ export default function NewJoiners() {
         }
         extra={<span className="pea-count pea-count-muted">{counts.leavers ?? 0}</span>}
       >
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 12 }}
-          message="Flagged only when the account is BOTH disabled and unlicensed"
-          description="The original rule was 'no licence means they have left'. Across 91 accounts that flags 68 people — mostly resource accounts, guests and unlicensed staff who are still here. Requiring both signals gives 16. Nothing is changed until you confirm."
-        />
+        {/* The banner that stood here said the same thing as the ⓘ above it,
+            one line lower — so it only cost the table its space. */}
         <Table
           size="small"
           rowKey="id"
