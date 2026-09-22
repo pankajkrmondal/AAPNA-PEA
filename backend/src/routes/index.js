@@ -52,6 +52,11 @@ router.get(
       email: {
         shadowMode,
         redirectInNonProd: config.email.redirectInNonProd,
+        // Whether mail is actually being diverted right now, for either reason.
+        // `redirectInNonProd` alone would read as "sending for real" during a
+        // production rehearsal, which is the one time it matters most.
+        redirectActive: config.email.redirectActive,
+        redirectTo: config.email.redirectActive ? config.email.testRecipients : null,
         sender: config.microsoft.sender || '(not configured)',
       },
       scheduler: {

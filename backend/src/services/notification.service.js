@@ -124,7 +124,9 @@ async function resolveRecipients(type, employee, context = {}) {
  * @returns {{to: string[], cc: string[], redirected: boolean}}
  */
 export function applyRedirect({ to, cc }) {
-  if (!config.email.redirectInNonProd) return { to, cc, redirected: false };
+  // `redirectActive`, not `redirectInNonProd`: production diverts too when
+  // EMAIL_REDIRECT_TO_TEST=true, which is how the first live run is rehearsed.
+  if (!config.email.redirectActive) return { to, cc, redirected: false };
 
   // FAIL CLOSED. config/index.js refuses to boot when the redirect is on and no
   // test inbox is configured, so reaching here with an empty list would mean

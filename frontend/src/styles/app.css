@@ -560,7 +560,7 @@ body {
   color: var(--pea-text-muted);
 }
 
-/* A real proportion, never decoration — see the comment in Dashboard.jsx. */
+/* A real proportion, never decoration — see the `share` comment in StatCard.jsx. */
 .pea-stat-bar {
   margin-top: 12px;
   height: 5px;

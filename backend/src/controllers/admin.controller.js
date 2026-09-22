@@ -205,6 +205,13 @@ export const diagnostics = catchAsync(async (_req, res) => {
     blockers.push(
       `This is not production, so every email goes to the test inbox (${config.email.testRecipients.join(', ')}) instead of the real person.`
     );
+  } else if (config.email.redirectInProd) {
+    // Production diverting is a deliberate rehearsal, but it looks exactly like
+    // normal sending from the screen. Say so, or HR reads "sent" as "delivered".
+    blockers.push(
+      `Test mode is on, so every email goes to the test inbox (${config.email.testRecipients.join(', ')}) instead of the real person. ` +
+        'Ask your PEA admin to turn it off when live sending should begin.'
+    );
   }
   if (!graph.ok) blockers.push(`The Microsoft email connection is failing: ${graph.detail}`);
 
