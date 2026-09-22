@@ -74,7 +74,10 @@ export async function getAccessToken() {
  * @throws {Error} when any address is not an approved test recipient
  */
 export function assertRecipientsAllowed(to = [], cc = []) {
-  if (!config.email.redirectInNonProd) return;
+  // Matches applyRedirect(): whenever mail is being diverted, the transport
+  // refuses anything that is not a test address — including during a
+  // production rehearsal with EMAIL_REDIRECT_TO_TEST=true.
+  if (!config.email.redirectActive) return;
 
   const allowed = new Set(config.email.testRecipients.map((a) => a.trim().toLowerCase()));
   const offending = [...to, ...cc].filter((a) => !allowed.has(String(a || '').trim().toLowerCase()));

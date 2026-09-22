@@ -21,8 +21,9 @@ const ACCENTS = {
  * The 17-Sep screen proposal uses a lighter tile on the Overview: no icon chip,
  * no accent rule, a sentence-case label, and the *figure* carrying the colour
  * rather than the card. It is a variant rather than a second component because
- * the old Dashboard and Analytics still render the full tile, and the two must
- * not drift apart.
+ * Analytics and the Overview KPI strip still render the full tile, and the two
+ * must not drift apart. (The old Dashboard screen also used it; that screen was
+ * deleted on 22 Sep 2026 once staging served Overview.)
  *
  * In compact form `accent` colours the figure only, and only when the tone is
  * not the neutral green — a screen of five coloured numbers says nothing.

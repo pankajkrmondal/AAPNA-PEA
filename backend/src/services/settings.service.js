@@ -334,7 +334,7 @@ export async function listSettings(viewer = {}) {
 
   return {
     environment: config.env,
-    emailRedirect: config.email.redirectInNonProd ? config.email.testRecipients : null,
+    emailRedirect: config.email.redirectActive ? config.email.testRecipients : null,
     groups: [...new Set(REGISTRY.map((r) => r.group))].map((g) => ({
       name: g,
       settings: editable.filter((s) => s.group === g),
