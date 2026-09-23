@@ -519,7 +519,7 @@ export async function reportToIt(id, input, actor) {
 
   const field = String(input.field || '');
   if (!LOCKABLE_FIELDS.includes(field)) {
-    throw new AppError(`Only Entra-sourced fields can be reported: ${LOCKABLE_FIELDS.join(', ')}`, 400);
+    throw new AppError(`Only values that come from Microsoft 365 can be reported: ${LOCKABLE_FIELDS.join(', ')}`, 400);
   }
 
   const correct = String(input.correct_value || '').trim();
@@ -558,7 +558,7 @@ export async function reportToIt(id, input, actor) {
       employee_id: employeeId,
       field_name: '*',
       new_value:
-        `Reported to IT: ${FIELD_LABELS[field]} in Entra is "${azureValue ?? '(blank)'}", ` +
+        `Reported to IT: ${FIELD_LABELS[field]} in Microsoft 365 is "${azureValue ?? '(blank)'}", ` +
         `should be "${correct}" (${result.status}).`,
       changed_by: actor,
       change_source: 'manual',

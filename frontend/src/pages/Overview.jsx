@@ -259,7 +259,7 @@ export default function Overview() {
           <Tooltip title="Download a snapshot in the old master workbook layout. Changes nothing.">
             <Button icon={<DownloadOutlined />} onClick={download}>Export</Button>
           </Tooltip>
-          <Tooltip title="Dry run: shows what would be sent now. Nothing is sent or changed.">
+          <Tooltip title="Shows what would be sent now. Nothing is sent or changed.">
             <Button icon={<EyeOutlined />} onClick={() => sweep.mutate(true)} loading={sweep.isPending}>
               Preview
             </Button>

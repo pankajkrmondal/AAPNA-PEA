@@ -29,6 +29,7 @@ import StatusPill from '../components/StatusPill.jsx';
 import { Avatar, BucketPill, Delta, LoadProblem, RatingChip } from '../components/board/BoardParts.jsx';
 import {
   avg, bucketMeta, decisionTone, formatDate, ratingTone, ratingWord, shortDate, shortDateTime, daysLabel,
+  missingComments,
 } from '../evaluationDisplay.js';
 import { formatDateTime } from '../formatDate.js';
 import { getUser } from '../auth.js';
@@ -142,11 +143,70 @@ function Dots({ value }) {
   );
 }
 
-/** "↓ 1 since E5" / "same as E5" / nothing when there is nothing to compare. */
+/** "↓ 1 since E5" — only where something moved. Unchanged says nothing. */
 function QuestionDelta({ delta, since }) {
-  if (delta === null || delta === undefined || !since) return null;
-  if (delta === 0) return <span className="pea-muted pea-small">same as E{since}</span>;
+  if (!delta || !since) return null;
   return <Delta value={delta} suffix={` since E${since}`} />;
+}
+
+/** Scroll to a question card without touching the URL. */
+function jumpTo(ev, key) {
+  ev.preventDefault();
+  document.getElementById(`q-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/** The rail's "All seven ratings": the shape of the evaluation at a glance. Each row jumps to its question. */
+function RatingsPanel({ scores }) {
+  const count = scores.length === 7 ? 'seven' : scores.length;
+  return (
+    <section className="pea-card pea-card-pad pea-rail-panel pea-no-print">
+      <div className="pea-kicker">All {count} ratings</div>
+      <ul className="pea-rail-list">
+        {scores.map((s) => (
+          <li key={s.key}>
+            <a href={`#q-${s.key}`} onClick={(ev) => jumpTo(ev, s.key)} className="pea-rail-rating">
+              <span className="pea-rail-label" title={s.label}>{s.short}</span>
+              <Dots value={s.rating} />
+              <RatingChip value={s.rating} />
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** The rail's "This probation": E1 … En, the current one marked, each one click away. */
+function ProbationPanel({ e, walk }) {
+  if (!e.probation?.length) return null;
+  return (
+    <section className="pea-card pea-card-pad pea-rail-panel pea-no-print">
+      <div className="pea-kicker">This probation</div>
+      <ol className="pea-rail-list">
+        {e.probation.map((p) => {
+          const body = (
+            <>
+              <span className="pea-rail-seq">E{p.seqNo}{p.isExtension ? ' · ext' : ''}</span>
+              <span className="pea-rail-date">{p.submitted ? shortDate(p.date) : `due ${shortDate(p.date)}`}</span>
+              <span className={`pea-rail-avg pea-ink-${ratingTone(p.avg)}`}>{p.avg == null ? '—' : avg(p.avg)}</span>
+            </>
+          );
+          return (
+            <li key={p.id}>
+              {p.current ? (
+                <span className="pea-rail-step is-current" aria-current="page">{body}</span>
+              ) : (
+                <Link to={`/evaluations/${p.id}${walk ? `?${walk}` : ''}`} className="pea-rail-step">{body}</Link>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+      <Link to={`/employees/${e.employeeId}`} className="pea-link-strong pea-rail-more">
+        The whole journey <RightOutlined />
+      </Link>
+    </section>
+  );
 }
 
 /** "22-Sep-2026 at 15:04" */
@@ -355,15 +415,30 @@ export default function EvaluationProfile() {
   const me = getUser();
   const legacy = !!e.legacy && !e.scores.length;
   const since = e.previousSeqNo;
+  // Beside "Question by question", only what is news: a gap in the comments,
+  // and a change since the evaluation before when something actually moved.
+  const moved = since && e.scores.some((s) => s.delta);
+  const qheadNote = [missingComments(e), moved ? `change since evaluation ${since}` : null].filter(Boolean).join(' · ');
 
   return (
     <div className="pea-profile">
       {/* What Print produces: its own layout (design 18), not the screen squeezed. */}
       <PrintRecord e={e} me={me} />
 
-      {/* ── Back · Previous · position · Next ─────────────────────────── */}
+      {/* ── Back · page actions · Previous · position · Next ──────────── */}
       <div className="pea-profile-nav pea-no-print">
         <Link to={back} className="pea-back"><ArrowLeftOutlined /> Back to evaluations</Link>
+        <div className="pea-page-actions">
+          <Button type="text" icon={<PrinterOutlined />} onClick={() => window.print()}>Print</Button>
+          <Tooltip title="A link to this page for someone on the HR team (sign-in required).">
+            <Button type="text" icon={<CopyOutlined />} onClick={() => copy(`${window.location.origin}/evaluations/${e.id}`, 'Link')}>
+              Copy link
+            </Button>
+          </Tooltip>
+          <Link to={`/employees/${e.employeeId}`}>
+            <Button type="text" icon={<ExportOutlined />}>Employee page</Button>
+          </Link>
+        </div>
         <div className="pea-walk">
           <Button
             icon={<LeftOutlined />}
@@ -422,13 +497,15 @@ export default function EvaluationProfile() {
                 <Ring value={e.avgRating} />
                 <div>
                   <div className={`pea-rating-word pea-ink-${ratingTone(e.avgRating)}`}>{e.band?.label}</div>
-                  {e.delta !== null && since && <Delta value={e.delta} suffix={` vs E${since}`} showZero />}
+                  {since && <Delta value={e.delta} suffix={` vs E${since}`} />}
                 </div>
               </div>
               <Sparkline history={e.history} />
-              <div className="pea-side-foot">
-                <MessageOutlined /> <strong>{e.commentedCount} of {e.questionCount}</strong> questions commented
-              </div>
+              {missingComments(e) && (
+                <div className="pea-side-foot">
+                  <MessageOutlined /> {missingComments(e)}
+                </div>
+              )}
             </section>
           )}
 
@@ -522,17 +599,8 @@ export default function EvaluationProfile() {
             </section>
           )}
 
-          <div className="pea-side-buttons pea-no-print">
-            <Button icon={<PrinterOutlined />} onClick={() => window.print()}>Print</Button>
-            <Tooltip title="A link to this page for someone on the HR team (sign-in required).">
-              <Button icon={<CopyOutlined />} onClick={() => copy(`${window.location.origin}/evaluations/${e.id}`, 'Link')}>
-                Copy link
-              </Button>
-            </Tooltip>
-            <Link to={`/employees/${e.employeeId}`} className="pea-span-2">
-              <Button icon={<ExportOutlined />} block>Employee page</Button>
-            </Link>
-          </div>
+          {submitted && !legacy && e.scores.length > 0 && <RatingsPanel scores={e.scores} />}
+          <ProbationPanel e={e} walk={walk} />
         </aside>
 
         {/* ── Right: what the manager said ────────────────────────────── */}
@@ -571,32 +639,33 @@ export default function EvaluationProfile() {
             <>
               <h2 className="pea-qhead">
                 Question by question
-                <span className="pea-muted">
-                  {submitted
-                    ? `${e.commentedCount} of ${e.questionCount} commented${since ? ` · change since evaluation ${since}` : ''}`
-                    : `the ${e.questions.length === 7 ? 'seven' : e.questions.length} questions the manager is answering`}
-                </span>
+                {submitted ? (
+                  <span className="pea-muted pea-qhead-by">
+                    answered by <Avatar name={e.rmName} size="xs" /> {e.rmName}
+                    {qheadNote && <> · {qheadNote}</>}
+                  </span>
+                ) : (
+                  <span className="pea-muted">
+                    the {e.questions.length === 7 ? 'seven' : e.questions.length} questions the manager is answering
+                  </span>
+                )}
               </h2>
 
               {submitted ? (
                 <ol className="pea-qlist">
                   {e.scores.map((s, i) => (
-                    <li key={s.key} className={`pea-card pea-q${s.rating !== null && s.rating <= 2 ? ' is-low' : ''}`}>
+                    <li key={s.key} id={`q-${s.key}`} className={`pea-card pea-q${s.rating !== null && s.rating <= 2 ? ' is-low' : ''}`}>
                       <div className="pea-q-head">
                         <span className="pea-q-num">{i + 1}</span>
                         <h3>{s.label}</h3>
                         <span className="pea-grow" />
                         <RatingChip value={s.rating} size="md" />
-                        <Dots value={s.rating} />
                         <span className="pea-muted pea-small pea-q-word">{ratingWord(s.rating)}</span>
                         <QuestionDelta delta={s.delta} since={since} />
                       </div>
                       <div className="pea-q-body">
                         {s.comment ? (
-                          <>
-                            <Avatar name={e.rmName} size="xs" />
-                            <p className="pea-q-comment">{s.comment}</p>
-                          </>
+                          <p className="pea-q-comment">{s.comment}</p>
                         ) : (
                           <>
                             <MessageOutlined className="pea-muted" />

@@ -621,8 +621,8 @@ export default function AdminDashboard({ me }) {
                     <Alert
                       type="warning"
                       showIcon
-                      message="Module access is read-only until the database update is applied"
-                      description="Per-user module access isn’t available yet — ask your PEA admin to finish setting it up. Until then every HR user can open every module."
+                      message="Module access cannot be changed yet. Ask IT to finish the PEA setup."
+                      description="Until then every HR user can open every module."
                     />
                   )}
 

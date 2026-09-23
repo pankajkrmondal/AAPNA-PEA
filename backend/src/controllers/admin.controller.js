@@ -34,10 +34,10 @@ export const sweepNow = catchAsync(async (req, res) => {
     res,
     result,
     dryRun
-      ? `Dry run: ${result.evaluations.due} evaluation(s) and ${result.reminders.due} reminder(s) would be sent`
-      : `Sweep complete: ${result.evaluations.sent} evaluation(s), ${result.reminders.sent} reminder(s)` +
+      ? `Test run: ${result.evaluations.due} evaluation(s) and ${result.reminders.due} reminder(s) would be sent. Nothing was sent.`
+      : `Sent ${result.evaluations.sent} evaluation(s) and ${result.reminders.sent} reminder(s)` +
           (result.evaluations.suppressed || result.reminders.suppressed
-            ? ` — ${result.evaluations.suppressed + result.reminders.suppressed} held because "Pause all email" is on; they go out at the first sweep after it is turned off`
+            ? ` — ${result.evaluations.suppressed + result.reminders.suppressed} held because "Pause all email" is on; they go out with the first daily send after it is turned off`
             : '')
   );
 });

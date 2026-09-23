@@ -146,5 +146,17 @@ export function submittedLine(r) {
   return parts.join(' · ');
 }
 
+/**
+ * Comment coverage, only when it is worth saying. A comment is required on
+ * every parameter, so a complete set is normal and silent; a gap means the
+ * record predates the rule.
+ * @returns {string|null} null when every question has a comment
+ */
+export function missingComments(r) {
+  const missing = (r.questionCount || 0) - (r.commentedCount || 0);
+  if (missing <= 0) return null;
+  return `${missing} comment${missing === 1 ? '' : 's'} missing — recorded before comments were required`;
+}
+
 /** Two decimal places, always — 3 reads as "3.00" next to 2.57. */
 export const avg = (v) => (v === null || v === undefined ? '—' : Number(v).toFixed(2));

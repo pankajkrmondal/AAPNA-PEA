@@ -106,7 +106,7 @@ export const REGISTRY = Object.freeze([
   // ── New joiners (Entra) ────────────────────────────────────────────────
   {
     key: 'azure_scan_enabled', group: 'New joiners', type: 'boolean',
-    label: 'Nightly Entra scan',
+    label: 'Nightly Microsoft 365 check',
     help: 'Finds new joiners every night. "Scan now" works regardless.',
   },
   {
@@ -127,7 +127,7 @@ export const REGISTRY = Object.freeze([
   {
     key: 'azure_field_sync_enabled', group: 'New joiners', type: 'boolean', critical: true,
     label: 'Let the scan update names and emails',
-    help: 'Overwrites unlocked names and office emails with Entra’s values. Run a dry-run scan first to see how many would change.',
+    help: 'Overwrites unlocked names and office emails with the Microsoft 365 values. Run a test run on New joiners first to see how many would change.',
   },
   {
     key: 'hold_evaluations_for_leavers', group: 'New joiners', type: 'boolean', critical: true,

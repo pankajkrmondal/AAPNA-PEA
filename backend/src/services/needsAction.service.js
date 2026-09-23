@@ -32,6 +32,7 @@
  */
 import prisma from '../config/database.js';
 import config from '../config/index.js';
+import { LOW_RATING_AT_OR_BELOW } from '../config/ratingScale.js';
 import { todayIn, daysBetween, dateIn, formatDisplay } from '../utils/dateUtils.js';
 import { findDeadlineBreaches } from './confirmationDeadline.service.js';
 import { getUnreadFeedback } from './evaluationBoard.service.js';
@@ -60,8 +61,8 @@ function feedbackDetail(r) {
   const parts = [`${r.avgRating?.toFixed(2) ?? '—'} / 5`];
   if (r.decision?.startsWith('Extend')) parts.push(r.decision);
   if (!r.decision) {
-    const low = r.scores.filter((s) => s.rating !== null && s.rating <= 2).length;
-    if (low) parts.push(`${low === r.scores.length ? `all ${low}` : low} question${low === 1 ? '' : 's'} rated 2 or lower`);
+    const low = r.scores.filter((s) => s.rating !== null && s.rating <= LOW_RATING_AT_OR_BELOW).length;
+    if (low) parts.push(`${low === r.scores.length ? `all ${low}` : low} question${low === 1 ? '' : 's'} rated ${LOW_RATING_AT_OR_BELOW} or lower`);
   }
   const text = r.remarks || r.reason;
   if (text) parts.push(`“${text.length > 110 ? `${text.slice(0, 110).trimEnd()}…` : text}”`);

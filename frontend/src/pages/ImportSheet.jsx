@@ -12,7 +12,7 @@ import HintIcon from '../components/HintIcon.jsx';
 
 /**
  * Load the master sheet without a developer. Plan R5: the migration is
- * reviewed, not silent — so the order is always preview → dry run → import,
+ * reviewed, not silent — so the order is always preview → test run → import,
  * and the rejected rows are the part HR must actually read.
  */
 /**
@@ -72,7 +72,7 @@ export default function ImportSheet({ embedded = false } = {}) {
             <h2>Upload sheet</h2>
             <p>
               For go-live, and for anyone the Microsoft 365 check missed ·
-              preview, dry run, then import — nothing is written until the last step
+              preview the file, test run, then import — nothing is written until the last step
             </p>
           </div>
         </div>
@@ -104,8 +104,8 @@ export default function ImportSheet({ embedded = false } = {}) {
           style={{ marginBottom: 18 }}
           items={[
             { title: 'Choose file' },
-            { title: 'Preview' },
-            { title: 'Dry run' },
+            { title: 'Preview the file' },
+            { title: 'Test run' },
             { title: 'Import' },
           ]}
         />
@@ -146,7 +146,7 @@ export default function ImportSheet({ embedded = false } = {}) {
               loading={runImport.isPending && runImport.variables === true}
               onClick={() => runImport.mutate(true)}
             >
-              Dry run
+              Test run
             </Button>
           </Tooltip>
           {isAdmin ? (
@@ -156,7 +156,7 @@ export default function ImportSheet({ embedded = false } = {}) {
               onConfirm={() => runImport.mutate(false)}
               disabled={!file || !result?.dryRun}
             >
-              <Tooltip title="Admins only, enabled after a Dry run. Asks to confirm, then creates the employees and generates their evaluation schedules. Office emails already in PEA are skipped, not overwritten. Writes data.">
+              <Tooltip title="Admins only, enabled after a Test run. Asks to confirm, then creates the employees and generates their evaluation schedules. Office emails already in PEA are skipped, not overwritten. Writes data.">
                 <Button
                   type="primary"
                   icon={<CloudUploadOutlined />}
@@ -170,7 +170,7 @@ export default function ImportSheet({ embedded = false } = {}) {
           ) : (
             <Typography.Text type="secondary">
               Only an admin can run the final import.
-              <HintIcon title="Import creates the employees and generates their evaluation schedules, so only Admins and Super Admins can run it. You can still Preview and Dry run." />
+              <HintIcon title="Import creates the employees and generates their evaluation schedules, so only Admins and Super Admins can run it. You can still Preview and Test run." />
             </Typography.Text>
           )}
         </Space>
@@ -301,13 +301,13 @@ export default function ImportSheet({ embedded = false } = {}) {
         <Card
           className="pea-card"
           size="small"
-          title={<span className="pea-section-title">{result.dryRun ? 'Dry run result' : 'Import result'}</span>}
+          title={<span className="pea-section-title">{result.dryRun ? 'Test run result' : 'Import result'}</span>}
         >
           <Row gutter={[16, 16]}>
             <Col xs={12} md={6}>
               <Statistic title={result.dryRun ? 'Would import' : 'Imported'} value={result.dryRun ? result.createdRows.length : result.imported} />
             </Col>
-            <Col xs={12} md={6}><Statistic title="Already present (skipped)" value={result.skippedExisting} /></Col>
+            <Col xs={12} md={6}><Statistic title="Already in PEA" value={result.skippedExisting} /></Col>
             <Col xs={12} md={6}><Statistic title="Failed" value={result.failed} valueStyle={{ color: result.failed ? 'var(--pea-red)' : undefined }} /></Col>
             <Col xs={12} md={6}><Statistic title="Rejected" value={result.rejected} /></Col>
           </Row>

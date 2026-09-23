@@ -9,7 +9,7 @@
  * says must never be a blank panel.
  */
 import { Link } from 'react-router-dom';
-import { Button, Popconfirm, Tooltip } from 'antd';
+import { Button, Popconfirm } from 'antd';
 import {
   ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CalendarOutlined, CheckOutlined,
   ClockCircleOutlined, CloudUploadOutlined, ExclamationCircleOutlined, EyeOutlined, FlagOutlined,
@@ -18,7 +18,7 @@ import {
 import StatusPill from '../StatusPill.jsx';
 import {
   avatarTone, initials, ratingTone, decisionTone, bucketMeta, evaluationLine, submittedLine,
-  shortDate, daysLabel, avg,
+  shortDate, daysLabel, avg, missingComments,
 } from '../../evaluationDisplay.js';
 
 /** A round initials badge in the person's stable colour. */
@@ -39,12 +39,12 @@ export function RatingChip({ value, size = 'sm' }) {
   );
 }
 
-/** "↓ 0.14" / "↑ 0.28" / "no change" — the change since the evaluation before. */
-export function Delta({ value, suffix = '', showZero = false }) {
-  if (value === null || value === undefined) return null;
-  if (value === 0) {
-    return showZero ? <span className="pea-delta pea-delta--flat">no change{suffix}</span> : null;
-  }
+/**
+ * "↓ 0.14" / "↑ 0.28" — the change since the evaluation before. Nothing when
+ * nothing moved: an unchanged number is already visible beside its neighbour.
+ */
+export function Delta({ value, suffix = '' }) {
+  if (!value) return null;
   const up = value > 0;
   return (
     <span className={`pea-delta pea-delta--${up ? 'up' : 'down'}`}>
@@ -115,7 +115,7 @@ export function QuoteBlock({ text, author, clamp = true, meta = 'overall comment
   );
 }
 
-/** One question: short label, rating, the manager's comment. Low ratings wash red. */
+/** One question: short label, rating, the manager's comment. A low rating gets a red rule. */
 export function ScoreRows({ scores }) {
   return (
     <div className="pea-scores" role="table" aria-label="Question ratings and comments">
@@ -166,6 +166,8 @@ function LegacyBody({ r }) {
 export function EvaluationCard({ r, to }) {
   const accent = attentionAccent(r);
   const legacy = !!r.legacy && !r.scores.length;
+  // A complete set of comments is normal and says nothing; only a gap is news.
+  const footNote = legacy ? 'no per-question comments on imported records' : missingComments(r);
 
   return (
     <article className={`pea-ev-card${accent ? ` pea-ev-card--${accent}` : ''}`}>
@@ -189,12 +191,14 @@ export function EvaluationCard({ r, to }) {
           <Delta value={r.delta} />
           <span className="pea-grow" />
           {r.decision && <StatusPill tone={decisionTone(r.decision)} nodot>{r.decision}</StatusPill>}
-          {r.attention && (
-            <Tooltip title={`Needs attention: ${r.attentionReasons.join(' · ')}`}>
-              <span className={`pea-flag pea-flag--${accent}`} aria-label="Needs attention"><FlagOutlined /></span>
-            </Tooltip>
-          )}
         </div>
+      )}
+
+      {!legacy && r.attention && (
+        <p className={`pea-ev-alert pea-ev-alert--${accent}`}>
+          <span className="pea-ev-alert-head"><FlagOutlined /> <strong>Needs attention</strong></span>
+          <span className="pea-ev-alert-why">{r.attentionReasons.join(' · ')}</span>
+        </p>
       )}
 
       {legacy ? (
@@ -214,12 +218,11 @@ export function EvaluationCard({ r, to }) {
       )}
 
       <footer className="pea-ev-foot">
-        <span className="pea-muted">
-          <MessageOutlined />{' '}
-          {legacy
-            ? 'no per-question comments on imported records'
-            : `${r.commentedCount} of ${r.questionCount} questions commented`}
-        </span>
+        {footNote ? (
+          <span className="pea-muted">
+            <MessageOutlined /> {footNote}
+          </span>
+        ) : <span />}
         <Link to={to} className="pea-link-strong">
           Open evaluation <ArrowRightOutlined />
         </Link>

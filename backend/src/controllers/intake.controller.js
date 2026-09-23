@@ -51,7 +51,7 @@ export const scan = catchAsync(async (req, res) => {
     res,
     report,
     dryRun
-      ? `Dry run — ${report.candidatesNew} new joiner(s) would be added to the inbox, nothing was saved`
+      ? `Test run — ${report.candidatesNew} new joiner(s) would be added to the inbox, nothing was saved`
       : `Scan complete — ${report.candidatesNew} new joiner(s), ${report.leaversFlagged} leaver flag(s) raised`
   );
 });
@@ -82,7 +82,7 @@ export const confirmLeaver = catchAsync(async (req, res) => {
 /** POST /api/intake/leavers/:employeeId/dismiss */
 export const dismissLeaver = catchAsync(async (req, res) => {
   const row = await intake.dismissLeaver(req.params.employeeId, req.user.username);
-  return success(res, row, 'Flag cleared — they will be flagged again only if Entra changes');
+  return success(res, row, 'Flag cleared — they will be flagged again only if their Microsoft 365 account changes');
 });
 
 /** GET /api/intake/rm-pl-map */
@@ -100,7 +100,7 @@ export const seedRmPlMap = catchAsync(async (req, res) => {
   return success(
     res,
     result,
-    `${result.total} manager(s) mapped — ${result.created} added, ${result.updated} refreshed, ` +
-      `${result.ambiguous} need HR to choose between two project leaders`
+    `Project-leader suggestions refreshed for ${result.total} reporting manager(s) — ${result.created} new, ` +
+      `${result.updated} updated, ${result.ambiguous} need HR to choose between project leaders`
   );
 });

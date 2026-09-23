@@ -20,7 +20,7 @@
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
-import { isValidRating, COMMENT_REQUIRED_AT_OR_BELOW, REASON_MAX } from '../config/ratingScale.js';
+import { isValidRating, REASON_MAX } from '../config/ratingScale.js';
 import { generateExtensionCycles } from './cycleGenerator.service.js';
 import { queueEmail } from './notification.service.js';
 import { notifyStaff } from './inAppNotification.service.js';
@@ -208,6 +208,62 @@ export async function getFormData(token) {
 }
 
 /**
+ * The score rows a submission would store, and what is wrong with them: a
+ * missing rating, or a missing comment. A comment is required on every
+ * question, whatever the rating. This is the gate — the form's `required` is a
+ * courtesy, and a JSON client must hit the same wall.
+ *
+ * @param {{param_key: string, param_label: string, sort_order: number}[]} params
+ * @param {object} [ratings] - {param_key: {rating, comments}}
+ * @returns {{rows: object[], problems: {field: string, text: string, label?: string}[]}}
+ * @throws {AppError} 400 for a rating outside 1-5
+ */
+export function scoreProblems(params, ratings = {}) {
+  const rows = [];
+  const missing = [];
+
+  for (const param of params) {
+    const entry = ratings[param.param_key] || {};
+    const raw = entry.rating;
+
+    if (raw === undefined || raw === null || raw === '') {
+      missing.push(param.param_label);
+      continue;
+    }
+    if (!isValidRating(raw)) {
+      throw new AppError(`"${param.param_label}" must be a rating between 1 and 5.`, 400);
+    }
+
+    rows.push({
+      param_key: param.param_key,
+      // Snapshot the label so renaming a question later never rewrites what
+      // this manager was actually shown.
+      param_label: param.param_label,
+      rating: Number(raw),
+      comments: String(entry.comments || '').trim() || null,
+      sort_order: param.sort_order,
+    });
+  }
+
+  const problems = missing.map((label) => ({
+    field: 'rating',
+    text: `Please give a rating for ${label}.`,
+  }));
+
+  for (const r of rows) {
+    if (!r.comments) {
+      problems.push({
+        field: `comments_${r.param_key}`,
+        label: r.param_label,
+        text: `${r.param_label} — add a comment explaining the rating.`,
+      });
+    }
+  }
+
+  return { rows, problems };
+}
+
+/**
  * Record a submitted evaluation.
  *
  * Everything happens in one transaction: the scores, the average, the cycle
@@ -236,47 +292,7 @@ export async function submit(token, body, ip) {
     orderBy: { sort_order: 'asc' },
   });
 
-  const ratings = body.ratings || {};
-  const rows = [];
-  const missing = [];
-
-  for (const param of params) {
-    const entry = ratings[param.param_key] || {};
-    const raw = entry.rating;
-
-    if (raw === undefined || raw === null || raw === '') {
-      missing.push(param.param_label);
-      continue;
-    }
-    if (!isValidRating(raw)) {
-      throw new AppError(`"${param.param_label}" must be a rating between 1 and 5.`, 400);
-    }
-
-    rows.push({
-      param_key: param.param_key,
-      // Snapshot the label so renaming a question later never rewrites what
-      // this manager was actually shown.
-      param_label: param.param_label,
-      rating: Number(raw),
-      comments: (entry.comments || '').trim() || null,
-      sort_order: param.sort_order,
-    });
-  }
-
-  const problems = missing.map((label) => ({
-    field: 'rating',
-    text: `Please give a rating for ${label}.`,
-  }));
-
-  for (const r of rows) {
-    if (r.rating <= COMMENT_REQUIRED_AT_OR_BELOW && !r.comments) {
-      problems.push({
-        field: `comments_${r.param_key}`,
-        label: r.param_label,
-        text: `${r.param_label} is rated ${r.rating} — add a comment explaining the rating.`,
-      });
-    }
-  }
+  const { rows, problems } = scoreProblems(params, body.ratings);
 
   const askConfirmation = await isFinalCycle(cycle);
   let confirmation = (body.confirmation_status || '').trim() || null;
