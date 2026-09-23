@@ -164,8 +164,8 @@ const STYLES = `
   .err ul { margin: 4px 0 0; padding-left: 20px; }
   .err a { color: #991b1b; }
 
-  /* The rule box: dashed brand green, the same frame the design uses for
-     "a comment is required for any rating of 2 or lower". */
+  /* The rule box: dashed brand green, the same frame every required comment
+     wears — the seven question comments and the decision reason. */
   .rule {
     border: 1.5px dashed #74a534; border-radius: 10px; background: #f7faf1;
     padding: 8px 12px; font-size: 13.5px; color: #47691f; margin: 0 0 10px;
@@ -306,6 +306,13 @@ ${bodyHtml}
 </html>`;
 }
 
+const COUNT_WORDS = ['none', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
+
+/** "seven" for 7 — the rule box reads as a sentence, not a count. */
+function countWord(n) {
+  return COUNT_WORDS[n] || String(n);
+}
+
 /** Where on the page each kind of problem lives. */
 function anchorFor(field) {
   if (field === 'confirmation_status') return '#decision';
@@ -371,22 +378,21 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
       </label>`
       ).join('');
 
-      // The comment becomes required as soon as a rating of 2 or lower is
-      // picked. Rendered in that state from the server too, so a re-shown form
-      // (or one with JavaScript blocked) says the same thing the script would.
-      const need = current.rating !== undefined && current.rating !== '' && Number(current.rating) <= COMMENT_REQUIRED_AT_OR_BELOW;
+      // A comment is required on every question, whatever the rating, so every
+      // box wears the required frame. `required` stops an empty one before the
+      // round trip; the server is the gate either way.
       const missing = problemFor(`comments_${p.param_key}`);
 
       return `
     <div class="q">
       <h3><span class="num">${i + 1}.</span>${esc(p.param_label)} <span class="req">*</span></h3>
-      <div class="opts" data-q="${esc(p.param_key)}">${opts}</div>
-      <div class="cmt${need ? ' need' : ''}" id="box_${esc(p.param_key)}">
+      <div class="opts">${opts}</div>
+      <div class="cmt need">
         <label class="fld" for="c_${esc(p.param_key)}">
-          Comment<span class="opt">s (optional)</span><span class="req must-star">${need ? ' *' : ''}</span>
-          <span class="must">required for a rating of ${COMMENT_REQUIRED_AT_OR_BELOW} or lower</span>
+          Comment <span class="req">*</span>
+          <span class="must">required — one line is enough</span>
         </label>
-        <textarea id="c_${esc(p.param_key)}" name="comments_${esc(p.param_key)}"${missing ? ' class="invalid"' : ''}
+        <textarea id="c_${esc(p.param_key)}" name="comments_${esc(p.param_key)}" required${missing ? ' class="invalid"' : ''}
                   placeholder="Why this rating? Specific examples help ${first} improve."
         >${esc(current.comments || '')}</textarea>
         ${missing ? `<p class="field-err">⚠ Please explain this rating — HR and ${first} both need to understand it.</p>` : ''}
@@ -474,8 +480,8 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:18px">Your assessment</h2>
       <p class="rule">
-        Rate every parameter. A comment is <strong>required for any rating of ${COMMENT_REQUIRED_AT_OR_BELOW} or lower</strong>
-        and helps ${first} improve either way.
+        Rate every parameter and say why. A comment is <strong>required on all ${countWord(params.length)}</strong>,
+        whatever the rating — one line is enough. ${first} sees these, and so does HR.
       </p>
       ${questions}
     </div>
@@ -501,24 +507,6 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
   // without this, and the token is single-use regardless. It just stops a
   // double submit looking like a failure on a slow connection.
   var form = document.getElementById('evalForm');
-  var LIMIT = ${COMMENT_REQUIRED_AT_OR_BELOW};
-
-  // A rating of 2 or lower makes that question's comment required, on the
-  // spot — the manager learns the rule before submitting, not after.
-  Array.prototype.forEach.call(document.querySelectorAll('.opts[data-q]'), function (group) {
-    var key = group.getAttribute('data-q');
-    var box = document.getElementById('box_' + key);
-    var area = document.getElementById('c_' + key);
-    var star = box.querySelector('.must-star');
-    group.addEventListener('change', function (ev) {
-      var need = Number(ev.target.value) <= LIMIT;
-      box.classList.toggle('need', need);
-      star.textContent = need ? ' *' : '';
-      area.required = need;
-    });
-    var checked = group.querySelector('input:checked');
-    if (checked) area.required = Number(checked.value) <= LIMIT;
-  });
 
   // The reason box appears for any decision that is not a plain confirmation.
   var decision = document.getElementById('confirmation_status');
@@ -780,6 +768,5 @@ export function renderError(message, status = 400) {
 import {
   RATING_SCALE as RATING_ROWS,
   CONFIRMATION_OPTIONS as CONFIRMATION_ROWS,
-  COMMENT_REQUIRED_AT_OR_BELOW,
   REASON_MAX,
 } from '../config/ratingScale.js';

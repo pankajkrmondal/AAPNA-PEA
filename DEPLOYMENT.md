@@ -298,8 +298,8 @@ from that day PEA is the only system** — no parallel run.
 | 2 | Day before | Admin | Deploy production: `NODE_ENV=production`, **`PEA_SCHEDULER_ENABLED=false`**. In Settings fill `cc_emails`, `hr_notification_emails`, `it_report_emails`; self-view `averages`; "Pause all email" **off**. |
 | 3 | Go-live, before 11:00 | Power Automate owner | Turn **OFF all five** flows: `Sending Evaluation Form Link Flow V2`, `Sending Evaluation Reminders`, `Adhoc Flow`, `Submitted Response flow – Fresher`, `– Experience`. **Disable, do not delete.** In MS Forms, turn off **Accept responses** on both forms. |
 | 4 | | HR | Download the master sheet (only after step 3). Keep it as a read-only archive from now on. |
-| 5 | | Admin | **Import sheet** → Preview → check both lists → Dry run → Import. |
-| 6 | | Admin | **Rebuild RM→PL map**, then set `ragupta@` → `aroy@` by hand. |
+| 5 | | Admin | **Import sheet** → Preview → check both lists → Test run → Import. |
+| 6 | | Admin | **Refresh project-leader suggestions** (New joiners), then set `ragupta@` → `aroy@` by hand. |
 | 7 | | Admin | `GET /api/admin/diagnostics` — no blockers except the scheduler. `POST /api/admin/sweep?dryRun=true` — read the list of who gets an email at 11:00. |
 | 8 | | Admin | Set `PEA_SCHEDULER_ENABLED=true`, `pm2 restart pea-prod-backend`. |
 | 9 | After 11:00 | Admin + HR | Check the email log: sent, not failed. Ask one or two managers to confirm they received it. |

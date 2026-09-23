@@ -186,17 +186,17 @@ export default function NewJoiners() {
         <Space wrap>
           {/* Always available, not only once an ambiguity exists — the map is
               empty on first use, which is exactly when it needs seeding. */}
-          <Tooltip title="Rebuilds the RM → PL lookup from the current employee list. A manager who has always had the same PL gets that PL prefilled for new joiners; a manager with more than one PL is marked ambiguous and shows 'needs HR' instead. Entries set by hand are kept. Employees are not changed; no email is sent.">
+          <Tooltip title="Looks at the current employees to suggest each new joiner's project leader. A reporting manager who has always had the same project leader gets that project leader suggested; one who has more than one shows 'needs HR' instead. Project leaders you set by hand are kept. Employees are not changed; no email is sent.">
             <Button icon={<ClusterOutlined />} onClick={() => seedMap.mutate()} loading={seedMap.isPending}>
-              Rebuild RM→PL map
+              Refresh project-leader suggestions
             </Button>
           </Tooltip>
-          <Tooltip title="Runs the Entra scan as a test and reports what a real scan would find: new joiners, refreshed suggestions, possible leavers, and names/emails to sync. Only a log entry is written; no email is sent.">
+          <Tooltip title="Checks Microsoft 365 and shows what a real scan would find: new joiners, refreshed suggestions, possible leavers, and names or emails that changed. Nothing is changed and no email is sent.">
             <Button icon={<EyeOutlined />} onClick={() => scan.mutate(true)} loading={scan.isPending}>
-              Dry run
+              Test run
             </Button>
           </Tooltip>
-          <Tooltip title="Runs the real Entra scan now (the nightly scan does the same if switched on in Settings → New joiners). Fills the inbox and records account status on employees. No email is sent; a bell notification is raised if something new is found.">
+          <Tooltip title="Checks Microsoft 365 now (the nightly check does the same if switched on in Settings → New joiners). Fills the inbox and records account status on employees. No email is sent; a bell notification is raised if something new is found.">
             <Button icon={<SyncOutlined />} onClick={() => scan.mutate(false)} loading={scan.isPending}>
               Scan now
             </Button>
@@ -212,7 +212,7 @@ export default function NewJoiners() {
       {/* Three stacked banners became one strip. The wording is unchanged —
           only the amount of screen it takes before HR reach the table below.
           Everything that was a problem is still a problem here; what left is
-          the permanent explainer, which is now the ⓘ on "Detected in Entra"
+          the permanent explainer, which is now the ⓘ on "Found in Microsoft 365"
           because it is true every day and so should not cost a line every day. */}
       <NoticeStrip
         items={[
@@ -259,8 +259,8 @@ export default function NewJoiners() {
           counts.ambiguousPlMappings > 0 && {
             key: 'ambiguous-pl',
             tone: 'warning',
-            summary: `${counts.ambiguousPlMappings} reporting manager(s) map to more than one project leader`,
-            detail: 'Their project leader is left blank rather than guessed. Set it once on the employee and the mapping is remembered.',
+            summary: `${counts.ambiguousPlMappings} reporting manager(s) have more than one project leader`,
+            detail: 'Their project leader is left blank rather than guessed. Set it once on the employee and PEA remembers it.',
           },
         ]}
       />
@@ -271,8 +271,8 @@ export default function NewJoiners() {
         size="small"
         title={
           <span className="pea-section-title">
-            Detected in Entra
-            <HintIcon title="New Microsoft accounts waiting for HR to confirm (count at the top right). Turn a new account into a scheduled employee in two questions instead of typing eight columns. Two things always need a person: Entra holds no joining date and no fresher/experienced flag — both attributes are unpopulated across all 260 accounts. The suggested date is the date IT created the Microsoft account, which is within a few days about 70% of the time and, for a rejoiner whose old account was reused, has been out by over two years. A wrong date moves every evaluation, so PEA asks rather than assumes." />
+            Found in Microsoft 365
+            <HintIcon title="New Microsoft accounts waiting for HR to confirm (count at the top right). Turn a new account into a scheduled employee in two questions instead of typing eight columns. Two things always need a person: Microsoft 365 holds no joining date and no fresher/experienced flag — both attributes are unpopulated across all 260 accounts. The suggested date is the date IT created the Microsoft account, which is within a few days about 70% of the time and, for a rejoiner whose old account was reused, has been out by over two years. A wrong date moves every evaluation, so PEA asks rather than assumes." />
           </span>
         }
         extra={<span className="pea-count">{counts.joiners ?? 0}</span>}
@@ -287,7 +287,7 @@ export default function NewJoiners() {
             emptyText: (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description="No new accounts waiting. Run a scan to check Entra."
+                description="No new accounts waiting. Run a scan to check Microsoft 365."
               />
             ),
           }}
@@ -325,7 +325,7 @@ export default function NewJoiners() {
                 <Suggested
                   value={r.suggested_rm_email}
                   source={r.rm_source}
-                  hint="From the Entra manager attribute. Set on 73% of new accounts and correct 88% of the time when set."
+                  hint="The manager recorded in Microsoft 365. Set on 73% of new accounts and correct 88% of the time when set."
                 />
               ),
             },
@@ -335,7 +335,7 @@ export default function NewJoiners() {
                 r.suggested_pl_email ? (
                   <Suggested value={r.suggested_pl_email} source={r.pl_source} hint="Derived from the reporting manager." />
                 ) : (
-                  <Tooltip title="Either the manager is unknown, or they map to more than one project leader.">
+                  <Tooltip title="Either the manager is unknown, or they have more than one project leader.">
                     <StatusPill tone="crit">Missing</StatusPill>
                   </Tooltip>
                 ),
@@ -384,7 +384,7 @@ export default function NewJoiners() {
                   </Tooltip>
                   <Popconfirm
                     title="Remove from the inbox?"
-                    description="They will not reappear unless Entra changes."
+                    description="They will not reappear unless their Microsoft 365 account changes."
                     onConfirm={() => dismiss.mutate(r.id)}
                   >
                     <Tooltip title="Dismiss: remove this account from the inbox (after confirming). Use it for accounts that are not new joiners — shared mailboxes, test accounts and so on. A dismissed account does not come back on later scans.">
@@ -431,7 +431,7 @@ export default function NewJoiners() {
             },
             { title: 'DOJ', dataIndex: 'doj', width: 110, render: fmt },
             {
-              title: 'Entra says',
+              title: 'Microsoft 365 says',
               width: 200,
               render: (_, r) => (
                 <Space size={4} wrap>

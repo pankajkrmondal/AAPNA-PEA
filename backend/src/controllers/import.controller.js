@@ -45,7 +45,7 @@ export const preview = catchAsync(async (req, res) => {
  */
 export const importExcel = catchAsync(async (req, res) => {
   const dryRun = req.query.dryRun === 'true';
-  // A dry run writes nothing, so HR may run it; only the real import is admin-only.
+  // A test run writes nothing, so HR may run it; only the real import is admin-only.
   if (!dryRun && !isAdminTier(req.user.role)) {
     throw new AppError('You do not have permission to do that', 403);
   }
@@ -58,7 +58,7 @@ export const importExcel = catchAsync(async (req, res) => {
     res,
     result,
     dryRun
-      ? `Dry run: ${result.createdRows.length} row(s) would import; ${result.rejected} rejected, ${result.skippedExisting} already present`
-      : `Imported ${result.imported} employee(s); ${result.rejected} rejected, ${result.skippedExisting} already present`
+      ? `Test run: ${result.createdRows.length} row(s) would import; ${result.rejected} rejected, ${result.skippedExisting} already in PEA. Nothing was saved.`
+      : `Imported ${result.imported} employee(s); ${result.rejected} rejected, ${result.skippedExisting} already in PEA`
   );
 });

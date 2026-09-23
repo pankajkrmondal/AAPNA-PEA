@@ -246,7 +246,7 @@ export function CommentMatrix({ employee }) {
                   <td key={c.id} className={c === latest ? 'is-latest' : ''}>
                     <span className={`pea-matrix-avg pea-ink-${ratingTone(c.avg_rating)}`}>{avg(c.avg_rating)}</span>
                     <small className="pea-muted"> / 5</small>{' '}
-                    <Delta value={delta} showZero />
+                    <Delta value={delta} />
                   </td>
                 );
               })}

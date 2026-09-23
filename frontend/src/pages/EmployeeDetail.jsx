@@ -40,26 +40,26 @@ function AzureProvenance({ field, info, onUnlock, onReport, unlocking }) {
     <Space size={4} wrap style={{ marginTop: 4 }}>
       {info.locked ? (
         <>
-          <Tooltip title="HR corrected this value. The Azure sync will not overwrite it.">
+          <Tooltip title="HR corrected this value. Microsoft 365 will not overwrite it.">
             <Tag icon={<LockOutlined />} color="purple">manually overridden</Tag>
           </Tooltip>
           <Popconfirm
-            title="Unlock and follow Entra again?"
-            description={info.azureValue ? `The value becomes "${info.azureValue}".` : 'Entra holds no value yet.'}
+            title="Unlock and follow Microsoft 365 again?"
+            description={info.azureValue ? `The value becomes "${info.azureValue}".` : 'Microsoft 365 holds no value yet.'}
             onConfirm={() => onUnlock(field)}
           >
             <Button size="small" type="link" icon={<UnlockOutlined />} loading={unlocking}>
-              Unlock / resync
+              Unlock
             </Button>
           </Popconfirm>
         </>
       ) : (
-        <Tag color="blue">from Azure</Tag>
+        <Tag color="blue">from Microsoft 365</Tag>
       )}
       {info.differs && (
         <>
-          <Tooltip title={`Entra currently holds: ${info.azureValue}`}>
-            <Tag icon={<WarningOutlined />} color="red">differs from Azure</Tag>
+          <Tooltip title={`Microsoft 365 currently holds: ${info.azureValue}`}>
+            <Tag icon={<WarningOutlined />} color="red">differs from Microsoft 365</Tag>
           </Tooltip>
           <Button size="small" type="link" icon={<MailOutlined />} onClick={() => onReport(field)}>
             Report to IT
@@ -698,7 +698,7 @@ export default function EmployeeDetail() {
 
       {/* ── Keep my value / Just this once — plan §6.5 ─────────────────── */}
       <Modal
-        title="This value comes from Azure"
+        title="This value comes from Microsoft 365"
         open={!!lockPrompt}
         onCancel={() => setLockPrompt(null)}
         footer={[
@@ -724,14 +724,14 @@ export default function EmployeeDetail() {
         <Typography.Paragraph>
           You changed{' '}
           <strong>{(lockPrompt?.fields || []).map((f) => azure.fields[f]?.label || f).join(' and ')}</strong>, which
-          Microsoft Entra supplies.
+          comes from Microsoft 365.
         </Typography.Paragraph>
         <ul style={{ paddingLeft: 18 }}>
-          <li><strong>Keep my value</strong> — the Azure sync will never overwrite it. You can unlock it later.</li>
-          <li><strong>Just this once</strong> — saved now, but a future sync may put Entra's value back.</li>
+          <li><strong>Keep my value</strong> — Microsoft 365 will never overwrite it. You can unlock it later.</li>
+          <li><strong>Just this once</strong> — saved now, but PEA may later put the Microsoft 365 value back.</li>
         </ul>
         <Typography.Text type="secondary">
-          If Entra itself is wrong, use <em>Report to IT</em> afterwards so it is fixed at source too.
+          If Microsoft 365 itself is wrong, use <em>Report to IT</em> afterwards so it is fixed at source too.
         </Typography.Text>
       </Modal>
 
@@ -812,7 +812,7 @@ export default function EmployeeDetail() {
           <Form.Item label="Field">
             <Input value={azure.fields[reportField]?.label} disabled />
           </Form.Item>
-          <Form.Item label="Entra currently holds">
+          <Form.Item label="Microsoft 365 currently holds">
             <Input value={azure.fields[reportField]?.azureValue || '(blank)'} disabled />
           </Form.Item>
           <Form.Item name="correct_value" label="Correct value" rules={[{ required: true }]}>

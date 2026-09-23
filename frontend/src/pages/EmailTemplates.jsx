@@ -34,7 +34,7 @@ const fetchTemplates = () => api.get('/settings/templates').then(unwrap);
 /** Why a body cannot be saved, or null. Mirrors validate() in emailTemplate.service.js. */
 const bodyProblem = (html) => {
   if (/<script[\s>]|\son\w+\s*=|javascript:/i.test(html || '')) {
-    return 'Scripts, event handlers and javascript: links are not allowed in an email.';
+    return 'For safety, an email cannot contain scripts or active links.';
   }
   if (/<!DOCTYPE|<html[\s>]|<body[\s>]/i.test(html || '')) {
     return 'Enter only the message body — the AAPNA header, logo and footer are added automatically.';

@@ -24,7 +24,7 @@ import prisma from '../config/database.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
 import { formatDisplay } from '../utils/dateUtils.js';
-import { RATING_SCALE, COMMENT_REQUIRED_AT_OR_BELOW } from '../config/ratingScale.js';
+import { RATING_SCALE, LOW_RATING_AT_OR_BELOW } from '../config/ratingScale.js';
 import { wrapBrandedEmail, brandedWrapperParts, BRAND } from './emailLayout.service.js';
 
 /** Escape a value for HTML. */
@@ -76,7 +76,7 @@ export const PLACEHOLDERS = Object.freeze({
   extension_summary: { label: 'Sentence saying how many extra evaluations were scheduled' },
   account_email: { label: 'Microsoft account email' },
   field_label: { label: 'Which field is wrong' },
-  entra_value: { label: 'Value Microsoft Entra holds now' },
+  entra_value: { label: 'Value Microsoft 365 holds now' },
   correct_value: { label: 'Correct value' },
   reported_by: { label: 'Who reported it' },
   note: { label: 'Note for IT' },
@@ -273,7 +273,7 @@ const TEMPLATES = Object.freeze({
     name: 'Report to IT',
     category: 'it',
     recipient: '"Report to IT" recipients · CC HR',
-    description: 'Sent when HR reports a wrong value in Microsoft Entra.',
+    description: 'Sent when HR reports a wrong value in Microsoft 365.',
     placeholders: [
       'employee_name', 'account_email', 'field_label', 'entra_value', 'correct_value', 'reported_by', 'note',
       'it_details_table', 'note_block',
@@ -354,7 +354,7 @@ function buildBlocks(v) {
             + v._scores.map((s) => {
               const rating = Number(s.rating);
               const row = RATING_SCALE.find((r) => r.value === Math.round(rating));
-              const low = rating <= COMMENT_REQUIRED_AT_OR_BELOW;
+              const low = rating <= LOW_RATING_AT_OR_BELOW;
               return `<tr><td style="${TD};font-weight:700">${esc(s.param_label || s.label)}</td>`
                 + `<td style="${TD};text-align:center;white-space:nowrap"><strong style="color:${low ? '#c11f1f' : BRAND.text}">${esc(rating)}</strong>`
                 + `${row ? `<br><span style="font-size:12px;color:${low ? '#c11f1f' : BRAND.muted}">${esc(row.label)}</span>` : ''}</td>`
@@ -379,7 +379,7 @@ function buildBlocks(v) {
       ['Employee', esc(v.employee_name)],
       ['Account', esc(v.account_email)],
       ['Field', esc(v.field_label)],
-      ['Entra currently holds', v.entra_value ? esc(v.entra_value) : '<em>(blank)</em>'],
+      ['Microsoft 365 currently holds', v.entra_value ? esc(v.entra_value) : '<em>(blank)</em>'],
       ['Correct value', `<strong>${esc(v.correct_value)}</strong>`],
       ['Reported by', esc(v.reported_by)],
     ])),
@@ -585,7 +585,7 @@ const SAMPLE_VARS = Object.freeze({
   entra_value: 'Priya S',
   correct_value: 'Priya Sharma',
   reported_by: 'pankaj',
-  note: 'Surname missing in Entra.',
+  note: 'Surname missing in Microsoft 365.',
   portal_link: 'https://pea-staging.aapnainfotech.com/manager/00000000-0000-0000-0000-000000000000',
   expires_date: '13-Oct-2026',
   overdue_count: '1',
@@ -714,7 +714,7 @@ export function validateDraft(key, draft) {
   if (!body) fail('The email body cannot be empty. Use "Reset to default" to go back to the built-in wording.');
   if (body.length > 50_000) fail('The email body is too long (50,000 characters at most).');
   if (/<script[\s>]|\son\w+\s*=|javascript:/i.test(body)) {
-    fail('Scripts, event handlers and javascript: links are not allowed in an email.');
+    fail('For safety, an email cannot contain scripts or active links.');
   }
   if (/<!DOCTYPE|<html[\s>]|<body[\s>]/i.test(body)) {
     fail('Enter only the message body — the AAPNA header, logo and footer are added automatically.');

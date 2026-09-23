@@ -128,7 +128,7 @@ describe('saving an edit — what is refused', () => {
 
   test('scripts, event handlers and javascript: links are refused', () => {
     for (const bad of ['<script>x</script>', '<a onclick="x()">a</a>', '<a href="javascript:x">a</a>']) {
-      assert.throws(() => validateDraft('evaluation_link', { subject: 's', body: `{{form_button}}${bad}` }), /not allowed/);
+      assert.throws(() => validateDraft('evaluation_link', { subject: 's', body: `{{form_button}}${bad}` }), /cannot contain scripts or active links/);
     }
   });
 

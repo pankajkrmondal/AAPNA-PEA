@@ -8,15 +8,16 @@
  *     question rated 2 or lower (the board's filter banner);
  *   · an average is described by its nearest point on the manager's scale
  *     (2.57 "Satisfied", 1.71 "Dissatisfied");
- *   · the manager form requires a comment for a rating of 2 or lower, and a
- *     reason for any decision that is not "Confirmed" — and says so;
+ *   · a comment is required on every parameter, whatever the rating — at the
+ *     server, and on the form — and a reason for any decision that is not
+ *     "Confirmed";
  *   · the HR email carries the reason, every question comment and a link to
  *     the evaluation in PEA.
  */
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { attentionReasons, ratingBand } from '../services/evaluationBoard.service.js';
-import { reasonRequired } from '../services/evaluation.service.js';
+import { reasonRequired, scoreProblems } from '../services/evaluation.service.js';
 import { parseBody } from '../controllers/evaluation.controller.js';
 import { renderForm } from '../views/evaluationForm.js';
 import { compile, buildVars, TEMPLATE_DEFS } from '../services/emailTemplate.service.js';
@@ -99,7 +100,7 @@ describe('the manager form', () => {
   test('every problem is listed at once, each linking to its field, with answers kept', () => {
     const html = renderForm(data, {
       problems: [
-        { field: 'comments_meeting_deadline', label: 'Meeting Deadline', text: 'Meeting Deadline is rated 2 — add a comment explaining the rating.' },
+        { field: 'comments_meeting_deadline', label: 'Meeting Deadline', text: 'Meeting Deadline — add a comment explaining the rating.' },
         { field: 'confirmation_reason', label: 'Extend for 1 month', text: 'You chose Extend for 1 month — give a reason for the decision.' },
       ],
       submitted: {
@@ -108,17 +109,36 @@ describe('the manager form', () => {
       },
     });
     assert.match(html, /Please fix 2 things before submitting — your answers are kept\./);
-    assert.match(html, /<a href="#c_meeting_deadline">Meeting Deadline<\/a> is rated 2/);
+    assert.match(html, /<a href="#c_meeting_deadline">Meeting Deadline<\/a> — add a comment/);
     assert.match(html, /<a href="#reason">Extend for 1 month<\/a>/);
     assert.match(html, /Kept text/);
   });
 
-  test('a rating of 2 renders its comment as required; a 4 does not', () => {
+  test('with every rating a 4 or 5, every question comment is still required', () => {
     const html = renderForm(data, {
-      submitted: { ratings: { quality_of_work: { rating: '4' }, meeting_deadline: { rating: '2' } } },
+      submitted: { ratings: { quality_of_work: { rating: '5' }, meeting_deadline: { rating: '4' } } },
     });
-    assert.match(html, /class="cmt need" id="box_meeting_deadline"/);
-    assert.match(html, /class="cmt" id="box_quality_of_work"/);
+    const textareas = html.match(/<textarea id="c_[^>]*>/g);
+    assert.equal(textareas.length, params.length);
+    for (const t of textareas) assert.match(t, / required/);
+    assert.equal(html.match(/required — one line is enough/g).length, params.length);
+    assert.ok(!/Comments?<span class="opt">/.test(html), 'no question comment is labelled optional');
+    assert.match(html, /required on all two<\/strong>,\s+whatever the rating/);
+  });
+
+  test('the decision reason keeps its own required frame', () => {
+    const html = renderForm(data, { submitted: { confirmation_status: 'Extend for 1 month' } });
+    assert.match(html, /class="reason cmt need" id="reason"/);
+    assert.match(html, /required when you do not confirm or when you extend/);
+  });
+
+  test('a missed comment is marked on the field itself', () => {
+    const html = renderForm(data, {
+      problems: [{ field: 'comments_quality_of_work', label: 'Quality of Code / Work', text: 'Quality of Code / Work — add a comment explaining the rating.' }],
+      submitted: { ratings: { quality_of_work: { rating: '5' }, meeting_deadline: { rating: '3', comments: 'ok' } } },
+    });
+    assert.match(html, /name="comments_quality_of_work" required class="invalid"/);
+    assert.match(html, /name="comments_meeting_deadline" required\s/);
   });
 
   test('user text in the form is escaped', () => {
@@ -126,6 +146,37 @@ describe('the manager form', () => {
       submitted: { ratings: { quality_of_work: { rating: '3', comments: '<script>x</script>' } } },
     });
     assert.ok(!html.includes('<script>x</script>'));
+  });
+});
+
+describe('a comment on every parameter — the server gate', () => {
+  const seven = ['quality_of_work', 'meeting_deadline', 'communication', 'proactiveness', 'skill_development', 'cultural_fit', 'x_factor']
+    .map((param_key, i) => ({ param_key, param_label: `Label ${param_key}`, sort_order: i + 1 }));
+  const allRated = (over = {}) => Object.fromEntries(
+    seven.map((p, i) => [p.param_key, { rating: i % 2 ? 4 : 5, comments: `Why ${p.param_key}`, ...over[p.param_key] }])
+  );
+
+  test('seven good ratings and one empty comment are refused, naming that question', () => {
+    const { problems } = scoreProblems(seven, allRated({ cultural_fit: { comments: '   ' } }));
+    assert.deepEqual(problems, [{
+      field: 'comments_cultural_fit',
+      label: 'Label cultural_fit',
+      text: 'Label cultural_fit — add a comment explaining the rating.',
+    }]);
+  });
+
+  test('seven ratings and seven comments pass, and every comment is stored', () => {
+    const { rows, problems } = scoreProblems(seven, allRated());
+    assert.deepEqual(problems, []);
+    assert.equal(rows.length, 7);
+    assert.ok(rows.every((r) => r.comments));
+  });
+
+  test('a missing rating and a missing comment are reported together', () => {
+    const ratings = allRated({ x_factor: { comments: '' } });
+    delete ratings.communication;
+    const { problems } = scoreProblems(seven, ratings);
+    assert.deepEqual(problems.map((p) => p.field), ['rating', 'comments_x_factor']);
   });
 });
 

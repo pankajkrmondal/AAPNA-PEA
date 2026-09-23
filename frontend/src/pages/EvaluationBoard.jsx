@@ -42,6 +42,27 @@ const CARRY = ['search', 'rm', 'cohort', 'from', 'to'];
 
 const PAGE_SIZE = { cards: 24, table: 50 };
 
+/**
+ * The monthly average over the last six months, as a small line under
+ * "Average rating". Absent or a single month draws nothing.
+ * @param {{points?: {month: string, average: number}[]}} props
+ */
+function TrendLine({ points }) {
+  if (!points || points.length < 2) return null;
+  const w = 64;
+  const h = 22;
+  const x = (i) => 2 + (i * (w - 4)) / (points.length - 1);
+  const y = (v) => h - 2 - ((v - 1) / 4) * (h - 4);
+  const last = points.at(-1);
+  return (
+    <svg className="pea-figure-trend" width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img"
+      aria-label={`Monthly average, ${points[0].month} to ${last.month}: ${points.map((p) => avg(p.average)).join(', ')}`}>
+      <polyline points={points.map((p, i) => `${x(i)},${y(p.average)}`).join(' ')} />
+      <circle cx={x(points.length - 1)} cy={y(last.average)} r="2.5" />
+    </svg>
+  );
+}
+
 /** The status a card's profile link should walk: a section's rows are all "submitted" or their own bucket. */
 function walkStatus(row, status) {
   if (status !== 'all') return status;
@@ -178,84 +199,88 @@ export default function EvaluationBoard() {
           </button>
           <div className="pea-figure pea-figure--static">
             <strong>{stats.averageRating == null ? '—' : avg(stats.averageRating)}</strong><span>Average rating</span>
+            <TrendLine points={stats.averageTrend} />
           </div>
         </div>
       </section>
 
-      {/* ── Status chips ─────────────────────────────────────────────── */}
-      <div className="pea-chips" role="tablist" aria-label="Status">
-        {chips.map((c) => (
+      {/* Chips and filters stay in reach down a long board. */}
+      <div className="pea-board-controls">
+        {/* ── Status chips ─────────────────────────────────────────────── */}
+        <div className="pea-chips" role="tablist" aria-label="Status">
+          {chips.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              role="tab"
+              aria-selected={status === c.key}
+              className={`pea-chip${status === c.key ? ' is-active' : ''}`}
+              onClick={() => { set({ status: c.key }); setSelected([]); }}
+            >
+              {c.tone && <span className={`pea-chip-dot pea-bg-${c.tone}`} />}
+              {c.label}
+              <span className="pea-chip-count">{c.count ?? 0}</span>
+            </button>
+          ))}
           <button
-            key={c.key}
             type="button"
             role="tab"
-            aria-selected={status === c.key}
-            className={`pea-chip${status === c.key ? ' is-active' : ''}`}
-            onClick={() => { set({ status: c.key }); setSelected([]); }}
+            aria-selected={status === 'attention'}
+            className={`pea-chip pea-chip--attention${status === 'attention' ? ' is-active' : ''}`}
+            onClick={() => { set({ status: 'attention' }); setSelected([]); }}
           >
-            {c.tone && <span className={`pea-chip-dot pea-bg-${c.tone}`} />}
-            {c.label}
-            <span className="pea-chip-count">{c.count ?? 0}</span>
+            <FlagOutlined /> Needs attention <span className="pea-chip-count">{counts.attention ?? 0}</span>
           </button>
-        ))}
-        <button
-          type="button"
-          role="tab"
-          aria-selected={status === 'attention'}
-          className={`pea-chip pea-chip--attention${status === 'attention' ? ' is-active' : ''}`}
-          onClick={() => { set({ status: 'attention' }); setSelected([]); }}
-        >
-          <FlagOutlined /> Needs attention <span className="pea-chip-count">{counts.attention ?? 0}</span>
-        </button>
-      </div>
+        </div>
 
-      {/* ── Filters ─────────────────────────────────────────────────── */}
-      <div className="pea-filters">
-        <Input
-          allowClear
-          prefix={<SearchOutlined />}
-          placeholder="Search employee or manager…"
-          value={searchText}
-          onChange={(e) => setSearchText(e.target.value)}
-          className="pea-filter-search"
-        />
-        <Select
-          allowClear
-          showSearch
-          optionFilterProp="label"
-          placeholder="All managers"
-          value={filters.rm}
-          onChange={(v) => set({ rm: v })}
-          options={managerOptions}
-          className="pea-filter-select"
-          popupMatchSelectWidth={false}
-        />
-        <Select
-          allowClear
-          placeholder="Fresher & experienced"
-          value={filters.cohort}
-          onChange={(v) => set({ cohort: v })}
-          options={[
-            { value: 'fresher', label: 'Freshers only' },
-            { value: 'experienced', label: 'Experienced only' },
-          ]}
-          className="pea-filter-select"
-        />
-        <RangePicker
-          format="DD-MMM-YYYY"
-          placeholder={['Any date', '']}
-          value={filters.from || filters.to ? [filters.from ? dayjs(filters.from) : null, filters.to ? dayjs(filters.to) : null] : null}
-          onChange={(v) => set({
-            from: v?.[0] ? v[0].format('YYYY-MM-DD') : undefined,
-            to: v?.[1] ? v[1].format('YYYY-MM-DD') : undefined,
-          })}
-          allowEmpty={[true, true]}
-          className="pea-filter-date"
-        />
-        <span className="pea-grow" />
-        <Tooltip title="The previous list: group by manager for one message per manager, and every email PEA has sent.">
-          <Link to="/evaluations/worklist"><Button type="text" icon={<MailOutlined />}>Work list &amp; emails</Button></Link>
-        </Tooltip>
+        {/* ── Filters ─────────────────────────────────────────────────── */}
+        <div className="pea-filters">
+          <Input
+            allowClear
+            prefix={<SearchOutlined />}
+            placeholder="Search employee or manager…"
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="pea-filter-search"
+          />
+          <Select
+            allowClear
+            showSearch
+            optionFilterProp="label"
+            placeholder="All managers"
+            value={filters.rm}
+            onChange={(v) => set({ rm: v })}
+            options={managerOptions}
+            className="pea-filter-select"
+            popupMatchSelectWidth={false}
+          />
+          <Select
+            allowClear
+            placeholder="Fresher & experienced"
+            value={filters.cohort}
+            onChange={(v) => set({ cohort: v })}
+            options={[
+              { value: 'fresher', label: 'Freshers only' },
+              { value: 'experienced', label: 'Experienced only' },
+            ]}
+            className="pea-filter-select"
+          />
+          <RangePicker
+            format="DD-MMM-YYYY"
+            placeholder={['Any date', '']}
+            value={filters.from || filters.to ? [filters.from ? dayjs(filters.from) : null, filters.to ? dayjs(filters.to) : null] : null}
+            onChange={(v) => set({
+              from: v?.[0] ? v[0].format('YYYY-MM-DD') : undefined,
+              to: v?.[1] ? v[1].format('YYYY-MM-DD') : undefined,
+            })}
+            allowEmpty={[true, true]}
+            className="pea-filter-date"
+          />
+          <span className="pea-grow" />
+          <Tooltip title="The previous list: group by manager for one message per manager, and every email PEA has sent.">
+            <Link to="/evaluations/worklist"><Button type="text" icon={<MailOutlined />}>Work list &amp; emails</Button></Link>
+          </Tooltip>
+        </div>
       </div>
 
       <div className="pea-legend-row">
@@ -475,7 +500,11 @@ function BoardTable({ data, loading, selected, setSelected, onOpen, onRemind, re
             width: 44,
             render: (_, r) => (r.attention ? (
               <Tooltip title={r.attentionReasons.join(' · ')}>
-                <span className={`pea-flag pea-flag--${r.decision?.startsWith('Extend') ? 'warn' : 'crit'}`}><FlagOutlined /></span>
+                <span
+                  className={`pea-flag pea-flag--${r.decision?.startsWith('Extend') ? 'warn' : 'crit'}`}
+                  aria-label={`Needs attention: ${r.attentionReasons.join(' · ')}`}
+                  role="img"
+                ><FlagOutlined /></span>
               </Tooltip>
             ) : null),
           },

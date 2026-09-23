@@ -36,14 +36,12 @@ import { Prisma } from '@prisma/client';
 import prisma from '../config/database.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
-import { RATING_SCALE } from '../config/ratingScale.js';
+import { RATING_SCALE, LOW_RATING_AT_OR_BELOW as LOW_RATING } from '../config/ratingScale.js';
 import { hasDecisionReason, hasEvaluationReads } from '../utils/schemaCapabilities.js';
 import { todayIn, toDateString, daysBetween, dateIn } from '../utils/dateUtils.js';
 
-/** An average below this needs a read. */
+/** An average below this needs a read. A single low question does too (LOW_RATING_AT_OR_BELOW). */
 export const LOW_AVERAGE = 2.5;
-/** A single question rated at or below this needs a read. */
-export const LOW_RATING = 2;
 
 /** How far back the Dashboard looks for feedback that still needs a read. */
 export const FEEDBACK_WINDOW_DAYS = 30;
@@ -200,7 +198,20 @@ function baseSql(q, today) {
  * many rows clicking it would show.
  */
 async function summarise(q, today) {
-  const [row] = await prisma.$queryRaw`
+  const tz = config.scheduler.timezone;
+  // The line under "Average rating": the monthly average of submitted
+  // evaluations over the last six months, for the same filters.
+  const trendRows = prisma.$queryRaw`
+    WITH b AS (${baseSql(q, today)})
+    SELECT to_char((submitted_at AT TIME ZONE ${tz})::date, 'YYYY-MM') AS month,
+           round(avg(avg_rating), 2)::float AS average
+      FROM b
+     WHERE bucket = 'submitted' AND avg_rating IS NOT NULL
+       AND (submitted_at AT TIME ZONE ${tz})::date >= (date_trunc('month', ${today}::date) - interval '5 months')::date
+     GROUP BY 1
+     ORDER BY 1`;
+
+  const [[row], trend] = await Promise.all([prisma.$queryRaw`
     WITH b AS (${baseSql(q, today)})
     SELECT count(*)::int                                             AS all,
            count(*) FILTER (WHERE bucket = 'submitted')::int         AS submitted,
@@ -213,7 +224,7 @@ async function summarise(q, today) {
            count(*) FILTER (WHERE bucket = 'submitted' AND NOT attention)::int AS recent,
            count(*) FILTER (WHERE bucket IN ('waiting','opened','not_sent','scheduled'))::int AS in_progress,
            round(avg(avg_rating) FILTER (WHERE bucket = 'submitted'), 2)::float AS average
-      FROM b`;
+      FROM b`, trendRows]);
 
   return {
     counts: {
@@ -235,6 +246,7 @@ async function summarise(q, today) {
       waitingForManager: row.waiting + row.opened,
       needAttention: row.attention,
       averageRating: row.average,
+      averageTrend: trend.map((t) => ({ month: t.month, average: t.average })),
     },
   };
 }
@@ -570,6 +582,21 @@ export async function getEvaluation(id, q = {}, userId = null) {
     .filter((c) => c.seq_no <= row.seqNo && c.status === 'completed' && c.avg_rating !== null)
     .map((c) => ({ seqNo: c.seq_no, avg: num(c.avg_rating), current: c.seq_no === row.seqNo }));
 
+  // The profile rail's "This probation": every evaluation, answered or not, so
+  // any sibling is one click away. The date is when it was submitted, or when
+  // it is due.
+  const probation = cycles
+    .filter((c) => c.status !== 'skipped' || c.seq_no === row.seqNo)
+    .map((c) => ({
+      id: String(c.id),
+      seqNo: c.seq_no,
+      isExtension: c.is_extension,
+      submitted: c.status === 'completed',
+      date: c.submitted_at ?? toDateString(c.due_date),
+      avg: num(c.avg_rating),
+      current: c.seq_no === row.seqNo,
+    }));
+
   // After an extension, the next evaluation is already on the calendar.
   const next = cycles.find((c) => c.seq_no > row.seqNo && c.status !== 'skipped');
   const nextEvaluation = next
@@ -614,6 +641,7 @@ export async function getEvaluation(id, q = {}, userId = null) {
     reminderCount,
     scores,
     history,
+    probation,
     nextEvaluation,
     questions: questions.map((p) => ({ key: p.param_key, label: p.param_label })),
     timeline,

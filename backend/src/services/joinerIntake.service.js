@@ -197,7 +197,7 @@ export async function runIntakeScan({ dryRun = false, actor = 'system' } = {}) {
     accounts = await entra.listAccounts(domain);
   } catch (err) {
     await recordRun(report, 'failed', err.message, Date.now() - startedAt);
-    throw new AppError(`Entra scan failed: ${err.message}`, 502);
+    throw new AppError(`The Microsoft 365 check failed: ${err.message}`, 502);
   }
 
   report.accountsFetched = accounts.length;
@@ -421,7 +421,7 @@ export async function runIntakeScan({ dryRun = false, actor = 'system' } = {}) {
       await notifyStaff({
         type: 'joiners_detected',
         title: `${report.candidatesNew} new joiner(s) waiting to be confirmed`,
-        body: 'Detected in Microsoft Entra. Joining date and fresher/experienced need confirming.',
+        body: 'Found in Microsoft 365. Joining date and fresher/experienced need confirming.',
         link: '/new-joiners',
       });
     }
@@ -574,7 +574,7 @@ export async function acceptCandidate(id, input, actor) {
   // ones — and nobody would notice for a month. Plan §13.6.
   if (input.is_experienced === undefined || input.is_experienced === null || input.is_experienced === '') {
     throw new AppError(
-      'Fresher or experienced must be confirmed — Entra does not hold it (employeeType is unpopulated).',
+      'Fresher or experienced must be confirmed — Microsoft 365 does not record it.',
       400
     );
   }
@@ -641,7 +641,7 @@ export async function acceptCandidate(id, input, actor) {
 
 /** A one-line account of what was suggested versus what HR confirmed. */
 function describeCorrections(candidate, payload) {
-  const parts = [`Added from the New Joiner Inbox (Entra account ${candidate.azure_user_id}).`];
+  const parts = [`Added from the New Joiner Inbox (Microsoft 365 account ${candidate.azure_user_id}).`];
 
   const compare = [
     ['name', candidate.display_name, payload.full_name],
@@ -772,7 +772,7 @@ export async function dismissLeaver(employeeId, actor) {
         employee_id: id,
         field_name: '*',
         new_value:
-          'Leaver suggestion dismissed — Entra shows the account disabled and unlicensed, ' +
+          'Leaver suggestion dismissed — Microsoft 365 shows the account disabled and unlicensed, ' +
           'but HR confirmed the employee is still here.',
         changed_by: actor,
         change_source: 'azure',

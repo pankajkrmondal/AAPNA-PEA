@@ -25,11 +25,14 @@ export const RATING_SCALE = Object.freeze([
 ]);
 
 /**
- * A rating at or below this needs a comment. A low score with no explanation
- * tells HR something is wrong and nothing about what, and gives the employee
- * nothing to improve on. (The 23-Sep redesign, manager form.)
+ * A rating at or below this is a low rating: the HR email paints it red, the
+ * board marks the row, and it is what "3 questions rated 2 or lower" counts on
+ * the board and the Dashboard.
+ *
+ * It says nothing about comments. A comment is required on every question,
+ * whatever the rating (HR, 23-Sep) — that rule has no threshold to hold.
  */
-export const COMMENT_REQUIRED_AT_OR_BELOW = 2;
+export const LOW_RATING_AT_OR_BELOW = 2;
 
 /** The longest reason for a decision the form accepts. The DB CHECK agrees. */
 export const REASON_MAX = 2000;
