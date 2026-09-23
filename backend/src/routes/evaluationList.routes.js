@@ -14,6 +14,7 @@ import {
   remindNow,
   listEmails,
 } from '../services/evaluationList.service.js';
+import { getBoard, getEvaluation, markRead } from '../services/evaluationBoard.service.js';
 
 const router = Router();
 
@@ -43,5 +44,29 @@ router.post('/remind', requireMinRole('hr'), catchAsync(async (req, res) => {
 
   return success(res, result, parts.join(', '));
 }));
+
+/**
+ * GET /api/evaluations/board?status=&search=&rm=&cohort=&from=&to=&sections=1&page=&limit=
+ *
+ * "What every manager said" — each evaluation with its overall comment, the
+ * reason for the decision and every question comment.
+ */
+router.get('/board', catchAsync(async (req, res) => success(res, await getBoard(req.query, req.user.id))));
+
+/**
+ * GET /api/evaluations/:id?status=&search=… — one evaluation, as the profile
+ * shows it. The board filters ride along so Previous / Next walk the same list.
+ *
+ * Registered after every named route above: `/counts`, `/emails` and `/board`
+ * would otherwise be read as an id.
+ */
+router.get('/:id', catchAsync(async (req, res) =>
+  success(res, await getEvaluation(req.params.id, req.query, req.user.id))
+));
+
+/** POST /api/evaluations/:id/read — this user has read it; clears "Read feedback" for them only. */
+router.post('/:id/read', catchAsync(async (req, res) =>
+  success(res, { stored: await markRead(req.params.id, req.user.id) })
+));
 
 export default router;

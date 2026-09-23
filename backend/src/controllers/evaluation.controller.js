@@ -48,6 +48,7 @@ export function parseBody(body) {
     ratings,
     remarks: body.remarks,
     confirmation_status: body.confirmation_status,
+    confirmation_reason: body.confirmation_reason,
   };
 }
 
@@ -90,7 +91,12 @@ export const submitForm = catchAsync(async (req, res) => {
       return res
         .status(err.statusCode || 400)
         .type('html')
-        .send(renderForm(data, { error: err.message, submitted: body, nonce: res.locals.cspNonce }));
+        .send(renderForm(data, {
+          error: err.message,
+          problems: err.problems || [],
+          submitted: body,
+          nonce: res.locals.cspNonce,
+        }));
     } catch {
       return res
         .status(err.statusCode || 400)

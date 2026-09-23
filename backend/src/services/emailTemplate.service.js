@@ -24,7 +24,7 @@ import prisma from '../config/database.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
 import { formatDisplay } from '../utils/dateUtils.js';
-import { RATING_SCALE } from '../config/ratingScale.js';
+import { RATING_SCALE, COMMENT_REQUIRED_AT_OR_BELOW } from '../config/ratingScale.js';
 import { wrapBrandedEmail, brandedWrapperParts, BRAND } from './emailLayout.service.js';
 
 /** Escape a value for HTML. */
@@ -66,6 +66,13 @@ export const PLACEHOLDERS = Object.freeze({
   remarks: { label: 'Manager’s overall remarks' },
   evaluation_summary_table: { label: 'Table: employee, evaluation, period, average, decision', block: true },
   remarks_block: { label: '"Overall remarks" paragraph — only when there are remarks', block: true },
+  reason: { label: 'Manager’s reason for the decision' },
+  decision_sentence: { label: '"It was the final evaluation … the decision is …" — only on a final evaluation', block: true },
+  reason_block: { label: '"Reason for this decision" box — only when a reason was given', block: true },
+  ratings_comments_table: { label: 'Table: every question with its rating and the manager’s comment', block: true },
+  next_evaluation_line: { label: '"Evaluation 7 (extension) has been scheduled for …" — only after an extension', block: true },
+  open_in_pea_button: { label: 'Green "Open in PEA" button that opens this evaluation', block: true },
+  pea_link: { label: 'Link to this evaluation in PEA, as plain text' },
   extension_summary: { label: 'Sentence saying how many extra evaluations were scheduled' },
   account_email: { label: 'Microsoft account email' },
   field_label: { label: 'Which field is wrong' },
@@ -170,14 +177,22 @@ const TEMPLATES = Object.freeze({
     description: 'Sent when a manager submits an evaluation.',
     placeholders: [
       'employee_name', 'first_name', 'employee_email', 'manager_name', 'evaluation_number', 'evaluation_period',
-      'average_rating', 'decision', 'submitted_by', 'remarks', 'evaluation_summary_table', 'remarks_block',
+      'average_rating', 'decision', 'submitted_by', 'remarks', 'reason', 'evaluation_summary_table', 'remarks_block',
+      'decision_sentence', 'reason_block', 'ratings_comments_table', 'next_evaluation_line', 'open_in_pea_button', 'pea_link',
     ],
     requiredAny: [],
     subject: 'Performance Evaluation {{evaluation_number}} submitted - {{employee_name}}',
+    // Everything the manager said, in the email itself — the 23-Sep redesign.
+    // HR used to open PEA to find out WHY; the reason, the overall comment and
+    // every question comment are now here, with a button to the evaluation.
     body: `<p>Hello,</p>
-<p><strong>{{submitted_by}}</strong> has submitted performance evaluation {{evaluation_number}} for <strong>{{employee_name}}</strong>.</p>
+<p><strong>{{manager_name}}</strong> has submitted performance evaluation {{evaluation_number}} for <strong>{{employee_name}}</strong>.{{decision_sentence}}</p>
 {{evaluation_summary_table}}
-{{remarks_block}}`,
+{{reason_block}}
+{{remarks_block}}
+{{ratings_comments_table}}
+{{next_evaluation_line}}
+{{open_in_pea_button}}`,
   },
 
   extend_alert: {
@@ -187,12 +202,15 @@ const TEMPLATES = Object.freeze({
     description: 'Sent when a manager extends a probation.',
     placeholders: [
       'employee_name', 'first_name', 'manager_name', 'evaluation_number', 'decision', 'submitted_by', 'extension_summary',
+      'reason', 'reason_block', 'open_in_pea_button', 'pea_link',
     ],
     requiredAny: [],
     subject: 'Alert - Probation extended for {{employee_name}}',
     body: `<p>Hello,</p>
 <p>The probation period for <strong>{{employee_name}}</strong> has been extended — <strong>{{decision}}</strong> — by {{submitted_by}}.</p>
-<p>{{extension_summary}}</p>`,
+{{reason_block}}
+<p>{{extension_summary}}</p>
+{{open_in_pea_button}}`,
   },
 
   deadline_alert: {
@@ -311,13 +329,51 @@ function buildBlocks(v) {
 
     evaluation_summary_table: table(pairs([
       ['Employee', esc(v.employee_name)],
-      ['Evaluation', esc(v.evaluation_number)],
+      ['Evaluation', `${esc(v.evaluation_number)}${v._isFinal ? ' (final)' : ''}`],
       ['Period', esc(v.evaluation_period)],
-      ['Average rating', `<strong>${esc(v.average_rating || '—')} / 5</strong>`],
+      ['Average rating', `<strong>${esc(v.average_rating || '—')} / 5</strong>${v._averageLabel ? ` — ${esc(v._averageLabel)}` : ''}`],
       ...(v.decision ? [['Decision', `<strong>${esc(v.decision)}</strong>`]] : []),
     ])),
 
     remarks_block: v.remarks ? `<p><strong>Overall remarks:</strong><br>${multiline(v.remarks)}</p>` : '',
+
+    decision_sentence: v.decision && v._isFinal
+      ? ` It was the final evaluation of the probation, and the decision is <strong>${esc(v.decision)}</strong>.`
+      : '',
+
+    reason_block: v.reason
+      ? `<div style="border:2px dashed ${BRAND.accent};border-radius:8px;padding:10px 12px;margin:10px 0 16px 0">`
+        + '<p style="margin:0 0 8px 0"><strong>Reason for this decision:</strong></p>'
+        + `<div style="border-left:4px solid ${BRAND.accent};background:#f5f8ee;padding:10px 14px;color:${BRAND.text}">${multiline(v.reason)}</div></div>`
+      : '',
+
+    ratings_comments_table: (v._scores || []).length
+      ? '<p style="margin:16px 0 0 0"><strong>Ratings and comments:</strong></p>'
+        + table(
+          `<tr><th style="${TH}">Question</th><th style="${TH};text-align:center">Rating</th><th style="${TH}">Manager’s comment</th></tr>`
+            + v._scores.map((s) => {
+              const rating = Number(s.rating);
+              const row = RATING_SCALE.find((r) => r.value === Math.round(rating));
+              const low = rating <= COMMENT_REQUIRED_AT_OR_BELOW;
+              return `<tr><td style="${TD};font-weight:700">${esc(s.param_label || s.label)}</td>`
+                + `<td style="${TD};text-align:center;white-space:nowrap"><strong style="color:${low ? '#c11f1f' : BRAND.text}">${esc(rating)}</strong>`
+                + `${row ? `<br><span style="font-size:12px;color:${low ? '#c11f1f' : BRAND.muted}">${esc(row.label)}</span>` : ''}</td>`
+                + `<td style="${TD}">${s.comments ? multiline(s.comments) : `<em style="color:${BRAND.muted}">No comment</em>`}</td></tr>`;
+            }).join('')
+        )
+      : '',
+
+    next_evaluation_line: v._nextCycle
+      ? `<p style="color:${BRAND.muted}">Evaluation ${esc(v._nextCycle.seq_no)} (extension) has been scheduled for `
+        + `${esc(formatDisplay(new Date(v._nextCycle.due_date)))}, and ${esc(v.first_manager_name || 'the reporting manager')} will receive a new link on that day.</p>`
+      : '',
+
+    open_in_pea_button: v.pea_link
+      ? button(v.pea_link, 'Open in PEA').replace(
+        'If the button does not work, paste this link into your browser:',
+        'Opens this evaluation directly (sign-in required). If the button does not work, paste this link into your browser:'
+      )
+      : '',
 
     it_details_table: table(pairs([
       ['Employee', esc(v.employee_name)],
@@ -454,6 +510,16 @@ export function buildVars(cycle, context = {}) {
     decision: context.confirmation || '',
     submitted_by: context.submittedBy || e.rm_email || '',
     remarks: context.remarks || '',
+    reason: context.reason || '',
+    first_manager_name: String(e.rm_name || '').split(' ')[0],
+    // Opens the evaluation itself in the HR app — the same place the bell goes.
+    pea_link: c.id ? `${base}/evaluations/${c.id}` : '',
+    _isFinal: !!context.isFinal,
+    _averageLabel: average === undefined || average === null
+      ? ''
+      : RATING_SCALE.find((r) => r.value === Math.round(Number(average)))?.label || '',
+    _scores: context.scores || [],
+    _nextCycle: context.nextCycle || null,
     extension_summary: extensions
       ? `${extensions} further evaluation${extensions === 1 ? ' has' : 's have'} been scheduled automatically, and the reporting manager will receive a link when ${extensions === 1 ? 'it is' : 'they are'} due.`
       : '',
@@ -498,6 +564,21 @@ const SAMPLE_VARS = Object.freeze({
   decision: 'Extend for 1 month',
   submitted_by: 'cverma@aapnainfotech.com',
   remarks: 'Strong progress on delivery; communication with the client still developing.',
+  reason: 'Delivery is on track but client communication is not yet independent. One more month with a weekly check-in, then a final decision.',
+  first_manager_name: 'Chhavi',
+  pea_link: 'https://pea-staging.aapnainfotech.com/evaluations/4821',
+  _isFinal: true,
+  _averageLabel: 'Highly Satisfied',
+  _scores: [
+    { param_label: 'Quality of Code / Work', rating: 4, comments: 'Clean, well-structured pull requests.' },
+    { param_label: 'Meeting Deadline', rating: 4, comments: 'Delivered all three sprint items on time.' },
+    { param_label: 'Communication & Presentation', rating: 2, comments: 'Still hesitant to speak up in client calls.' },
+    { param_label: 'Proactiveness', rating: 4, comments: 'Picked up the flaky-test clean-up without being asked.' },
+    { param_label: 'Skill Development', rating: 4, comments: 'Finished the React Query course.' },
+    { param_label: 'Cultural Fit', rating: 4, comments: null },
+    { param_label: 'X-Factor', rating: 4, comments: 'Good eye for detail.' },
+  ],
+  _nextCycle: { seq_no: 7, due_date: '2026-10-22' },
   extension_summary: '1 further evaluation has been scheduled automatically, and the reporting manager will receive a link when it is due.',
   account_email: 'psharma@aapnainfotech.com',
   field_label: 'Display name',

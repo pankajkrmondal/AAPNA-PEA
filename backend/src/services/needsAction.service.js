@@ -32,24 +32,53 @@
  */
 import prisma from '../config/database.js';
 import config from '../config/index.js';
-import { todayIn, toDateString, daysBetween } from '../utils/dateUtils.js';
+import { todayIn, daysBetween, dateIn, formatDisplay } from '../utils/dateUtils.js';
 import { findDeadlineBreaches } from './confirmationDeadline.service.js';
+import { getUnreadFeedback } from './evaluationBoard.service.js';
 
 const AWAITING = ['email_sent', 'opened'];
 
-/** Rank order — lower sorts first. */
-const KIND_RANK = { blocked: 0, decision: 1, not_sent: 2, waiting: 3 };
+/**
+ * Rank order — lower sorts first.
+ *
+ * `feedback` (23-Sep redesign) is a submitted evaluation that needs a read: not
+ * confirmed, extended, or low scores. It sits after the missed deadline and
+ * before the slipped schedule — a manager has told HR something is wrong, and
+ * nobody on HR has read it yet.
+ */
+const KIND_RANK = { blocked: 0, decision: 1, feedback: 2, not_sent: 3, waiting: 4 };
+
+/** The pill on a feedback row: the most serious of its reasons. */
+function feedbackProblem(r) {
+  if (r.decision === 'Not Confirmed') return 'Not confirmed';
+  if (r.decision?.startsWith('Extend')) return 'Probation extended';
+  return 'Low scores';
+}
+
+/** "1.86 / 5 · all 7 questions rated 2 or lower · “Struggling with the pace…”" */
+function feedbackDetail(r) {
+  const parts = [`${r.avgRating?.toFixed(2) ?? '—'} / 5`];
+  if (r.decision?.startsWith('Extend')) parts.push(r.decision);
+  if (!r.decision) {
+    const low = r.scores.filter((s) => s.rating !== null && s.rating <= 2).length;
+    if (low) parts.push(`${low === r.scores.length ? `all ${low}` : low} question${low === 1 ? '' : 's'} rated 2 or lower`);
+  }
+  const text = r.remarks || r.reason;
+  if (text) parts.push(`“${text.length > 110 ? `${text.slice(0, 110).trimEnd()}…` : text}”`);
+  return parts.join(' · ');
+}
 
 /**
  * Everything that needs a person, ranked.
  *
- * @param {{limit?: number}} [opts]
- * @returns {Promise<{items: object[], total: number, byKind: object}>}
+ * @param {{limit?: number, userId?: number}} [opts] - `userId` decides which
+ *   feedback this person has already read
+ * @returns {Promise<{items: object[], total: number, byKind: object, summary: object}>}
  */
-export async function getNeedsAction({ limit = 50 } = {}) {
+export async function getNeedsAction({ limit = 50, userId = null } = {}) {
   const today = todayIn(config.scheduler.timezone);
 
-  const [cycles, deadlines] = await Promise.all([
+  const [cycles, deadlines, feedback] = await Promise.all([
     prisma.pea_evaluation_cycles.findMany({
       where: {
         OR: [
@@ -70,6 +99,8 @@ export async function getNeedsAction({ limit = 50 } = {}) {
       orderBy: { due_date: 'asc' },
     }),
     findDeadlineBreaches(),
+    // Best-effort: the list must still load if the read-receipt lookup fails.
+    getUnreadFeedback(userId).catch(() => ({ items: [], submittedThisWeek: 0 })),
   ]);
 
   const items = [];
@@ -151,11 +182,11 @@ export async function getNeedsAction({ limit = 50 } = {}) {
         employeeName: e.full_name,
         title: `${e.full_name} · evaluation ${c.seq_no}`,
         problem: 'Not sent yet',
-        detail: `Due ${toDateString(c.due_date)}, no email has gone out.`,
+        detail: `Due ${formatDisplay(c.due_date)}, no email has gone out.`,
         action: 'Send now',
-        // The name rides along so the list opens on THIS person rather than on
-        // every unsent evaluation — the row was about one of them.
-        link: `/evaluations?scope=not_sent&employee=${encodeURIComponent(e.full_name)}`,
+        // Straight to the evaluation — the row was about this one, and its
+        // page shows the status timeline and the send action together.
+        link: `/evaluations/${c.id}?status=not_sent`,
         days: daysBetween(c.due_date, today),
         cycleId: String(c.id),
       });
@@ -175,7 +206,7 @@ export async function getNeedsAction({ limit = 50 } = {}) {
         `${chased === 0 ? 'No reminder sent yet' : `${chased} reminder${chased === 1 ? '' : 's'} sent`}`
         + ` · manager ${e.rm_name || e.rm_email}`,
       action: 'Remind now',
-      link: `/evaluations?scope=waiting&employee=${encodeURIComponent(e.full_name)}`,
+      link: `/evaluations/${c.id}?status=${c.status === 'opened' ? 'opened' : 'waiting'}`,
       days: waiting,
       cycleId: String(c.id),
     });
@@ -197,11 +228,37 @@ export async function getNeedsAction({ limit = 50 } = {}) {
     });
   }
 
+  // ── Feedback that needs a read ───────────────────────────────────────────
+  for (const r of feedback.items) {
+    items.push({
+      kind: 'feedback',
+      employeeId: r.employeeId,
+      employeeName: r.employeeName,
+      title: `${r.employeeName} · evaluation ${r.seqNo}${r.isFinal ? ' · final' : ''}`,
+      problem: feedbackProblem(r),
+      detail: feedbackDetail(r),
+      action: 'Read feedback',
+      link: `/evaluations/${r.id}`,
+      days: r.submittedAt ? daysBetween(dateIn(r.submittedAt, config.scheduler.timezone), today) : 0,
+      cycleId: r.id,
+    });
+  }
+
+  // Within a kind, the longest-standing first — except feedback, which is
+  // newest first: yesterday's extension is the one nobody has seen.
   items.sort(
-    (a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || b.days - a.days || a.employeeName.localeCompare(b.employeeName)
+    (a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind]
+      || (a.kind === 'feedback' ? a.days - b.days : b.days - a.days)
+      || a.employeeName.localeCompare(b.employeeName)
   );
 
   const byKind = items.reduce((acc, i) => ({ ...acc, [i.kind]: (acc[i.kind] || 0) + 1 }), {});
 
-  return { items: items.slice(0, limit), total: items.length, byKind };
+  return {
+    items: items.slice(0, limit),
+    total: items.length,
+    byKind,
+    // "Five evaluations came back this week. Three need a read."
+    summary: { submittedThisWeek: feedback.submittedThisWeek, needRead: feedback.items.length },
+  };
 }

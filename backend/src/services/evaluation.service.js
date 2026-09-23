@@ -20,14 +20,29 @@
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
-import { isValidRating } from '../config/ratingScale.js';
+import { isValidRating, COMMENT_REQUIRED_AT_OR_BELOW, REASON_MAX } from '../config/ratingScale.js';
 import { generateExtensionCycles } from './cycleGenerator.service.js';
 import { queueEmail } from './notification.service.js';
 import { notifyStaff } from './inAppNotification.service.js';
+import { hasDecisionReason } from '../utils/schemaCapabilities.js';
 import { toDateString, formatDisplay } from '../utils/dateUtils.js';
 
 /** Statuses that mean the form is still open for submission. */
 const OPEN_STATUSES = new Set(['pending', 'email_sent', 'opened']);
+
+/** A decision that is not a plain confirmation must say why. */
+export const reasonRequired = (decision) => !!decision && decision !== 'Confirmed';
+
+/**
+ * A validation failure listing every problem at once, so the form can say
+ * "Please fix 2 things" rather than reveal them one submit at a time.
+ * @param {{field: string, text: string}[]} problems
+ */
+function formProblems(problems) {
+  const err = new AppError(problems.map((p) => p.text).join(' '), 400);
+  err.problems = problems;
+  return err;
+}
 
 /**
  * Load a cycle by its token and assert the form may still be filled in.
@@ -248,22 +263,54 @@ export async function submit(token, body, ip) {
     });
   }
 
-  if (missing.length) {
-    throw new AppError(`Please give a rating for: ${missing.join(', ')}.`, 400);
+  const problems = missing.map((label) => ({
+    field: 'rating',
+    text: `Please give a rating for ${label}.`,
+  }));
+
+  for (const r of rows) {
+    if (r.rating <= COMMENT_REQUIRED_AT_OR_BELOW && !r.comments) {
+      problems.push({
+        field: `comments_${r.param_key}`,
+        label: r.param_label,
+        text: `${r.param_label} is rated ${r.rating} — add a comment explaining the rating.`,
+      });
+    }
   }
 
   const askConfirmation = await isFinalCycle(cycle);
   let confirmation = (body.confirmation_status || '').trim() || null;
+  let reason = String(body.confirmation_reason || '').trim() || null;
 
   if (askConfirmation && !confirmation) {
-    throw new AppError(
-      'This is the final evaluation, so a confirmation decision is required.',
-      400
-    );
+    problems.push({
+      field: 'confirmation_status',
+      text: 'This is the final evaluation, so a confirmation decision is required.',
+    });
   }
-  if (!askConfirmation) confirmation = null; // ignore it if sent on a non-final cycle
+  if (!askConfirmation) {
+    confirmation = null; // ignore it if sent on a non-final cycle
+    reason = null;
+  }
+  if (askConfirmation && reasonRequired(confirmation) && !reason) {
+    problems.push({
+      field: 'confirmation_reason',
+      label: confirmation,
+      text: `You chose ${confirmation} — give a reason for the decision.`,
+    });
+  }
+  if (reason && reason.length > REASON_MAX) {
+    problems.push({
+      field: 'confirmation_reason',
+      text: `The reason for the decision is ${reason.length} characters; the limit is ${REASON_MAX}.`,
+    });
+  }
+
+  if (problems.length) throw formProblems(problems);
 
   const avg = Number((rows.reduce((s, r) => s + r.rating, 0) / rows.length).toFixed(2));
+  // Stored only when the column exists; the decision itself never waits on it.
+  const storeReason = !!reason && (await hasDecisionReason());
 
   const result = await prisma.$transaction(async (tx) => {
     await tx.pea_evaluation_scores.createMany({
@@ -286,6 +333,13 @@ export async function submit(token, body, ip) {
         modified_at: new Date(),
       },
     });
+
+    // Raw SQL because the column is newer than the Prisma model — see
+    // prisma/ddl/2026-09-23-pea-board-redesign.sql.
+    if (storeReason) {
+      await tx.$executeRaw`
+        UPDATE pea_evaluation_cycles SET confirmation_reason = ${reason} WHERE id = ${cycle.id}`;
+    }
 
     let extensionCycles = 0;
     if (confirmation) {
@@ -317,8 +371,20 @@ export async function submit(token, body, ip) {
       }
     }
 
-    return { extensionCycles };
+    // The first evaluation of any extension just scheduled — the HR email says
+    // when it goes out.
+    const nextCycle = extensionCycles
+      ? await tx.pea_evaluation_cycles.findFirst({
+        where: { employee_id: cycle.employee_id, seq_no: { gt: cycle.seq_no } },
+        orderBy: { seq_no: 'asc' },
+        select: { seq_no: true, due_date: true },
+      })
+      : null;
+
+    return { extensionCycles, nextCycle };
   });
+
+  const remarks = (body.remarks || '').trim() || null;
 
   // Notifications are queued outside the transaction: a mail failure must never
   // roll back a manager's submitted ratings.
@@ -330,8 +396,13 @@ export async function submit(token, body, ip) {
     context: {
       average: avg,
       confirmation,
+      reason,
       submittedBy,
-      remarks: (body.remarks || '').trim() || null,
+      submittedByName: cycle.employee.rm_name,
+      remarks,
+      isFinal: askConfirmation,
+      scores: rows,
+      nextCycle: result.nextCycle,
     },
   });
 
@@ -340,21 +411,27 @@ export async function submit(token, body, ip) {
       type: 'extend_alert',
       cycleId: cycle.id,
       employeeId: cycle.employee_id,
-      context: { confirmation, submittedBy, extensionCycles: result.extensionCycles },
+      context: { confirmation, reason, submittedBy, extensionCycles: result.extensionCycles },
     });
   }
 
   // The bell. Best-effort by construction — notifyStaff never throws, so a
   // missing notifications table cannot fail a manager's submission.
+  //
+  // It opens the EVALUATION, not the employee page: the alert is about what
+  // this manager just said, and that is where it is said in full.
+  const quote = remarks ? ` · “${remarks.length > 90 ? `${remarks.slice(0, 90).trimEnd()}…` : remarks}”` : '';
+  const commented = rows.filter((r) => r.comments).length;
   await notifyStaff({
     type: confirmation ? 'decision_recorded' : 'evaluation_submitted',
     title: confirmation
       ? `${cycle.employee.full_name}: ${confirmation}`
       : `Evaluation ${cycle.seq_no} submitted — ${cycle.employee.full_name}`,
     body:
-      `Average ${avg} / 5` +
+      `Evaluation ${cycle.seq_no} · ${avg.toFixed(2)} / 5` +
+      (quote || ` · No overall comment · ${commented} of ${rows.length} questions commented`) +
       (result.extensionCycles ? ` · ${result.extensionCycles} extension evaluation(s) scheduled` : ''),
-    link: `/employees/${cycle.employee_id}`,
+    link: `/evaluations/${cycle.id}`,
     severity: confirmation && confirmation !== 'Confirmed' ? 'warning' : 'info',
     dedupeKey: `submitted:${cycle.id}`,
   });

@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Fragment, useState } from 'react';
+import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
 import { Layout, Menu, Button, Tooltip, Dropdown, Tag, Result } from 'antd';
 import {
   DashboardOutlined,
@@ -17,6 +17,7 @@ import {
   SettingOutlined,
   KeyOutlined,
   MailOutlined,
+  RightOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api, { unwrap, TOKEN_KEY } from './api.js';
@@ -36,6 +37,9 @@ import NewJoiners from './pages/NewJoiners.jsx';
 import Analytics from './pages/Analytics.jsx';
 import ImportSheet from './pages/ImportSheet.jsx';
 import Evaluations from './pages/Evaluations.jsx';
+import EvaluationBoard from './pages/EvaluationBoard.jsx';
+import EvaluationProfile from './pages/EvaluationProfile.jsx';
+import { CrumbProvider, useCrumbTrail } from './crumbs.jsx';
 import ManagerLinks from './pages/ManagerLinks.jsx';
 import ManagerPortal from './pages/ManagerPortal.jsx';
 import Settings from './pages/Settings.jsx';
@@ -66,6 +70,35 @@ const TITLES = {
 };
 
 const signedIn = () => Boolean(localStorage.getItem(TOKEN_KEY));
+
+/**
+ * The header's left side: the page's own trail when it set one
+ * ("Evaluations › Board"), otherwise the module title as before.
+ */
+function HeaderTitle({ title }) {
+  const crumbs = useCrumbTrail();
+  if (!crumbs?.length) return <h1 className="pea-header-title">{title}</h1>;
+
+  return (
+    <nav className="pea-crumbs" aria-label="Breadcrumb">
+      {crumbs.map((c, i) => {
+        const last = i === crumbs.length - 1;
+        return (
+          <Fragment key={`${c.label}-${i}`}>
+            {i > 0 && <RightOutlined className="pea-crumbs-sep" aria-hidden />}
+            {c.to && !last ? (
+              <Link to={c.to} className="pea-crumbs-link">{c.label}</Link>
+            ) : (
+              <span className={last ? 'pea-crumbs-here' : 'pea-crumbs-link'} aria-current={last ? 'page' : undefined}>
+                {c.label}
+              </span>
+            )}
+          </Fragment>
+        );
+      })}
+    </nav>
+  );
+}
 
 function Shell({ module, children }) {
   const location = useLocation();
@@ -98,6 +131,7 @@ function Shell({ module, children }) {
   const title = location.pathname.startsWith('/employees/') ? 'Employee' : (TITLES[location.pathname] ?? TITLES[selected]);
 
   return (
+    <CrumbProvider>
     <Layout className="pea-layout">
       {/* Both stay on antd's "light" theme deliberately: the dark algorithm in
           theme.jsx already recolours them, whereas antd's own dark preset would
@@ -141,7 +175,7 @@ function Shell({ module, children }) {
             icon={collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
             onClick={() => setCollapsed((c) => !c)}
           />
-          <h1 className="pea-header-title">{title}</h1>
+          <HeaderTitle title={title} />
 
           <div style={{ flex: 1 }} />
 
@@ -211,6 +245,7 @@ function Shell({ module, children }) {
         <ChangePasswordModal open={pwOpen} onClose={() => setPwOpen(false)} />
       </Layout>
     </Layout>
+    </CrumbProvider>
   );
 }
 
@@ -258,7 +293,11 @@ export default function App() {
       <Route path="/employees/:id" element={<Protected module="employees"><EmployeeDetail /></Protected>} />
       <Route path="/new-joiners" element={<Protected module="new_joiners"><NewJoiners /></Protected>} />
       <Route path="/analytics" element={<Protected module="analytics"><Analytics /></Protected>} />
-      <Route path="/evaluations" element={<Protected module="evaluations"><Evaluations /></Protected>} />
+      {/* The board — "What every manager said". The previous work list keeps
+          its grouping by manager and the email log at /evaluations/worklist. */}
+      <Route path="/evaluations" element={<Protected module="evaluations"><EvaluationBoard /></Protected>} />
+      <Route path="/evaluations/worklist" element={<Protected module="evaluations"><Evaluations /></Protected>} />
+      <Route path="/evaluations/:id" element={<Protected module="evaluations"><EvaluationProfile /></Protected>} />
       <Route path="/import" element={<Protected module="import_sheet"><ImportSheet /></Protected>} />
       <Route path="/manager-portal" element={<Protected module="manager_portal"><ManagerLinks /></Protected>} />
       <Route path="/settings" element={<Protected module="settings"><Settings /></Protected>} />

@@ -1,208 +1,154 @@
 /**
  * Dashboard — what needs action now, and how evaluations are trending.
  *
- * Replaces the separate Dashboard and Analytics screens. It holds two genuinely
- * different things and the tab names say which is which: "Needs action" is for
- * this morning, "Trends" is for looking back.
- *
  * The file is still Overview.jsx: it was briefly called Overview, and renaming
  * the file would churn every import for no gain.
  *
- * ── What changed from the old Dashboard ────────────────────────────────────
+ * ── The 23-Sep redesign ────────────────────────────────────────────────────
  *
- *   · Four capped tables and a warning box become ONE ranked list. Each row
- *     says what is wrong in plain words and carries the single action that
- *     fixes it.
- *   · Every figure opens its own list on the Evaluations screen, with the
- *     matching filter already applied — so a number is never a dead end.
- *   · The greeting, the ticking clock and the "AAPNA PEA Platform" badge are
- *     gone. They took the top third of the screen and told HR nothing.
+ *   · One sentence says what came back: "Five evaluations came back this week.
+ *     Three need a read." The second number is personal — it counts the
+ *     feedback needing attention that THIS user has not opened yet.
+ *   · "Act on these first" now includes that feedback — not confirmed,
+ *     extended, low scores — with a "Read feedback" button that opens the
+ *     evaluation itself. Reading it clears the row for that reader only.
+ *   · Recently submitted shows what the manager SAID, not only the average.
+ *   · Every figure still opens the list behind it, so a number is never a dead
+ *     end.
  */
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Card, Table, Space, Button, Alert, Spin, App, Tooltip, Tabs, Typography, Empty,
+  Button, Alert, Spin, App, Tooltip, Tabs, Typography, Empty, Popconfirm,
 } from 'antd';
 import {
-  DownloadOutlined, SyncOutlined, EyeOutlined, RightOutlined,
-  WarningOutlined, ClockCircleOutlined, CheckCircleOutlined, TeamOutlined, SolutionOutlined,
+  DownloadOutlined, EyeOutlined, ArrowRightOutlined, ExclamationCircleOutlined, ClockCircleOutlined,
+  MessageOutlined,
 } from '@ant-design/icons';
 import api, { unwrap, TOKEN_KEY } from '../api.js';
-import StatCard from '../components/StatCard.jsx';
+import { useCurrentUser } from '../auth.js';
 import StatusPill from '../components/StatusPill.jsx';
+import { Avatar } from '../components/board/BoardParts.jsx';
 import Analytics from './Analytics.jsx';
 import { formatDate } from '../formatDate.js';
-
-const ratio = (a, b) => (b ? a / b : null);
+import { avg, daysLabel, decisionTone, ratingTone, shortDate } from '../evaluationDisplay.js';
 
 /**
  * How each kind of problem is shown. Colour is never the only signal — the pill
- * always carries its wording.
- *
- * `tone` names one of the six proposal states rather than an Ant tag colour, so
- * these rows match the status pills on every other screen.
+ * always carries its wording. Feedback takes its tone from what it is about.
  */
 const KIND = {
-  blocked: { tag: 'Cannot be sent', tone: 'crit' },
-  decision: { tag: 'Decision due', tone: 'crit' },
-  not_sent: { tag: 'Not sent yet', tone: 'crit' },
-  waiting: { tag: 'Waiting', tone: 'warn' },
+  blocked: { tone: 'crit', icon: <ExclamationCircleOutlined /> },
+  decision: { tone: 'crit', icon: <ExclamationCircleOutlined />, label: 'Deadline passed' },
+  feedback: { tone: 'crit', icon: <ExclamationCircleOutlined /> },
+  not_sent: { tone: 'crit', icon: <ExclamationCircleOutlined /> },
+  waiting: { tone: 'warn', icon: <ClockCircleOutlined /> },
 };
 
-/**
- * One page of rows everywhere on this screen.
- *
- * Every panel uses the same number so the blocks in a row end up the same
- * height. A panel that grows with its data stretches the whole row and pushes
- * everything beside it off the fold — which is what made the old dashboard's
- * "Awaiting a manager's response" column run down the page on its own.
- */
-const PAGE_SIZE = 15;
+const feedbackTone = (problem) => (problem === 'Probation extended' ? 'warn' : 'crit');
 
-/**
- * The two small panels beside the action list.
- *
- * Both read `upcomingList` and `recentSubmissions`, which the dashboard
- * endpoint already returns and the built screen simply never drew — so these
- * cost no server work.
- *
- * They page rather than showing everything: the count in the header says how
- * many there are in total, so nothing is hidden — the panel just stops growing.
- */
-function SidePanel({ title, note, rows, empty, columns, rowKey }) {
-  return (
-    <Card
-      className="pea-card pea-side-panel"
-      size="small"
-      title={<span className="pea-section-title">{title}</span>}
-      extra={
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {note || (rows.length ? `${rows.length}` : '')}
-        </Typography.Text>
-      }
-    >
-      {rows.length === 0 ? (
-        <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>{empty}</Typography.Text>
-      ) : (
-        <Table
-          size="small"
-          rowKey={rowKey}
-          dataSource={rows}
-          columns={columns}
-          pagination={{ pageSize: PAGE_SIZE, hideOnSinglePage: true, simple: true, size: 'small' }}
-        />
-      )}
-    </Card>
-  );
+/** Numbers as words for the opening sentence, the way a person would say them. */
+const WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+const say = (n, lower = false) => {
+  const w = n <= 10 ? WORDS[n] : String(n);
+  return lower ? w.toLowerCase() : w;
+};
+
+function greeting(date = new Date()) {
+  const h = date.getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
 }
 
 /** The one list that replaces four tables. */
-function NeedsAction() {
-  const { data, isLoading } = useQuery({
-    queryKey: ['needs-action'],
-    queryFn: () => api.get('/dashboard/needs-action').then(unwrap),
+function NeedsAction({ data, isLoading }) {
+  const { message } = App.useApp();
+  const qc = useQueryClient();
+
+  const remind = useMutation({
+    mutationFn: (id) => api.post('/evaluations/remind', { ids: [id] }).then((r) => r.data),
+    onSuccess: (res) => {
+      if (res.data?.skipped?.length) message.warning(res.data.skipped[0].reason, 6);
+      else message.success(res.message);
+      qc.invalidateQueries({ queryKey: ['needs-action'] });
+    },
+    onError: (err) => { message.error(err.friendlyMessage); },
   });
 
-  if (isLoading) return <Card className="pea-card" size="small"><Spin /></Card>;
-
+  if (isLoading) return <section className="pea-card pea-card-pad"><Spin /></section>;
   const items = data?.items || [];
 
   return (
-    <Card
-      className="pea-card"
-      size="small"
-      title={<span className="pea-section-title">Act on these first</span>}
-      extra={
-        <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-          {data?.total ? `${data.total} item(s) · most urgent at the top` : ''}
-        </Typography.Text>
-      }
-    >
+    <section className="pea-card pea-todo">
+      <header className="pea-todo-head">
+        <h3>Act on these first</h3>
+        <span className="pea-muted pea-small">
+          {data?.total ? `${data.total} item${data.total === 1 ? '' : 's'} · most urgent at the top` : ''}
+        </span>
+      </header>
+
       {items.length === 0 ? (
-        <Empty
-          image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="Nothing needs attention right now."
-        />
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="Nothing needs attention right now." />
       ) : (
-        <Table
-          size="small"
-          rowKey={(r) => `${r.kind}-${r.employeeId}-${r.cycleId || ''}`}
-          dataSource={items}
-          pagination={{ pageSize: PAGE_SIZE, hideOnSinglePage: true }}
-          scroll={{ x: 'max-content' }}
-          columns={[
-            {
-              title: 'Employee',
-              width: 190,
-              render: (_, r) => (
-                <div>
-                  <Link to={`/employees/${r.employeeId}`} style={{ fontWeight: 600 }}>
-                    {r.employeeName}
-                  </Link>
-                  {r.stopped > 1 && (
-                    <div style={{ marginTop: 2 }}>
-                      <StatusPill tone="mute" nodot>{r.stopped} evaluations stopped</StatusPill>
-                    </div>
+        <ul className="pea-todo-list">
+          {items.map((r) => {
+            const k = KIND[r.kind] || KIND.waiting;
+            const tone = r.kind === 'feedback' ? feedbackTone(r.problem) : k.tone;
+            const about = String(r.title || '').split(' · ').slice(1).join(' · ');
+            return (
+              <li key={`${r.kind}-${r.employeeId}-${r.cycleId || ''}`} className={`pea-todo-row${r.kind === 'feedback' ? ' is-feedback' : ''}`}>
+                <Avatar name={r.employeeName} size="sm" />
+                <div className="pea-todo-who">
+                  <Link to={`/employees/${r.employeeId}`} className="pea-todo-name">{r.employeeName}</Link>
+                  <div className="pea-muted pea-small">
+                    {about}
+                    {r.stopped > 1 ? ` · ${r.stopped} evaluations stopped` : ''}
+                  </div>
+                </div>
+                <div className="pea-todo-pill">
+                  <StatusPill tone={tone} nodot className="pea-pill-icon">
+                    {k.icon} {k.label || r.problem}
+                  </StatusPill>
+                </div>
+                <p className="pea-todo-detail">{r.detail}</p>
+                <span className="pea-todo-days pea-muted">{daysLabel(r.days)}</span>
+                <div className="pea-todo-go">
+                  {r.kind === 'feedback' ? (
+                    <Link to={r.link}>
+                      <Button type="primary" icon={<MessageOutlined />}>Read feedback</Button>
+                    </Link>
+                  ) : r.kind === 'waiting' && r.cycleId ? (
+                    <Popconfirm
+                      title="Send an extra reminder?"
+                      description={<div style={{ maxWidth: 280 }}>Emails the reporting manager again with the link they already have.</div>}
+                      okText="Send"
+                      onConfirm={() => remind.mutate(r.cycleId)}
+                    >
+                      <Button loading={remind.isPending && remind.variables === r.cycleId}>Remind now</Button>
+                    </Popconfirm>
+                  ) : (
+                    <Link to={r.link}><Button>{r.action}</Button></Link>
                   )}
                 </div>
-              ),
-            },
-            {
-              // The part of the title after the name: "evaluation 1",
-              // "confirmation decision". Splitting it out of `title` keeps the
-              // employee column a name and this one a subject.
-              title: 'About',
-              width: 150,
-              render: (_, r) => {
-                const about = String(r.title || '').split(' · ').slice(1).join(' · ');
-                return about || '—';
-              },
-            },
-            {
-              title: 'Problem',
-              width: 175,
-              render: (_, r) => <StatusPill tone={KIND[r.kind]?.tone}>{r.problem}</StatusPill>,
-            },
-            {
-              title: 'Detail',
-              render: (_, r) => (
-                <span style={{ fontSize: 12.5, color: 'var(--pea-text-muted)' }}>{r.detail}</span>
-              ),
-            },
-            {
-              title: 'Waiting',
-              dataIndex: 'days',
-              width: 90,
-              className: 'pea-num',
-              render: (v) => (v == null ? '—' : `${v} day${v === 1 ? '' : 's'}`),
-            },
-            {
-              title: '',
-              width: 120,
-              align: 'right',
-              fixed: 'right',
-              render: (_, r) => (
-                <Link to={r.link}>
-                  <Button size="small">{r.action}</Button>
-                </Link>
-              ),
-            },
-          ]}
-        />
+              </li>
+            );
+          })}
+        </ul>
       )}
-    </Card>
+    </section>
   );
 }
 
 export default function Overview() {
   // `modal` alongside `message`: the static Modal.confirm renders outside the
-  // ConfigProvider, so it ignores the theme — a white dialog with a default
-  // blue button on a dark page. This one confirms sending real email, so it
-  // should look like the rest of the product.
+  // ConfigProvider, so it ignores the theme. This one confirms sending real
+  // email, so it should look like the rest of the product.
   const { message, modal } = App.useApp();
   const qc = useQueryClient();
   const navigate = useNavigate();
+  const user = useCurrentUser();
   const [tab, setTab] = useState('action');
 
   const { data, isLoading } = useQuery({
@@ -213,6 +159,12 @@ export default function Overview() {
   const { data: counts } = useQuery({
     queryKey: ['evaluation-counts'],
     queryFn: () => api.get('/evaluations/counts').then(unwrap),
+    retry: false,
+  });
+
+  const { data: action, isLoading: actionLoading } = useQuery({
+    queryKey: ['needs-action'],
+    queryFn: () => api.get('/dashboard/needs-action').then(unwrap),
   });
 
   const sweep = useMutation({
@@ -277,25 +229,35 @@ export default function Overview() {
   };
 
   if (isLoading) return <Spin size="large" style={{ display: 'block', marginTop: 80 }} />;
-  if (!data) return <Alert type="error" message="Could not load the overview" />;
+  if (!data) return <Alert type="error" message="Could not load the dashboard" />;
 
   const { employees: emp, evaluations: ev } = data;
 
   /** Every figure opens the list behind it — a number is never a dead end. */
-  const openList = (scope) => navigate(`/evaluations?scope=${scope}`);
+  const openBoard = (status) => navigate(`/evaluations${status ? `?status=${status}` : ''}`);
+
+  const now = new Date();
+  const dateLine = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+  const week = action?.summary?.submittedThisWeek ?? 0;
+  const needRead = action?.summary?.needRead ?? 0;
+  const summary = week === 0
+    ? 'No evaluations came back this week.'
+    : `${say(week)} evaluation${week === 1 ? '' : 's'} came back this week.${
+      needRead ? ` ${say(needRead)} still need${needRead === 1 ? 's' : ''} a read.` : ' None needs a read.'}`;
+
+  const oldestWaiting = (data.awaitingList || []).reduce((m, a) => Math.max(m, a.daysWaiting ?? 0), 0);
 
   return (
     <>
-      <div className="pea-page-head">
+      <div className="pea-dash-head">
         <div>
-          <h2>Dashboard</h2>
-          <p>
-            As at {formatDate(data.today)} · next automatic emails at 11:00 ({data.timezone})
-          </p>
+          <div className="pea-eyebrow">{dateLine}</div>
+          <h2 className="pea-display">{greeting(now)}, {user.first_name || user.username}</h2>
+          <p className="pea-lead">{summary}</p>
         </div>
-        <Space wrap>
+        <div className="pea-dash-actions">
           <Tooltip title="Download a snapshot in the old master workbook layout. Changes nothing.">
-            <Button icon={<DownloadOutlined />} onClick={download}>Export to Excel</Button>
+            <Button icon={<DownloadOutlined />} onClick={download}>Export</Button>
           </Tooltip>
           <Tooltip title="Dry run: shows what would be sent now. Nothing is sent or changed.">
             <Button icon={<EyeOutlined />} onClick={() => sweep.mutate(true)} loading={sweep.isPending}>
@@ -305,19 +267,19 @@ export default function Overview() {
           <Tooltip title="Shows exactly what would be sent and asks before sending anything.">
             <Button
               type="primary"
-              icon={<SyncOutlined />}
               onClick={() => confirmAndSweep.mutate()}
               loading={confirmAndSweep.isPending || sweep.isPending}
             >
               Send due emails now…
             </Button>
           </Tooltip>
-        </Space>
+        </div>
       </div>
 
       <Tabs
         activeKey={tab}
         onChange={setTab}
+        className="pea-dash-tabs"
         items={[
           { key: 'action', label: 'Needs action' },
           { key: 'trends', label: 'Trends' },
@@ -326,140 +288,103 @@ export default function Overview() {
 
       {tab === 'action' ? (
         <>
-          {/*
-            The full ATS tile: icon chip, accent rule, coloured wash. The 17-Sep
-            proposal had these flat and unchipped, but flat figures on a flat
-            ground gave the reader nothing to aim at — the strip is the first
-            thing HR looks at each morning, and it has to be findable.
-
-            `share` is unchanged: a bar is drawn only where the figure is a real
-            fraction of a real denominator, never as decoration.
-          */}
-          <div className="pea-stats pea-stats--five">
-            <StatCard
-              label="In probation"
-              value={emp.inProbation}
-              icon={<SolutionOutlined />}
-              accent="blue"
-              hint="Active employees whose probation is still running — no decision yet, or extended."
-              foot={`${emp.confirmed} confirmed · ${emp.extended} extended`}
-              share={ratio(emp.inProbation, emp.active)}
-            />
-            <StatCard
-              label="Waiting for manager"
-              value={counts?.waiting ?? ev.awaiting}
-              icon={<ClockCircleOutlined />}
-              accent="orange"
-              hint="Evaluation links sent, with no response yet."
-              foot={<a onClick={() => openList('waiting')}>View list <RightOutlined style={{ fontSize: 10 }} /></a>}
-            />
-            <StatCard
-              label="Not sent yet"
-              value={counts?.not_sent ?? ev.overdue}
-              icon={<WarningOutlined />}
-              accent="red"
-              hint="Due, but no email has gone out. Usually a missing manager or project leader email."
-              foot={<a onClick={() => openList('not_sent')}>View list <RightOutlined style={{ fontSize: 10 }} /></a>}
-            />
-            <StatCard
-              label="Due in 14 days"
-              value={counts?.due_soon ?? ev.dueSoon}
-              icon={<TeamOutlined />}
-              accent="green"
-              hint="Scheduled and sent automatically — nothing to do."
-              foot={<a onClick={() => openList('due_soon')}>View list <RightOutlined style={{ fontSize: 10 }} /></a>}
-            />
-            <StatCard
-              label="Submitted"
-              value={ev.completed}
-              suffix={`/ ${ev.total}`}
-              icon={<CheckCircleOutlined />}
-              accent="emerald"
-              hint="Evaluations submitted, out of those that have actually fallen due."
-              foot={
-                ev.averageRating != null
-                  ? `Average rating ${ev.averageRating.toFixed(2)}`
-                  : 'No ratings submitted yet'
-              }
-              share={ratio(ev.completed, ev.total)}
-            />
+          <div className="pea-tiles">
+            <div className="pea-tile">
+              <strong>{emp.inProbation}</strong>
+              <span>In probation</span>
+              <small>{emp.confirmed} confirmed · {emp.extended} extended</small>
+            </div>
+            <button type="button" className="pea-tile" onClick={() => openBoard('waiting')}>
+              <strong>{counts?.waiting ?? ev.awaitingResponse}</strong>
+              <span>Waiting for manager</span>
+              <small>{oldestWaiting ? `oldest waiting ${daysLabel(oldestWaiting)}` : 'nobody is waiting'}</small>
+            </button>
+            <button type="button" className="pea-tile" onClick={() => openBoard('not_sent')}>
+              <strong className={(counts?.not_sent ?? ev.overdue) ? 'pea-ink-muted' : ''}>{counts?.not_sent ?? ev.overdue}</strong>
+              <span>Not sent yet</span>
+              <small>{(counts?.not_sent ?? ev.overdue) ? 'needs a fix' : 'all sent on time'}</small>
+            </button>
+            <button type="button" className="pea-tile" onClick={() => openBoard('scheduled')}>
+              <strong>{counts?.due_soon ?? ev.dueInNext14Days}</strong>
+              <span>Due in 14 days</span>
+              <small>sent automatically</small>
+            </button>
+            <button type="button" className="pea-tile pea-tile--accent" onClick={() => openBoard('submitted')}>
+              <strong>{ev.completed} <em>/ {ev.total}</em></strong>
+              <span>Submitted</span>
+              <small>
+                {ev.averageRating != null ? `average ${ev.averageRating.toFixed(2)} · ` : ''}
+                <span className="pea-link-strong">open the board <ArrowRightOutlined /></span>
+              </small>
+            </button>
           </div>
 
-          <NeedsAction />
+          <NeedsAction data={action} isLoading={actionLoading} />
 
-          {/*
-            Side by side rather than stacked: both are short reference lists, and
-            neither earns the full width on its own. They sit BELOW the action
-            list now that all three carry real column headers — a six-column
-            table cannot share a row with a 300px sidebar.
-          */}
           <div className="pea-overview-pair">
-              <SidePanel
-                title="Coming up"
-                note="next 14 days"
-                rows={data.upcomingList || []}
-                empty="Nothing falls due in the next 14 days."
-                rowKey={(r) => r.cycleId}
-                columns={[
-                  {
-                    title: 'Employee',
-                    render: (_, r) => <Link to={`/employees/${r.employeeId}`}>{r.employee}</Link>,
-                  },
-                  { title: 'Eval', dataIndex: 'seqNo', width: 56, className: 'pea-num' },
-                  {
-                    title: 'Due',
-                    dataIndex: 'dueDate',
-                    width: 110,
-                    className: 'pea-num',
-                    render: (v) => formatDate(v),
-                  },
-                ]}
-              />
+            <section className="pea-card pea-card-pad pea-mini-list">
+              <header className="pea-mini-head">
+                <h3>Coming up</h3>
+                <span className="pea-muted pea-small">next 14 days</span>
+              </header>
+              {(data.upcomingList || []).length === 0 ? (
+                <p className="pea-muted">Nothing falls due in the next 14 days.</p>
+              ) : (
+                <ul>
+                  {data.upcomingList.slice(0, 8).map((r) => (
+                    <li key={r.cycleId}>
+                      <Avatar name={r.employee} size="xs" />
+                      <Link to={`/evaluations/${r.cycleId}`} className="pea-mini-name">{r.employee}</Link>
+                      <span className="pea-muted">evaluation {r.seqNo}</span>
+                      <span className="pea-grow" />
+                      <span className="pea-num pea-muted">{shortDate(r.dueDate)}</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
-              <SidePanel
-                title="Recently submitted"
-                rows={data.recentSubmissions || []}
-                empty="No evaluations submitted yet."
-                rowKey={(r) => r.cycleId}
-                columns={[
-                  {
-                    title: 'Employee',
-                    render: (_, r) => <Link to={`/employees/${r.employeeId}`}>{r.employee}</Link>,
-                  },
-                  { title: 'Eval', dataIndex: 'seqNo', width: 56, className: 'pea-num' },
-                  {
-                    title: 'Average',
-                    dataIndex: 'average',
-                    width: 84,
-                    className: 'pea-num',
-                    // A figure to compare down the column, so it is a coloured
-                    // number rather than a pill — as on the employee page.
-                    render: (v) =>
-                      v == null ? (
-                        '—'
-                      ) : (
-                        <strong style={{ color: `var(--pea-${v >= 3.5 ? 'ok' : v >= 2.5 ? 'info' : 'crit'})` }}>
-                          {Number(v).toFixed(2)}
-                        </strong>
-                      ),
-                  },
-                  {
-                    title: 'Decision',
-                    dataIndex: 'confirmation',
-                    width: 150,
-                    render: (v) =>
-                      !v ? (
-                        <Typography.Text type="secondary">—</Typography.Text>
-                      ) : (
-                        <StatusPill
-                          tone={v === 'Confirmed' ? 'ok' : v === 'Not Confirmed' ? 'crit' : 'ext'}
-                        >
-                          {v}
-                        </StatusPill>
-                      ),
-                  },
-                ]}
-              />
+            <section className="pea-card pea-card-pad pea-mini-list">
+              <header className="pea-mini-head">
+                <h3>Recently submitted</h3>
+                <span className="pea-grow" />
+                <Link to="/evaluations?status=submitted" className="pea-link-strong">
+                  Open the board <ArrowRightOutlined />
+                </Link>
+              </header>
+              {(data.recentSubmissions || []).length === 0 ? (
+                <p className="pea-muted">No evaluations submitted yet.</p>
+              ) : (
+                <ul className="pea-recent">
+                  {data.recentSubmissions.slice(0, 6).map((r) => (
+                    <li key={r.cycleId}>
+                      <Avatar name={r.employee} />
+                      <div className="pea-recent-body">
+                        <div>
+                          <Link to={`/evaluations/${r.cycleId}`} className="pea-mini-name">{r.employee}</Link>{' '}
+                          <span className="pea-muted pea-small">
+                            E{r.seqNo}{r.isFinal ? ' · final' : ''} · {shortDate(r.submittedAt)}
+                          </span>
+                        </div>
+                        {r.remarks ? (
+                          <em className="pea-clamp-2">“{r.remarks}”</em>
+                        ) : (
+                          <em className="pea-muted">
+                            No overall comment · {r.commentedCount} of {r.questionCount} questions commented
+                          </em>
+                        )}
+                      </div>
+                      <div className="pea-recent-score">
+                        <strong className={`pea-ink-${ratingTone(r.average)}`}>{avg(r.average)}</strong>
+                        {r.confirmation && (
+                          <StatusPill tone={decisionTone(r.confirmation)} nodot>{r.confirmation}</StatusPill>
+                        )}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
           </div>
         </>
       ) : (

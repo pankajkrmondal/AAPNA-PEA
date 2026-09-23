@@ -21,7 +21,7 @@ router.get('/export', exportExcel);
  * necessarily visible anywhere.
  */
 router.get('/needs-action', catchAsync(async (req, res) =>
-  success(res, await getNeedsAction({ limit: Number(req.query.limit) || 50 }))
+  success(res, await getNeedsAction({ limit: Number(req.query.limit) || 50, userId: req.user.id }))
 ));
 
 export default router;

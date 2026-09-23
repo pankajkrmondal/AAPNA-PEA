@@ -6,18 +6,22 @@ import {
   Row, Col, App, Tooltip, Modal, Form, Input, DatePicker, Radio, Select, Popconfirm, Progress,
 } from 'antd';
 import {
-  ArrowLeftOutlined, SendOutlined, PauseOutlined, PlayCircleOutlined, EditOutlined,
+  SendOutlined, PauseOutlined, PlayCircleOutlined, EditOutlined,
   LockOutlined, UnlockOutlined, WarningOutlined, MailOutlined, ShareAltOutlined, DeleteOutlined,
-  DownloadOutlined,
+  DownloadOutlined, MoreOutlined, ArrowUpOutlined, ArrowDownOutlined, ClockCircleOutlined, LoadingOutlined,
 } from '@ant-design/icons';
+import { Dropdown } from 'antd';
 import dayjs from 'dayjs';
 import api, { unwrap, USER_KEY } from '../api.js';
 import { isAdminTier } from '../auth.js';
-import EmployeeTrend from '../components/EmployeeTrend.jsx';
 import ShareReportModal from '../components/ShareReportModal.jsx';
 import { evaluationStatus } from '../evaluationStatus.js';
 import StatusPill from '../components/StatusPill.jsx';
 import { formatDate as fmt } from '../formatDate.js';
+import { Avatar, LoadProblem } from '../components/board/BoardParts.jsx';
+import { CommentMatrix, JourneyStepper, trendOf } from '../components/EmployeeJourney.jsx';
+import { decisionTone } from '../evaluationDisplay.js';
+import { useCrumbs } from '../crumbs.jsx';
 
 /** Same rule as the server: case and extra spaces do not matter. */
 const normName = (s) => String(s || '').replace(/\s+/g, ' ').trim().toLowerCase();
@@ -75,10 +79,12 @@ export default function EmployeeDetail() {
   const { message } = App.useApp();
   const qc = useQueryClient();
 
-  const { data: e, isLoading } = useQuery({
+  const { data: e, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['employee', id],
     queryFn: () => api.get(`/employees/${id}/full`).then(unwrap),
   });
+
+  useCrumbs([{ label: 'Employees', to: '/employees' }, { label: e?.full_name || 'Employee' }]);
 
   const resend = useMutation({
     mutationFn: (seqNo) =>
@@ -178,7 +184,18 @@ export default function EmployeeDetail() {
   });
 
   if (isLoading) return <Spin size="large" style={{ display: 'block', marginTop: 80 }} />;
-  if (!e) return <Alert type="error" message="Employee not found" />;
+  if (isError || !e) {
+    return (
+      <div className="pea-card pea-card-pad">
+        <LoadProblem
+          error={error}
+          onRetry={refetch}
+          what="This employee"
+          extra={<Link to="/employees"><Button>All employees</Button></Link>}
+        />
+      </div>
+    );
+  }
 
   const progress = e.progress || { total: 0, completed: 0, awaitingResponse: 0, overdue: 0, nextDue: null };
   const azure = e.azure || { linked: false, fields: {} };
@@ -233,38 +250,75 @@ export default function EmployeeDetail() {
     reportForm.setFieldsValue({ field, correct_value: e[field], note: '' });
   };
 
+  // ── The hero's facts ─────────────────────────────────────────────────
+  const cycles = e.cycles || [];
+  const extended = e.confirmation_status?.startsWith('Extend');
+  const nextOpen = cycles.find((c) => ['pending', 'email_sent', 'opened'].includes(c.status));
+  const trend = trendOf(cycles);
+
+  // Download, hold and delete are occasional; they live behind "More" so the
+  // header carries the three actions the design names.
+  const moreItems = [
+    {
+      key: 'download',
+      icon: downloadReport.isPending ? <LoadingOutlined /> : <DownloadOutlined />,
+      label: 'Download report (.xlsx)',
+      disabled: progress.completed === 0,
+    },
+    // R-02 — Subhajit, 15-Sep (7:15): "Pause evolutions only works when a
+    // resource has left." Exits are held automatically, so the manual button is
+    // off unless HR switches it on for the long-leave case. Resume always shows
+    // for anyone already paused: hiding it would strand them with no way back.
+    ...((e.halt_process || manualPauseEnabled)
+      ? [{
+        key: 'halt',
+        icon: e.halt_process ? <PlayCircleOutlined /> : <PauseOutlined />,
+        label: e.halt_process ? 'Resume evaluations' : 'Hold for long leave',
+      }]
+      : []),
+    ...(isAdmin ? [{ type: 'divider' }, { key: 'delete', icon: <DeleteOutlined />, label: 'Delete…', danger: true }] : []),
+  ];
+
   return (
     <>
-      <div className="pea-page-head">
-        <Space wrap>
-          <Link to="/employees"><Button icon={<ArrowLeftOutlined />} /></Link>
-          <div>
-            <h2>{e.full_name}</h2>
-            <p>{e.office_email}</p>
+      <section className="pea-card pea-journey-hero">
+        <Avatar name={e.full_name} size="xl" />
+        <div className="pea-journey-id">
+          <div className="pea-eyebrow">Employee · probation journey</div>
+          <h1 className="pea-display">{e.full_name}</h1>
+          <p className="pea-lead">
+            {e.is_experienced ? 'Experienced' : 'Fresher'} · joined {fmt(e.doj)} · reporting manager {e.rm_name}
+            {e.pl_email && <> · project leader {e.pl_email}</>}
+          </p>
+          <div className="pea-pill-row">
+            {e.confirmation_status && !extended ? (
+              <StatusPill tone={decisionTone(e.confirmation_status)}>{e.confirmation_status}</StatusPill>
+            ) : extended ? (
+              <span className="pea-fact"><ClockCircleOutlined /> <strong>Probation extended</strong></span>
+            ) : (
+              <StatusPill tone="info">In probation</StatusPill>
+            )}
+            <span className="pea-fact">{progress.completed} of {progress.total} evaluations submitted</span>
+            {nextOpen && (
+              <span className="pea-fact">
+                {nextOpen.is_extension ? 'Extension due' : 'Next due'} {fmt(nextOpen.due_date)}
+              </span>
+            )}
+            {trend && (
+              <StatusPill tone={trend.tone} nodot className="pea-pill-icon">
+                {trend.word === 'Improving' ? <ArrowUpOutlined /> : trend.word === 'Declining' ? <ArrowDownOutlined /> : null} {trend.text}
+              </StatusPill>
+            )}
+            {e.halt_process && <StatusPill tone="warn">On hold</StatusPill>}
+            {hold.heldAsLeaver && (
+              <Tooltip title="Microsoft 365 shows this account switched off and unlicensed, so evaluations stopped on their own. Confirm the exit, or mark them as still here, on the New joiners screen.">
+                <StatusPill tone="crit">Held — may have left</StatusPill>
+              </Tooltip>
+            )}
+            {e.employment_status === 'left' && <StatusPill tone="mute">Left</StatusPill>}
           </div>
-          {/* Fresher / Experienced classifies the person; the rest are states. */}
-          <StatusPill tone="mute" nodot>{e.is_experienced ? 'Experienced' : 'Fresher'}</StatusPill>
-          {e.halt_process && <StatusPill tone="warn">On hold</StatusPill>}
-          {hold.heldAsLeaver && (
-            <Tooltip title="Microsoft 365 shows this account switched off and unlicensed, so evaluations stopped on their own. Confirm the exit, or mark them as still here, on the New joiners screen.">
-              <StatusPill tone="crit">Held — may have left</StatusPill>
-            </Tooltip>
-          )}
-          {e.confirmation_status && (
-            <StatusPill
-              tone={
-                e.confirmation_status === 'Confirmed'
-                  ? 'ok'
-                  : e.confirmation_status === 'Not Confirmed'
-                    ? 'crit'
-                    : 'ext'
-              }
-            >
-              {e.confirmation_status}
-            </StatusPill>
-          )}
-        </Space>
-        <Space wrap>
+        </div>
+        <div className="pea-journey-actions">
           <Button icon={<EditOutlined />} onClick={openEdit}>Edit</Button>
           <Tooltip title="A personal link so the employee can see their own probation. What it shows is set in Settings → Access.">
             <Button icon={<ShareAltOutlined />} loading={issueSelfLink.isPending} onClick={() => issueSelfLink.mutate()}>
@@ -272,18 +326,8 @@ export default function EmployeeDetail() {
             </Button>
           </Tooltip>
           {/* R-05 — Subhajit, 15-Sep (21:13): "time and again it's required for
-              me actually." Download for a Teams chat or a meeting; Share for the
-              leader who emailed asking. */}
-          <Tooltip title="Download every submitted evaluation, parameter scores and remarks as a spreadsheet.">
-            <Button
-              icon={<DownloadOutlined />}
-              disabled={progress.completed === 0}
-              loading={downloadReport.isPending}
-              onClick={() => downloadReport.mutate()}
-            >
-              Download
-            </Button>
-          </Tooltip>
+              me actually." Share for the leader who emailed asking; Download
+              (under More) for a Teams chat or a meeting. */}
           <Tooltip title="Email the whole evaluation record to whoever asked for it, with the spreadsheet attached.">
             <Button
               type="primary"
@@ -294,39 +338,27 @@ export default function EmployeeDetail() {
               Share report…
             </Button>
           </Tooltip>
-          {/* R-02 — Subhajit, 15-Sep (7:15): "Pause evolutions only works when a
-              resource has left." Exits are now held automatically, so the manual
-              button is off unless HR switches it on for the long-leave case.
-              Resume always shows for anyone already paused: hiding it would
-              strand them with no way back. */}
-          {(e.halt_process || manualPauseEnabled) && (
-            <Tooltip
-              title={
-                e.halt_process
-                  ? 'Start sending evaluations for this person again.'
-                  : 'For long leave only — a sabbatical or maternity leave where the Microsoft 365 account stays active. People who have left are held automatically.'
-              }
-            >
-              <Button
-                icon={e.halt_process ? <PlayCircleOutlined /> : <PauseOutlined />}
-                onClick={() => toggleHalt.mutate(!e.halt_process)}
-                loading={toggleHalt.isPending}
-              >
-                {e.halt_process ? 'Resume evaluations' : 'Hold for long leave'}
-              </Button>
-            </Tooltip>
-          )}
-          {isAdmin && (
-            <Button
-              danger
-              icon={<DeleteOutlined />}
-              onClick={() => { setDeleteName(''); setDeleteOpen(true); }}
-            >
-              Delete
-            </Button>
-          )}
-        </Space>
-      </div>
+          <Dropdown
+            trigger={['click']}
+            placement="bottomRight"
+            menu={{
+              items: moreItems,
+              onClick: ({ key }) => {
+                if (key === 'download') downloadReport.mutate();
+                if (key === 'halt') toggleHalt.mutate(!e.halt_process);
+                if (key === 'delete') { setDeleteName(''); setDeleteOpen(true); }
+              },
+            }}
+          >
+            <Button icon={<MoreOutlined />} aria-label="More actions" loading={toggleHalt.isPending} />
+          </Dropdown>
+        </div>
+      </section>
+
+      <JourneyStepper employee={e} />
+      <CommentMatrix employee={e} />
+
+      <h2 className="pea-record-head">Record and schedule</h2>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
@@ -431,15 +463,15 @@ export default function EmployeeDetail() {
         </Col>
       </Row>
 
-      {/* R-06 — "whether that new joiner is growing or not" (Subhajit, 13:24).
-          Above the timeline: the judgement comes first, the audit trail after. */}
-      <EmployeeTrend employeeId={id} />
-
-      <Card className="pea-card" size="small" title={<span className="pea-section-title">Evaluation timeline</span>}>
+      {/* R-06 — "whether that new joiner is growing or not" (Subhajit, 13:24)
+          is now answered at the top: the trend pill, the stepper's averages and
+          the comment grid's ▲▼. This table is the schedule and its actions. */}
+      <Card className="pea-card" size="small" title={<span className="pea-section-title">Evaluation schedule</span>}>
         <Table
           size="small"
           rowKey="id"
           pagination={false}
+          scroll={{ x: 'max-content' }}
           dataSource={e.cycles}
           columns={[
             {
@@ -448,7 +480,7 @@ export default function EmployeeDetail() {
               width: 60,
               render: (v, r) => (
                 <Space size={4}>
-                  {v}
+                  <Link to={`/evaluations/${r.id}`} title="Open this evaluation">{v}</Link>
                   {r.is_extension && (
                     <Tooltip title="Extension"><StatusPill tone="ext" nodot>ext</StatusPill></Tooltip>
                   )}

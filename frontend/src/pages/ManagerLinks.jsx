@@ -123,8 +123,8 @@ function EvaluationLinkTab() {
             Evaluation form links are created automatically when an evaluation falls due.
           </p>
           <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
-            To copy or resend one, open <Link to="/evaluations?scope=waiting">Evaluations</Link> and
-            use <strong>Copy link</strong> on the row. That way the link you share is the one the
+            To copy or resend one, open <Link to="/evaluations?status=waiting">Evaluations</Link>, open
+            the evaluation and use <strong>Copy link</strong>. That way the link you share is the one the
             manager already has, rather than a new one that cancels it.
           </Typography.Text>
         </div>
