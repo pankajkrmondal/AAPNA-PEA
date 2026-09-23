@@ -118,7 +118,10 @@ export async function getDashboard() {
     }),
     prisma.pea_evaluation_cycles.findMany({
       where: { status: 'completed', submitted_at: { not: null } },
-      include: { employee: { select: { id: true, full_name: true } } },
+      include: {
+        employee: { select: { id: true, full_name: true } },
+        scores: { select: { comments: true } },
+      },
       orderBy: { submitted_at: 'desc' },
       take: 10,
     }),
@@ -201,6 +204,12 @@ export async function getDashboard() {
       submittedAt: c.submitted_at,
       submittedBy: c.submitted_by_email,
       confirmation: c.confirmation_status,
+      // The manager's words, so the Dashboard shows what came back and not only
+      // a number. A decision is only ever asked on the final evaluation.
+      remarks: c.remarks,
+      isFinal: !!c.confirmation_status,
+      questionCount: c.scores.length,
+      commentedCount: c.scores.filter((s) => s.comments).length,
     })),
   };
 }

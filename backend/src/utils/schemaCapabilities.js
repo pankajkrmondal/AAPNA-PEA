@@ -63,3 +63,9 @@ export const hasPhase2Features = () => hasColumn('pea_employees', 'azure_display
 
 /** True once 2026-09-13b-pea-admin-portal.sql has been applied. */
 export const hasModulePermissions = () => hasTable('pea_module_permissions');
+
+/** True once 2026-09-23-pea-board-redesign.sql has been applied (reason for decision). */
+export const hasDecisionReason = () => hasColumn('pea_evaluation_cycles', 'confirmation_reason');
+
+/** True once 2026-09-23-pea-board-redesign.sql has been applied (per-user read receipts). */
+export const hasEvaluationReads = () => hasTable('pea_evaluation_reads');

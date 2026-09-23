@@ -160,6 +160,27 @@ const STYLES = `
     background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
     border-radius: 8px; padding: 12px 16px; margin: 0 0 16px; font-size: 14.5px;
   }
+  .err strong { display: block; margin-bottom: 4px; }
+  .err ul { margin: 4px 0 0; padding-left: 20px; }
+  .err a { color: #991b1b; }
+
+  /* The rule box: dashed brand green, the same frame the design uses for
+     "a comment is required for any rating of 2 or lower". */
+  .rule {
+    border: 1.5px dashed #74a534; border-radius: 10px; background: #f7faf1;
+    padding: 8px 12px; font-size: 13.5px; color: #47691f; margin: 0 0 10px;
+  }
+  .cmt { border-radius: 10px; }
+  .cmt.need { border: 1.5px dashed #74a534; background: #f7faf1; padding: 10px 12px 12px; }
+  .cmt .opt { font-weight: 500; color: #6b7566; }
+  .cmt .must { display: none; font-weight: 500; color: #965406; font-size: 12.5px; margin-left: 4px; }
+  .cmt.need .must { display: inline; }
+  .cmt.need .opt { display: none; }
+  .field-err { color: #b91c1c; font-size: 13px; margin: 6px 0 0; display: flex; gap: 6px; align-items: center; }
+  textarea.invalid, select.invalid { border-color: #dc2626; box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.10); }
+  .reason { margin-top: 14px; }
+  .reason.hide { display: none; }
+  .counter { text-align: right; font-size: 12px; color: #9aa393; margin-top: 4px; }
   .note {
     background: #f2f7e8; border: 1px solid #d3e4b3; border-radius: 8px;
     padding: 14px 18px; font-size: 14.5px; color: #22340f; line-height: 1.6;
@@ -285,13 +306,27 @@ ${bodyHtml}
 </html>`;
 }
 
+/** Where on the page each kind of problem lives. */
+function anchorFor(field) {
+  if (field === 'confirmation_status') return '#decision';
+  if (field === 'confirmation_reason') return '#reason';
+  if (field.startsWith('comments_')) return `#c_${field.slice('comments_'.length)}`;
+  return '';
+}
+
 /**
- * @param {object} data
- * @param {object} [opts]
- * @param {string} [opts.error]
- * @param {object} [opts.submitted]
- * @param {string} [opts.nonce] - CSP nonce from res.locals.cspNonce
+ * One line of the error summary, with the part it names ("Meeting Deadline",
+ * "Extend for 1 month") as a link to the field.
+ * @param {{field: string, text: string, label?: string}} p
  */
+function problemLine(p) {
+  const anchor = anchorFor(p.field);
+  const at = p.label ? p.text.indexOf(p.label) : -1;
+  if (!anchor || at < 0) return esc(p.text);
+  return esc(p.text.slice(0, at))
+    + `<a href="${esc(anchor)}">${esc(p.label)}</a>`
+    + esc(p.text.slice(at + p.label.length));
+}
 
 /**
  * Render the evaluation form.
@@ -302,9 +337,20 @@ ${bodyHtml}
  * @param {string} [opts.nonce] - CSP nonce for the inline script
  * @returns {string} HTML
  */
-export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}) {
+export function renderForm(data, { error = '', problems = [], submitted = {}, nonce = '' } = {}) {
   const { employee, cycle, params, askConfirmation, token } = data;
   const ratings = submitted.ratings || {};
+  const first = esc(employee.full_name.split(' ')[0]);
+  const problemFor = (field) => problems.find((p) => p.field === field);
+
+  // "Please fix 2 things before submitting — your answers are kept." Each item
+  // links to the field it is about, so a long form is not a hunt.
+  const errorBlock = problems.length
+    ? `<div class="err" role="alert">
+        <strong>Please fix ${problems.length} thing${problems.length === 1 ? '' : 's'} before submitting — your answers are kept.</strong>
+        <ul>${problems.map((p) => `<li>${problemLine(p)}</li>`).join('')}</ul>
+      </div>`
+    : error ? `<div class="err" role="alert">${esc(error)}</div>` : '';
 
   const scaleRows = RATING_ROWS.map(
     (r) => `<tr><td>${esc(r.label)} <span style="color:#6b7566">(${esc(r.detail)})</span></td>
@@ -325,27 +371,46 @@ export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}
       </label>`
       ).join('');
 
+      // The comment becomes required as soon as a rating of 2 or lower is
+      // picked. Rendered in that state from the server too, so a re-shown form
+      // (or one with JavaScript blocked) says the same thing the script would.
+      const need = current.rating !== undefined && current.rating !== '' && Number(current.rating) <= COMMENT_REQUIRED_AT_OR_BELOW;
+      const missing = problemFor(`comments_${p.param_key}`);
+
       return `
     <div class="q">
       <h3><span class="num">${i + 1}.</span>${esc(p.param_label)} <span class="req">*</span></h3>
-      <div class="opts">${opts}</div>
-      <label class="fld" for="c_${esc(p.param_key)}">Comments</label>
-      <textarea id="c_${esc(p.param_key)}" name="comments_${esc(p.param_key)}"
-                placeholder="Why this rating? Specific examples help ${esc(employee.full_name.split(' ')[0])} improve."
-      >${esc(current.comments || '')}</textarea>
+      <div class="opts" data-q="${esc(p.param_key)}">${opts}</div>
+      <div class="cmt${need ? ' need' : ''}" id="box_${esc(p.param_key)}">
+        <label class="fld" for="c_${esc(p.param_key)}">
+          Comment<span class="opt">s (optional)</span><span class="req must-star">${need ? ' *' : ''}</span>
+          <span class="must">required for a rating of ${COMMENT_REQUIRED_AT_OR_BELOW} or lower</span>
+        </label>
+        <textarea id="c_${esc(p.param_key)}" name="comments_${esc(p.param_key)}"${missing ? ' class="invalid"' : ''}
+                  placeholder="Why this rating? Specific examples help ${first} improve."
+        >${esc(current.comments || '')}</textarea>
+        ${missing ? `<p class="field-err">⚠ Please explain this rating — HR and ${first} both need to understand it.</p>` : ''}
+      </div>
     </div>`;
     })
     .join('');
 
+  const decisionMissing = problemFor('confirmation_status');
+  const reasonProblem = problemFor('confirmation_reason');
+  const reasonText = String(submitted.confirmation_reason || '');
+  // Hidden only for "Confirmed" and no choice yet. Without JavaScript it is
+  // always shown, and its label says when it is required.
+  const reasonHidden = !submitted.confirmation_status || submitted.confirmation_status === 'Confirmed';
+
   const confirmationBlock = askConfirmation
     ? `
-  <div class="card">
+  <div class="card" id="decision">
     <h2 style="margin:0 0 6px;font-size:18px">Confirmation decision <span class="req">*</span></h2>
     <p class="hint" style="margin-bottom:14px">
       This is the final evaluation of ${esc(employee.full_name)}'s probation period,
       so a decision is required.
     </p>
-    <select name="confirmation_status" required>
+    <select name="confirmation_status" id="confirmation_status" required${decisionMissing ? ' class="invalid"' : ''}>
       <option value="">— Please choose —</option>
       ${CONFIRMATION_ROWS.map(
         (o) =>
@@ -354,6 +419,20 @@ export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}
           }>${esc(o.label)} — ${esc(o.help)}</option>`
       ).join('')}
     </select>
+
+    <div class="reason cmt need${reasonHidden ? ' hide' : ''}" id="reason">
+      <label class="fld" for="confirmation_reason">
+        Reason for this decision <span class="req">*</span>
+        <span class="must">— required when you do not confirm or when you extend</span>
+      </label>
+      <textarea id="confirmation_reason" name="confirmation_reason" maxlength="${REASON_MAX}" style="min-height:90px"${reasonProblem ? ' class="invalid"' : ''}
+        placeholder="What would need to change for ${first} to be confirmed? HR sees this with your ratings, and it goes on the employee's record."
+      >${esc(reasonText)}</textarea>
+      <div style="display:flex;justify-content:space-between;gap:12px">
+        <span>${reasonProblem ? `<p class="field-err">⚠ ${esc(reasonProblem.field === 'confirmation_reason' && /limit/.test(reasonProblem.text) ? reasonProblem.text : `Please give a reason for ${String(submitted.confirmation_status || '').startsWith('Extend') ? 'extending the probation' : 'this decision'}.`)}</p>` : ''}</span>
+        <span class="counter" id="reason_count">${reasonText.length} / ${REASON_MAX}</span>
+      </div>
+    </div>
   </div>`
     : '';
 
@@ -371,7 +450,7 @@ export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}
 </header>
 
 <div class="wrap">
-  ${error ? `<div class="err">${esc(error)}</div>` : ''}
+  ${errorBlock}
 
   <div class="card">
     <dl class="subject">
@@ -393,9 +472,10 @@ export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}
 
   <form method="POST" action="/api/evaluation/${esc(token)}/submit" id="evalForm">
     <div class="card">
-      <h2 style="margin:0 0 4px;font-size:18px">Your assessment</h2>
-      <p class="hint" style="margin-bottom:8px">
-        Please rate each parameter and add a comment. All ratings are required.
+      <h2 style="margin:0 0 8px;font-size:18px">Your assessment</h2>
+      <p class="rule">
+        Rate every parameter. A comment is <strong>required for any rating of ${COMMENT_REQUIRED_AT_OR_BELOW} or lower</strong>
+        and helps ${first} improve either way.
       </p>
       ${questions}
     </div>
@@ -403,9 +483,9 @@ export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}
     ${confirmationBlock}
 
     <div class="card">
-      <label class="fld" for="remarks">Overall remarks</label>
+      <label class="fld" for="remarks">Overall remarks <span class="opt" style="font-weight:500;color:#6b7566">(optional)</span></label>
       <textarea id="remarks" name="remarks" style="min-height:110px"
-        placeholder="A short summary of ${esc(employee.full_name.split(' ')[0])}'s performance this period."
+        placeholder="A short summary of ${first}'s performance this period."
       >${esc(submitted.remarks || '')}</textarea>
     </div>
 
@@ -420,7 +500,45 @@ export function renderForm(data, { error = '', submitted = {}, nonce = '' } = {}
   // Progressive enhancement only — the form posts and validates server-side
   // without this, and the token is single-use regardless. It just stops a
   // double submit looking like a failure on a slow connection.
-  document.getElementById('evalForm').addEventListener('submit', function () {
+  var form = document.getElementById('evalForm');
+  var LIMIT = ${COMMENT_REQUIRED_AT_OR_BELOW};
+
+  // A rating of 2 or lower makes that question's comment required, on the
+  // spot — the manager learns the rule before submitting, not after.
+  Array.prototype.forEach.call(document.querySelectorAll('.opts[data-q]'), function (group) {
+    var key = group.getAttribute('data-q');
+    var box = document.getElementById('box_' + key);
+    var area = document.getElementById('c_' + key);
+    var star = box.querySelector('.must-star');
+    group.addEventListener('change', function (ev) {
+      var need = Number(ev.target.value) <= LIMIT;
+      box.classList.toggle('need', need);
+      star.textContent = need ? ' *' : '';
+      area.required = need;
+    });
+    var checked = group.querySelector('input:checked');
+    if (checked) area.required = Number(checked.value) <= LIMIT;
+  });
+
+  // The reason box appears for any decision that is not a plain confirmation.
+  var decision = document.getElementById('confirmation_status');
+  var reasonBox = document.getElementById('reason');
+  var reason = document.getElementById('confirmation_reason');
+  var counter = document.getElementById('reason_count');
+  if (decision && reasonBox) {
+    var sync = function () {
+      var need = !!decision.value && decision.value !== 'Confirmed';
+      reasonBox.classList.toggle('hide', !need);
+      reason.required = need;
+    };
+    decision.addEventListener('change', sync);
+    sync();
+    reason.addEventListener('input', function () {
+      counter.textContent = reason.value.length + ' / ${REASON_MAX}';
+    });
+  }
+
+  form.addEventListener('submit', function () {
     var b = document.getElementById('btn');
     b.disabled = true;
     b.textContent = 'Submitting…';
@@ -659,4 +777,9 @@ export function renderError(message, status = 400) {
 }
 
 // Imported at the bottom to keep the rendering functions at the top of the file.
-import { RATING_SCALE as RATING_ROWS, CONFIRMATION_OPTIONS as CONFIRMATION_ROWS } from '../config/ratingScale.js';
+import {
+  RATING_SCALE as RATING_ROWS,
+  CONFIRMATION_OPTIONS as CONFIRMATION_ROWS,
+  COMMENT_REQUIRED_AT_OR_BELOW,
+  REASON_MAX,
+} from '../config/ratingScale.js';

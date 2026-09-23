@@ -43,9 +43,12 @@ test.describe('sidebar', () => {
     await expect(page.getByText('Drop the master Excel workbook here', { exact: false })).toBeVisible();
   });
 
-  test('the dashboard says Dashboard in both the header and the page', async ({ page }) => {
-    // Two separate places render this, and they have disagreed before.
+  test('the dashboard says Dashboard, and never Overview', async ({ page }) => {
     await expect(page.locator('.pea-header-title')).toHaveText('Dashboard');
-    await expect(page.getByRole('heading', { name: 'Dashboard', level: 2 })).toBeVisible();
+    // Since the 23-Sep redesign the page opens with a greeting ("Good morning,
+    // Meenal") rather than repeating the word in a heading; what must never
+    // come back is the old name.
+    await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), /, level: 2 })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Overview' })).toHaveCount(0);
   });
 });

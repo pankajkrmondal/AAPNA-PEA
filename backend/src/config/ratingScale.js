@@ -24,6 +24,16 @@ export const RATING_SCALE = Object.freeze([
   { value: 1, label: 'Highly Dissatisfied', detail: 'Needs Development', percent: '20%' },
 ]);
 
+/**
+ * A rating at or below this needs a comment. A low score with no explanation
+ * tells HR something is wrong and nothing about what, and gives the employee
+ * nothing to improve on. (The 23-Sep redesign, manager form.)
+ */
+export const COMMENT_REQUIRED_AT_OR_BELOW = 2;
+
+/** The longest reason for a decision the form accepts. The DB CHECK agrees. */
+export const REASON_MAX = 2000;
+
 /** Confirmation options, offered only on an employee's final cycle. */
 export const CONFIRMATION_OPTIONS = Object.freeze([
   {

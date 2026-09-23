@@ -76,6 +76,9 @@ export function errorHandler(err, req, res, _next) {
     message: config.isProduction && !isOperational ? 'Something went wrong' : message,
   };
 
+  // A form validation error listing each problem (evaluation.service submit).
+  if (isOperational && Array.isArray(err.problems)) body.problems = err.problems;
+
   // Development only: staging is internet-facing too, and must not leak stacks.
   if (config.isDevelopment) body.stack = err.stack;
 
