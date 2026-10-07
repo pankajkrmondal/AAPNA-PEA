@@ -15,20 +15,40 @@
  *     manager halfway through the form loses their work. These are different
  *     actions and are deliberately named differently.
  */
+/*
+ * H4 (HR, 29-09-2026) — the work list is removed; the email log stays.
+ *
+ * HR asked what "Work list & emails" was for. The list duplicated the board:
+ * the board's Table view, status chips and manager filter cover the same
+ * evaluations and the same "Remind now". What the board does not have is the
+ * log of every email PEA has sent — the only screen that answers "did the
+ * manager get the email?" — so that half is kept and is now the whole page,
+ * at /evaluations/emails ("Email log" on the board).
+ *
+ * The work list (the default export this file used to have) and the imports
+ * only it used are commented out below, not deleted. To bring it back,
+ * uncomment them, restore the /evaluations/worklist route in App.jsx, and
+ * uncomment listEvaluations + GET /api/evaluations on the backend.
+ */
 import { useState } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  Card, Table, Tag, Space, Button, Input, Select, DatePicker, Tabs, App, Tooltip,
-  Typography, Checkbox, Segmented, Popconfirm,
-} from 'antd';
-import { BellOutlined, LinkOutlined, MailOutlined } from '@ant-design/icons';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
+import { Card, Table, Tag, Space, Input, Select, Tooltip } from 'antd';
+import { formatDateTime } from '../formatDate.js';
+import { useCrumbs } from '../crumbs.jsx';
+// import { Link, useSearchParams } from 'react-router-dom';
+// import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+// import {
+//   Card, Table, Tag, Space, Button, Input, Select, DatePicker, Tabs, App, Tooltip,
+//   Typography, Checkbox, Segmented, Popconfirm,
+// } from 'antd';
+// import { BellOutlined, LinkOutlined, MailOutlined } from '@ant-design/icons';
 import api, { unwrap } from '../api.js';
-import { evaluationStatus } from '../evaluationStatus.js';
-import StatusPill from '../components/StatusPill.jsx';
-import { formatDate, formatDateTime } from '../formatDate.js';
+// import { evaluationStatus } from '../evaluationStatus.js';
+// import StatusPill from '../components/StatusPill.jsx';
+// import { formatDate, formatDateTime } from '../formatDate.js';
 
-const { RangePicker } = DatePicker;
+// const { RangePicker } = DatePicker;
 
 /** The email log view — "did that manager actually get it?" */
 function EmailsSent() {
@@ -129,403 +149,424 @@ function EmailsSent() {
   );
 }
 
+/** The Email log page — every email PEA has sent, and whether it went. */
 export default function Evaluations() {
-  const { message } = App.useApp();
-  const qc = useQueryClient();
-  const [params, setParams] = useSearchParams();
-
-  /*
-   * The tab and the search box are read from the URL, because the Overview
-   * links here to answer a specific question — "the four that have not been
-   * sent", "this person's evaluation 2". Arriving on the default tab with no
-   * filter loses that question: HR clicked a row about one person and got an
-   * unfiltered list of twenty, with no sign of which row they meant.
-   *
-   * The URL stays the source of truth afterwards, so Back returns to the list
-   * as it was and the link can be shared.
-   */
-  const scope = params.get('scope') || 'waiting';
-  const focus = params.get('employee') || '';
-
-  const [view, setView] = useState('Evaluations');
-  const [filters, setFilters] = useState({ page: 1, limit: 50 });
-  const [selected, setSelected] = useState([]);
-  const [groupByManager, setGroupByManager] = useState(false);
-
-  const setScope = (key) => {
-    // Changing tab by hand clears the single-person focus: the reader has moved
-    // on from the row they arrived from.
-    const next = new URLSearchParams(params);
-    next.set('scope', key);
-    next.delete('employee');
-    setParams(next, { replace: true });
-  };
-
-  const query = { ...filters, scope, ...(focus ? { search: focus } : {}) };
-
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['evaluations', query],
-    queryFn: () => api.get('/evaluations', { params: query }).then(unwrap),
-    placeholderData: (p) => p,
-  });
-
-  const remind = useMutation({
-    mutationFn: (ids) => api.post('/evaluations/remind', { ids }).then((r) => r.data),
-    onSuccess: (res) => {
-      message.success(res.message);
-      // Each skip has a reason worth reading — a silent partial success would
-      // leave HR believing every manager was chased.
-      (res.data?.skipped || []).forEach((s) => message.warning(`${s.who}: ${s.reason}`, 6));
-      setSelected([]);
-      qc.invalidateQueries({ queryKey: ['evaluations'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
-    },
-    onError: (err) => { message.error(err.friendlyMessage); },
-  });
-
-  const counts = data?.counts || {};
-  // The count rides in a chip on the tab itself; the active tab's chip picks up
-  // the accent wash, which is what marks it as current alongside the underline.
-  const tabs = (data?.scopes || []).map((s) => ({
-    key: s.key,
-    label: (
-      <span className="pea-tab-label">
-        {s.label}
-        <span className={`pea-tab-chip${scope === s.key ? ' is-active' : ''}`}>
-          {counts[s.key] ?? 0}
-        </span>
-      </span>
-    ),
-  }));
-
-  /**
-   * Group the rows by reporting manager.
-   *
-   * The workflow this serves is one Teams message covering all of a manager's
-   * pending evaluations, so the manager's name and address head the group and
-   * the rows beneath are what goes in that message.
-   *
-   * This groups the page in hand, not the whole result set — the list is paged
-   * on the server. With the default 50 rows a manager's evaluations will
-   * normally sit together anyway, and the group header says how many it found,
-   * so a split across pages is visible rather than silent.
-   */
-  const rows = data?.rows || [];
-  const groups = (() => {
-    if (!groupByManager) return null;
-    const byManager = new Map();
-    for (const r of rows) {
-      const key = r.rmEmail || r.rmName || '—';
-      if (!byManager.has(key)) {
-        byManager.set(key, { key, name: r.rmName, email: r.rmEmail, rows: [] });
-      }
-      byManager.get(key).rows.push(r);
-    }
-    // Busiest manager first: that is the one whose message is worth writing.
-    return [...byManager.values()].sort((a, b) => b.rows.length - a.rows.length);
-  })();
-
-  const copyLink = async (row) => {
-    // Built from the API base the app is actually talking to, so it is right in
-    // development, staging and production without a per-environment constant.
-    const base = new URL(api.defaults.baseURL, window.location.origin);
-    const url = `${base.origin}${base.pathname.replace(/\/$/, '')}/evaluation/${row.token}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      message.success('Link copied — paste it to the manager');
-    } catch {
-      message.info(url);
-    }
-  };
-
-  const setFilter = (patch) => setFilters((f) => ({ ...f, ...patch, page: 1 }));
-
-  /**
-   * One column set, shared by the flat table and the grouped one, so the two
-   * views can never drift apart. Numeric columns carry `pea-num` for tabular
-   * figures — without it a column of days and counts visibly wobbles.
-   */
-  const columns = [
-    {
-      title: 'Employee',
-      fixed: 'left',
-      width: 210,
-      render: (_, r) => (
-        <div>
-          <Link to={`/employees/${r.employeeId}`} style={{ fontWeight: 600 }}>
-            {r.employeeName}
-          </Link>
-          <div style={{ fontSize: 11.5, color: 'var(--pea-text-muted)' }}>
-            {r.cohort === 'experienced' ? 'Experienced' : 'Fresher'}
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: 'Evaluation',
-      width: 130,
-      render: (_, r) => (
-        <Space size={4}>
-          {r.seqNo}
-          {r.isExtension && <StatusPill tone="ext" nodot>extension</StatusPill>}
-        </Space>
-      ),
-    },
-    {
-      title: 'Period',
-      width: 190,
-      render: (_, r) => `${formatDate(r.periodFrom)} → ${formatDate(r.periodTo)}`,
-    },
-    {
-      title: 'Due',
-      dataIndex: 'dueDate',
-      width: 125,
-      className: 'pea-num',
-      render: (v) => formatDate(v),
-    },
-    {
-      title: 'Status',
-      width: 165,
-      render: (_, r) => {
-        const s = evaluationStatus({ status: r.derivedStatus });
-        return <StatusPill state={s.key}>{s.label}</StatusPill>;
-      },
-    },
-    {
-      title: 'Waiting',
-      dataIndex: 'waitingDays',
-      width: 100,
-      className: 'pea-num',
-      render: (v) => (v == null ? '—' : `${v} day${v === 1 ? '' : 's'}`),
-    },
-    {
-      title: 'Reminders',
-      dataIndex: 'reminderCount',
-      width: 100,
-      className: 'pea-num',
-      render: (v) => `${v} of 2`,
-    },
-    {
-      title: 'Reporting manager',
-      width: 190,
-      render: (_, r) => (
-        <div>
-          <div>{r.rmName || '—'}</div>
-          <div style={{ fontSize: 11.5, color: 'var(--pea-text-muted)' }}>{r.rmEmail}</div>
-        </div>
-      ),
-    },
-    {
-      title: '',
-      width: 220,
-      fixed: 'right',
-      render: (_, r) =>
-        r.linkLive ? (
-          <Space size={4}>
-            <Popconfirm
-              title="Send an extra reminder?"
-              description={
-                <div style={{ maxWidth: 300 }}>
-                  Emails {r.rmEmail} again with the link they already have.
-                </div>
-              }
-              okText="Send"
-              onConfirm={() => remind.mutate([r.id])}
-            >
-              <Button size="small" icon={<BellOutlined />}>Remind</Button>
-            </Popconfirm>
-            {/* Text, not icon-only: "copy what?" is not obvious from a
-                chain-link glyph alone. */}
-            <Tooltip title="Copy this manager's evaluation link">
-              <Button size="small" type="link" icon={<LinkOutlined />} onClick={() => copyLink(r)}>
-                Copy link
-              </Button>
-            </Tooltip>
-          </Space>
-        ) : null,
-    },
-  ];
+  useCrumbs([{ label: 'Evaluations', to: '/evaluations' }, { label: 'Email log' }]);
 
   return (
     <>
       <div className="pea-page-head">
         <div>
-          <h2>Evaluations</h2>
-          <p>Every evaluation for every employee — what is due, who it is waiting on, and what came back</p>
+          <h2>Email log</h2>
+          <p>Every email PEA has sent — to whom, about whom, and whether it went</p>
         </div>
-        <Space wrap>
-          {isFetching && <Typography.Text type="secondary" style={{ fontSize: 12 }}>updating…</Typography.Text>}
-          <Segmented
-            value={view}
-            onChange={setView}
-            options={['Evaluations', 'Emails sent']}
-          />
-        </Space>
       </div>
-
-      {view === 'Emails sent' ? (
-        <EmailsSent />
-      ) : (
-        <>
-          <Tabs
-            activeKey={scope}
-            onChange={(k) => { setScope(k); setSelected([]); setFilters((f) => ({ ...f, page: 1 })); }}
-            items={tabs}
-          />
-
-          <Card className="pea-card" size="small">
-            <Space wrap style={{ marginBottom: 12 }}>
-              <Input.Search
-                allowClear
-                placeholder="Search employee…"
-                style={{ width: 220 }}
-                onSearch={(v) => setFilter({ search: v || undefined })}
-              />
-              <Select
-                allowClear
-                placeholder="Fresher and experienced"
-                style={{ width: 200 }}
-                options={[
-                  { value: 'fresher', label: 'Freshers only' },
-                  { value: 'experienced', label: 'Experienced only' },
-                ]}
-                onChange={(v) => setFilter({ cohort: v })}
-              />
-              <RangePicker
-                format="DD-MMM-YYYY"
-                placeholder={['Due from', 'Due to']}
-                onChange={(v) =>
-                  setFilter({
-                    dueFrom: v?.[0] ? v[0].format('YYYY-MM-DD') : undefined,
-                    dueTo: v?.[1] ? v[1].format('YYYY-MM-DD') : undefined,
-                  })
-                }
-              />
-              {/* The workflow: one Teams message covering all of a manager's
-                  pending evaluations, rather than chasing them one row at a time. */}
-              <Tooltip title="Gather this page's evaluations under each reporting manager.">
-                <Checkbox
-                  checked={groupByManager}
-                  onChange={(e) => setGroupByManager(e.target.checked)}
-                >
-                  Group by manager
-                </Checkbox>
-              </Tooltip>
-            </Space>
-
-            {/*
-              Arriving from an Overview row filters to that person. Saying so —
-              and offering the way out — is the difference between "why is there
-              only one row?" and "this is the row I clicked".
-            */}
-            {focus && (
-              <div className="pea-focus-bar">
-                <span>
-                  Showing <strong>{focus}</strong> only, from the Overview.
-                </span>
-                <Button
-                  size="small"
-                  type="link"
-                  onClick={() => {
-                    const next = new URLSearchParams(params);
-                    next.delete('employee');
-                    setParams(next, { replace: true });
-                  }}
-                >
-                  Show all {data?.scopes?.find((s) => s.key === scope)?.label?.toLowerCase() || ''}
-                </Button>
-              </div>
-            )}
-
-            {/* An accent strip rather than an Ant Alert: this is a bulk-action
-                bar, not a notice, and it should not read as a warning. */}
-            {selected.length > 0 && (
-              <div className="pea-bulk-bar">
-                <strong>{selected.length} selected</strong>
-                <Space wrap size={4}>
-                  <Popconfirm
-                    title="Send an extra reminder?"
-                    description={
-                      <div style={{ maxWidth: 320 }}>
-                        This emails the reporting manager again using the link they already have.
-                        It does not cancel or replace that link.
-                      </div>
-                    }
-                    okText="Send reminders"
-                    onConfirm={() => remind.mutate(selected)}
-                  >
-                    <Button size="small" type="primary" icon={<BellOutlined />} loading={remind.isPending}>
-                      Remind now
-                    </Button>
-                  </Popconfirm>
-                  <Button size="small" type="link" onClick={() => setSelected([])}>Clear</Button>
-                </Space>
-              </div>
-            )}
-
-            {groupByManager ? (
-              groups.length === 0 ? (
-                <Typography.Text type="secondary">
-                  Nothing in this list — which is usually good news.
-                </Typography.Text>
-              ) : (
-                groups.map((g) => (
-                  <div key={g.key} className="pea-manager-group">
-                    <div className="pea-manager-group-head">
-                      <div>
-                        <strong>{g.name || 'No reporting manager'}</strong>
-                        {g.email && <span className="pea-manager-group-email">{g.email}</span>}
-                      </div>
-                      <StatusPill tone="mute" nodot>
-                        {g.rows.length} evaluation{g.rows.length === 1 ? '' : 's'}
-                      </StatusPill>
-                    </div>
-
-                    <Table
-                      size="small"
-                      rowKey="id"
-                      dataSource={g.rows}
-                      pagination={false}
-                      scroll={{ x: 'max-content' }}
-                      rowSelection={{
-                        selectedRowKeys: selected,
-                        onChange: setSelected,
-                        getCheckboxProps: (r) => ({ disabled: !r.linkLive }),
-                      }}
-                      // The manager is the group heading, so repeating the column
-                      // inside every group would say the same thing twice.
-                      columns={columns.filter((c) => c.title !== 'Reporting manager')}
-                    />
-                  </div>
-                ))
-              )
-            ) : (
-              <Table
-                size="small"
-                rowKey="id"
-                loading={isLoading}
-                dataSource={rows}
-                scroll={{ x: 'max-content' }}
-                rowSelection={{
-                  selectedRowKeys: selected,
-                  onChange: setSelected,
-                  getCheckboxProps: (r) => ({ disabled: !r.linkLive }),
-                }}
-                pagination={{
-                  current: data?.page || 1,
-                  pageSize: data?.limit || 50,
-                  total: data?.total || 0,
-                  showSizeChanger: false,
-                  onChange: (page) => setFilters((f) => ({ ...f, page })),
-                  showTotal: (t) => `${t} evaluation(s)`,
-                }}
-                locale={{ emptyText: 'Nothing in this list — which is usually good news.' }}
-                columns={columns}
-              />
-            )}
-          </Card>
-        </>
-      )}
+      <EmailsSent />
     </>
   );
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// H4 (HR, 29-09-2026) — removed from the screen, kept for reference: the work
+// list, with its tabs, group-by-manager and the Evaluations / Emails sent toggle.
+// ─────────────────────────────────────────────────────────────────────────────
+// export default function Evaluations() {
+//   const { message } = App.useApp();
+//   const qc = useQueryClient();
+//   const [params, setParams] = useSearchParams();
+//
+//   /*
+//    * The tab and the search box are read from the URL, because the Overview
+//    * links here to answer a specific question — "the four that have not been
+//    * sent", "this person's evaluation 2". Arriving on the default tab with no
+//    * filter loses that question: HR clicked a row about one person and got an
+//    * unfiltered list of twenty, with no sign of which row they meant.
+//    *
+//    * The URL stays the source of truth afterwards, so Back returns to the list
+//    * as it was and the link can be shared.
+//    */
+//   const scope = params.get('scope') || 'waiting';
+//   const focus = params.get('employee') || '';
+//
+//   const [view, setView] = useState('Evaluations');
+//   const [filters, setFilters] = useState({ page: 1, limit: 50 });
+//   const [selected, setSelected] = useState([]);
+//   const [groupByManager, setGroupByManager] = useState(false);
+//
+//   const setScope = (key) => {
+//     // Changing tab by hand clears the single-person focus: the reader has moved
+//     // on from the row they arrived from.
+//     const next = new URLSearchParams(params);
+//     next.set('scope', key);
+//     next.delete('employee');
+//     setParams(next, { replace: true });
+//   };
+//
+//   const query = { ...filters, scope, ...(focus ? { search: focus } : {}) };
+//
+//   const { data, isLoading, isFetching } = useQuery({
+//     queryKey: ['evaluations', query],
+//     queryFn: () => api.get('/evaluations', { params: query }).then(unwrap),
+//     placeholderData: (p) => p,
+//   });
+//
+//   const remind = useMutation({
+//     mutationFn: (ids) => api.post('/evaluations/remind', { ids }).then((r) => r.data),
+//     onSuccess: (res) => {
+//       message.success(res.message);
+//       // Each skip has a reason worth reading — a silent partial success would
+//       // leave HR believing every manager was chased.
+//       (res.data?.skipped || []).forEach((s) => message.warning(`${s.who}: ${s.reason}`, 6));
+//       setSelected([]);
+//       qc.invalidateQueries({ queryKey: ['evaluations'] });
+//       qc.invalidateQueries({ queryKey: ['dashboard'] });
+//     },
+//     onError: (err) => { message.error(err.friendlyMessage); },
+//   });
+//
+//   const counts = data?.counts || {};
+//   // The count rides in a chip on the tab itself; the active tab's chip picks up
+//   // the accent wash, which is what marks it as current alongside the underline.
+//   const tabs = (data?.scopes || []).map((s) => ({
+//     key: s.key,
+//     label: (
+//       <span className="pea-tab-label">
+//         {s.label}
+//         <span className={`pea-tab-chip${scope === s.key ? ' is-active' : ''}`}>
+//           {counts[s.key] ?? 0}
+//         </span>
+//       </span>
+//     ),
+//   }));
+//
+//   /**
+//    * Group the rows by reporting manager.
+//    *
+//    * The workflow this serves is one Teams message covering all of a manager's
+//    * pending evaluations, so the manager's name and address head the group and
+//    * the rows beneath are what goes in that message.
+//    *
+//    * This groups the page in hand, not the whole result set — the list is paged
+//    * on the server. With the default 50 rows a manager's evaluations will
+//    * normally sit together anyway, and the group header says how many it found,
+//    * so a split across pages is visible rather than silent.
+//    */
+//   const rows = data?.rows || [];
+//   const groups = (() => {
+//     if (!groupByManager) return null;
+//     const byManager = new Map();
+//     for (const r of rows) {
+//       const key = r.rmEmail || r.rmName || '—';
+//       if (!byManager.has(key)) {
+//         byManager.set(key, { key, name: r.rmName, email: r.rmEmail, rows: [] });
+//       }
+//       byManager.get(key).rows.push(r);
+//     }
+//     // Busiest manager first: that is the one whose message is worth writing.
+//     return [...byManager.values()].sort((a, b) => b.rows.length - a.rows.length);
+//   })();
+//
+//   const copyLink = async (row) => {
+//     // Built from the API base the app is actually talking to, so it is right in
+//     // development, staging and production without a per-environment constant.
+//     const base = new URL(api.defaults.baseURL, window.location.origin);
+//     const url = `${base.origin}${base.pathname.replace(/\/$/, '')}/evaluation/${row.token}`;
+//     try {
+//       await navigator.clipboard.writeText(url);
+//       message.success('Link copied — paste it to the manager');
+//     } catch {
+//       message.info(url);
+//     }
+//   };
+//
+//   const setFilter = (patch) => setFilters((f) => ({ ...f, ...patch, page: 1 }));
+//
+//   /**
+//    * One column set, shared by the flat table and the grouped one, so the two
+//    * views can never drift apart. Numeric columns carry `pea-num` for tabular
+//    * figures — without it a column of days and counts visibly wobbles.
+//    */
+//   const columns = [
+//     {
+//       title: 'Employee',
+//       fixed: 'left',
+//       width: 210,
+//       render: (_, r) => (
+//         <div>
+//           <Link to={`/employees/${r.employeeId}`} style={{ fontWeight: 600 }}>
+//             {r.employeeName}
+//           </Link>
+//           <div style={{ fontSize: 11.5, color: 'var(--pea-text-muted)' }}>
+//             {r.cohort === 'experienced' ? 'Experienced' : 'Fresher'}
+//           </div>
+//         </div>
+//       ),
+//     },
+//     {
+//       title: 'Evaluation',
+//       width: 130,
+//       render: (_, r) => (
+//         <Space size={4}>
+//           {r.seqNo}
+//           {r.isExtension && <StatusPill tone="ext" nodot>extension</StatusPill>}
+//         </Space>
+//       ),
+//     },
+//     {
+//       title: 'Period',
+//       width: 190,
+//       render: (_, r) => `${formatDate(r.periodFrom)} → ${formatDate(r.periodTo)}`,
+//     },
+//     {
+//       title: 'Due',
+//       dataIndex: 'dueDate',
+//       width: 125,
+//       className: 'pea-num',
+//       render: (v) => formatDate(v),
+//     },
+//     {
+//       title: 'Status',
+//       width: 165,
+//       render: (_, r) => {
+//         const s = evaluationStatus({ status: r.derivedStatus });
+//         return <StatusPill state={s.key}>{s.label}</StatusPill>;
+//       },
+//     },
+//     {
+//       title: 'Waiting',
+//       dataIndex: 'waitingDays',
+//       width: 100,
+//       className: 'pea-num',
+//       render: (v) => (v == null ? '—' : `${v} day${v === 1 ? '' : 's'}`),
+//     },
+//     {
+//       title: 'Reminders',
+//       dataIndex: 'reminderCount',
+//       width: 100,
+//       className: 'pea-num',
+//       render: (v) => `${v} of 2`,
+//     },
+//     {
+//       title: 'Reporting manager',
+//       width: 190,
+//       render: (_, r) => (
+//         <div>
+//           <div>{r.rmName || '—'}</div>
+//           <div style={{ fontSize: 11.5, color: 'var(--pea-text-muted)' }}>{r.rmEmail}</div>
+//         </div>
+//       ),
+//     },
+//     {
+//       title: '',
+//       width: 220,
+//       fixed: 'right',
+//       render: (_, r) =>
+//         r.linkLive ? (
+//           <Space size={4}>
+//             <Popconfirm
+//               title="Send an extra reminder?"
+//               description={
+//                 <div style={{ maxWidth: 300 }}>
+//                   Emails {r.rmEmail} again with the link they already have.
+//                 </div>
+//               }
+//               okText="Send"
+//               onConfirm={() => remind.mutate([r.id])}
+//             >
+//               <Button size="small" icon={<BellOutlined />}>Remind</Button>
+//             </Popconfirm>
+//             {/* Text, not icon-only: "copy what?" is not obvious from a
+//                 chain-link glyph alone. */}
+//             <Tooltip title="Copy this manager's evaluation link">
+//               <Button size="small" type="link" icon={<LinkOutlined />} onClick={() => copyLink(r)}>
+//                 Copy link
+//               </Button>
+//             </Tooltip>
+//           </Space>
+//         ) : null,
+//     },
+//   ];
+//
+//   return (
+//     <>
+//       <div className="pea-page-head">
+//         <div>
+//           <h2>Evaluations</h2>
+//           <p>Every evaluation for every employee — what is due, who it is waiting on, and what came back</p>
+//         </div>
+//         <Space wrap>
+//           {isFetching && <Typography.Text type="secondary" style={{ fontSize: 12 }}>updating…</Typography.Text>}
+//           <Segmented
+//             value={view}
+//             onChange={setView}
+//             options={['Evaluations', 'Emails sent']}
+//           />
+//         </Space>
+//       </div>
+//
+//       {view === 'Emails sent' ? (
+//         <EmailsSent />
+//       ) : (
+//         <>
+//           <Tabs
+//             activeKey={scope}
+//             onChange={(k) => { setScope(k); setSelected([]); setFilters((f) => ({ ...f, page: 1 })); }}
+//             items={tabs}
+//           />
+//
+//           <Card className="pea-card" size="small">
+//             <Space wrap style={{ marginBottom: 12 }}>
+//               <Input.Search
+//                 allowClear
+//                 placeholder="Search employee…"
+//                 style={{ width: 220 }}
+//                 onSearch={(v) => setFilter({ search: v || undefined })}
+//               />
+//               <Select
+//                 allowClear
+//                 placeholder="Fresher and experienced"
+//                 style={{ width: 200 }}
+//                 options={[
+//                   { value: 'fresher', label: 'Freshers only' },
+//                   { value: 'experienced', label: 'Experienced only' },
+//                 ]}
+//                 onChange={(v) => setFilter({ cohort: v })}
+//               />
+//               <RangePicker
+//                 format="DD-MMM-YYYY"
+//                 placeholder={['Due from', 'Due to']}
+//                 onChange={(v) =>
+//                   setFilter({
+//                     dueFrom: v?.[0] ? v[0].format('YYYY-MM-DD') : undefined,
+//                     dueTo: v?.[1] ? v[1].format('YYYY-MM-DD') : undefined,
+//                   })
+//                 }
+//               />
+//               {/* The workflow: one Teams message covering all of a manager's
+//                   pending evaluations, rather than chasing them one row at a time. */}
+//               <Tooltip title="Gather this page's evaluations under each reporting manager.">
+//                 <Checkbox
+//                   checked={groupByManager}
+//                   onChange={(e) => setGroupByManager(e.target.checked)}
+//                 >
+//                   Group by manager
+//                 </Checkbox>
+//               </Tooltip>
+//             </Space>
+//
+//             {/*
+//               Arriving from an Overview row filters to that person. Saying so —
+//               and offering the way out — is the difference between "why is there
+//               only one row?" and "this is the row I clicked".
+//             */}
+//             {focus && (
+//               <div className="pea-focus-bar">
+//                 <span>
+//                   Showing <strong>{focus}</strong> only, from the Overview.
+//                 </span>
+//                 <Button
+//                   size="small"
+//                   type="link"
+//                   onClick={() => {
+//                     const next = new URLSearchParams(params);
+//                     next.delete('employee');
+//                     setParams(next, { replace: true });
+//                   }}
+//                 >
+//                   Show all {data?.scopes?.find((s) => s.key === scope)?.label?.toLowerCase() || ''}
+//                 </Button>
+//               </div>
+//             )}
+//
+//             {/* An accent strip rather than an Ant Alert: this is a bulk-action
+//                 bar, not a notice, and it should not read as a warning. */}
+//             {selected.length > 0 && (
+//               <div className="pea-bulk-bar">
+//                 <strong>{selected.length} selected</strong>
+//                 <Space wrap size={4}>
+//                   <Popconfirm
+//                     title="Send an extra reminder?"
+//                     description={
+//                       <div style={{ maxWidth: 320 }}>
+//                         This emails the reporting manager again using the link they already have.
+//                         It does not cancel or replace that link.
+//                       </div>
+//                     }
+//                     okText="Send reminders"
+//                     onConfirm={() => remind.mutate(selected)}
+//                   >
+//                     <Button size="small" type="primary" icon={<BellOutlined />} loading={remind.isPending}>
+//                       Remind now
+//                     </Button>
+//                   </Popconfirm>
+//                   <Button size="small" type="link" onClick={() => setSelected([])}>Clear</Button>
+//                 </Space>
+//               </div>
+//             )}
+//
+//             {groupByManager ? (
+//               groups.length === 0 ? (
+//                 <Typography.Text type="secondary">
+//                   Nothing in this list — which is usually good news.
+//                 </Typography.Text>
+//               ) : (
+//                 groups.map((g) => (
+//                   <div key={g.key} className="pea-manager-group">
+//                     <div className="pea-manager-group-head">
+//                       <div>
+//                         <strong>{g.name || 'No reporting manager'}</strong>
+//                         {g.email && <span className="pea-manager-group-email">{g.email}</span>}
+//                       </div>
+//                       <StatusPill tone="mute" nodot>
+//                         {g.rows.length} evaluation{g.rows.length === 1 ? '' : 's'}
+//                       </StatusPill>
+//                     </div>
+//
+//                     <Table
+//                       size="small"
+//                       rowKey="id"
+//                       dataSource={g.rows}
+//                       pagination={false}
+//                       scroll={{ x: 'max-content' }}
+//                       rowSelection={{
+//                         selectedRowKeys: selected,
+//                         onChange: setSelected,
+//                         getCheckboxProps: (r) => ({ disabled: !r.linkLive }),
+//                       }}
+//                       // The manager is the group heading, so repeating the column
+//                       // inside every group would say the same thing twice.
+//                       columns={columns.filter((c) => c.title !== 'Reporting manager')}
+//                     />
+//                   </div>
+//                 ))
+//               )
+//             ) : (
+//               <Table
+//                 size="small"
+//                 rowKey="id"
+//                 loading={isLoading}
+//                 dataSource={rows}
+//                 scroll={{ x: 'max-content' }}
+//                 rowSelection={{
+//                   selectedRowKeys: selected,
+//                   onChange: setSelected,
+//                   getCheckboxProps: (r) => ({ disabled: !r.linkLive }),
+//                 }}
+//                 pagination={{
+//                   current: data?.page || 1,
+//                   pageSize: data?.limit || 50,
+//                   total: data?.total || 0,
+//                   showSizeChanger: false,
+//                   onChange: (page) => setFilters((f) => ({ ...f, page })),
+//                   showTotal: (t) => `${t} evaluation(s)`,
+//                 }}
+//                 locale={{ emptyText: 'Nothing in this list — which is usually good news.' }}
+//                 columns={columns}
+//               />
+//             )}
+//           </Card>
+//         </>
+//       )}
+//     </>
+//   );
+// }

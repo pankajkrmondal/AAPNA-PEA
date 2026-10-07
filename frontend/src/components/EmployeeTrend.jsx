@@ -20,6 +20,7 @@ import { useMemo } from 'react';
 import api, { unwrap } from '../api.js';
 import { useThemeMode } from '../theme.jsx';
 import TrendDelta, { TrendPill } from './TrendDelta.jsx';
+import { formatDate } from '../formatDate.js';
 
 /** Recharts draws SVG attributes, which do not resolve CSS variables — see Analytics.jsx. */
 function usePalette() {
@@ -171,7 +172,7 @@ export default function EmployeeTrend({ employeeId }) {
 
           <Typography.Text type="secondary" style={{ fontSize: 11.5 }}>
             Average of each submitted evaluation, on the 1–5 scale.
-            {nextDue && ` Evaluation ${nextDue.seqNo} is due ${nextDue.dueDate}.`}
+            {nextDue && ` Evaluation ${nextDue.seqNo} is due ${formatDate(nextDue.dueDate)}.`}
           </Typography.Text>
         </Card>
       </Col>

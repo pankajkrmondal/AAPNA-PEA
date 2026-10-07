@@ -19,7 +19,7 @@ const ago = (iso) => {
 /** Where an alert goes, in words. An evaluation alert opens the evaluation, not the employee. */
 const linkLabel = (link) => {
   if (/^\/evaluations\/\d+/.test(link)) return 'Open the evaluation';
-  if (link.startsWith('/employees/')) return 'Open the employee';
+  if (link.startsWith('/employees/')) return 'Open the Commando';
   if (link.startsWith('/new-joiners')) return 'Open New joiners';
   return 'Open';
 };
@@ -93,7 +93,7 @@ export default function NotificationBell() {
         </ul>
       )}
 
-      <div className="pea-bell-foot">An evaluation alert opens the evaluation itself — not the employee page.</div>
+      <div className="pea-bell-foot">An evaluation alert opens the evaluation itself — not the Commando page.</div>
     </div>
   );
 

@@ -15,7 +15,12 @@
  */
 import XLSX from 'xlsx';
 import prisma from '../config/database.js';
-import { toDateString } from '../utils/dateUtils.js';
+// H6 / U4 — dates in the sheet are dd-MM-yyyy like everywhere else. They were
+// YYYY-MM-DD through toDateString.
+// import { toDateString } from '../utils/dateUtils.js';
+import { formatDisplay } from '../utils/dateUtils.js';
+import { employeeWhere, employeeOrder } from './employee.service.js';
+import { archivedIds } from '../utils/archiveScope.js';
 
 /** Sheet1 headers, in the master workbook's exact order. */
 const SUMMARY_HEADERS = [
@@ -97,14 +102,23 @@ function summaryCell(cycle) {
  * @returns {Promise<Buffer>}
  */
 export async function buildWorkbook(filters = {}) {
+  /* U6 — the export's own two filters, kept for reference. The Commandos list
+     exports what it is showing now, so the filters and the order come from the
+     same two functions the list uses. `type` and `employment_status` behave
+     exactly as they did here.
+
   const where = {};
   if (filters.type === 'fresher') where.is_experienced = false;
   if (filters.type === 'experienced') where.is_experienced = true;
   if (filters.employment_status) where.employment_status = filters.employment_status;
+  */
+  // Archive (07-10-2026) — the same archive rule as the list. Was: employeeWhere(filters)
+  const where = employeeWhere(filters, { archived: await archivedIds() });
 
   const employees = await prisma.pea_employees.findMany({
     where,
-    orderBy: { full_name: 'asc' },
+    // U6 — by name unless the list was sorted. It was: orderBy: { full_name: 'asc' },
+    orderBy: filters.sort ? employeeOrder(filters) : [{ full_name: 'asc' }],
     include: {
       cycles: {
         orderBy: { seq_no: 'asc' },
@@ -124,7 +138,7 @@ export async function buildWorkbook(filters = {}) {
       e.office_email,
       e.halt_process ? 'Yes' : 'No',
       e.is_experienced ? 'Yes' : 'No',
-      toDateString(e.doj),
+      formatDisplay(e.doj),
       e.rm_name,
       e.rm_email,
       e.pl_email,
@@ -164,7 +178,7 @@ export async function buildWorkbook(filters = {}) {
 
   // A third sheet the original never had: what is actually outstanding.
   const statusRows = [
-    ['Employee', 'Office Email', 'Type', 'DOJ', 'Evaluation', 'Due', 'Status', 'Sent', 'Reminders', 'Average'],
+    ['Commando', 'Office Email', 'Type', 'DOJ', 'Evaluation', 'Due', 'Status', 'Sent', 'Reminders', 'Average'],
   ];
   for (const e of employees) {
     for (const c of e.cycles) {
@@ -172,11 +186,11 @@ export async function buildWorkbook(filters = {}) {
         e.full_name,
         e.office_email,
         e.is_experienced ? 'Experienced' : 'Fresher',
-        toDateString(e.doj),
+        formatDisplay(e.doj),
         c.seq_no,
-        toDateString(c.due_date),
+        formatDisplay(c.due_date),
         c.status,
-        c.sent_at ? toDateString(c.sent_at) : '',
+        c.sent_at ? formatDisplay(c.sent_at) : '',
         c.reminder_count,
         c.avg_rating ? Number(c.avg_rating) : '',
       ]);
@@ -191,5 +205,5 @@ export async function buildWorkbook(filters = {}) {
 
 /** Filename for the download, dated so successive exports do not collide. */
 export function exportFilename() {
-  return `Performance Evaluation - ${toDateString(new Date())}.xlsx`;
+  return `Probation Evaluation - ${formatDisplay(new Date())}.xlsx`;
 }

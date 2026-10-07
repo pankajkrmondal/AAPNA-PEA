@@ -32,7 +32,8 @@ import StatusPill from '../components/StatusPill.jsx';
 import {
   Avatar, BucketPill, CardSkeleton, EvaluationCard, LoadProblem, ProgressCard,
 } from '../components/board/BoardParts.jsx';
-import { BUCKETS, LEGACY_SCOPE, avg, decisionTone, ratingTone, shortDate } from '../evaluationDisplay.js';
+import { BUCKETS, LEGACY_SCOPE, avg, decisionTone, holderName, ratingTone, shortDate } from '../evaluationDisplay.js';
+import { DATE_FORMAT } from '../formatDate.js';
 import { useCrumbs } from '../crumbs.jsx';
 
 const { RangePicker } = DatePicker;
@@ -42,26 +43,29 @@ const CARRY = ['search', 'rm', 'cohort', 'from', 'to'];
 
 const PAGE_SIZE = { cards: 24, table: 50 };
 
-/**
- * The monthly average over the last six months, as a small line under
- * "Average rating". Absent or a single month draws nothing.
- * @param {{points?: {month: string, average: number}[]}} props
- */
-function TrendLine({ points }) {
-  if (!points || points.length < 2) return null;
-  const w = 64;
-  const h = 22;
-  const x = (i) => 2 + (i * (w - 4)) / (points.length - 1);
-  const y = (v) => h - 2 - ((v - 1) / 4) * (h - 4);
-  const last = points.at(-1);
-  return (
-    <svg className="pea-figure-trend" width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img"
-      aria-label={`Monthly average, ${points[0].month} to ${last.month}: ${points.map((p) => avg(p.average)).join(', ')}`}>
-      <polyline points={points.map((p, i) => `${x(i)},${y(p.average)}`).join(' ')} />
-      <circle cx={x(points.length - 1)} cy={y(last.average)} r="2.5" />
-    </svg>
-  );
-}
+// H2 (HR, 29-09-2026; removed 07-10-2026) — drew the six-month line beside
+// "Average rating", which was removed. Kept for reference:
+//
+// /**
+//  * The monthly average over the last six months, as a small line under
+//  * "Average rating". Absent or a single month draws nothing.
+//  * @param {{points?: {month: string, average: number}[]}} props
+//  */
+// function TrendLine({ points }) {
+//   if (!points || points.length < 2) return null;
+//   const w = 64;
+//   const h = 22;
+//   const x = (i) => 2 + (i * (w - 4)) / (points.length - 1);
+//   const y = (v) => h - 2 - ((v - 1) / 4) * (h - 4);
+//   const last = points.at(-1);
+//   return (
+//     <svg className="pea-figure-trend" width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img"
+//       aria-label={`Monthly average, ${points[0].month} to ${last.month}: ${points.map((p) => avg(p.average)).join(', ')}`}>
+//       <polyline points={points.map((p, i) => `${x(i)},${y(p.average)}`).join(' ')} />
+//       <circle cx={x(points.length - 1)} cy={y(last.average)} r="2.5" />
+//     </svg>
+//   );
+// }
 
 /** The status a card's profile link should walk: a section's rows are all "submitted" or their own bucket. */
 function walkStatus(row, status) {
@@ -186,7 +190,12 @@ export default function EvaluationBoard() {
             Status, the overall comment and every question comment — for every evaluation, on one screen.
           </p>
         </div>
-        <div className="pea-figures">
+        <div className="pea-figures pea-figures--single">
+          {/* H3 (HR, 29-09-2026) — removed from the screen, kept for reference.
+              These three figures repeated the counts on the status chips just
+              below (Submitted, Waiting, Needs attention). Average rating stays:
+              it is on no chip.
+
           <button type="button" className="pea-figure" onClick={() => set({ status: 'submitted' })}>
             <strong>{stats.submitted ?? '—'}</strong><span>Submitted</span>
           </button>
@@ -197,48 +206,43 @@ export default function EvaluationBoard() {
             <strong className={stats.needAttention ? 'pea-ink-crit' : ''}>{stats.needAttention ?? '—'}</strong>
             <span>Need attention</span>
           </button>
+          */}
+          {/* Board tidy-up (01-10-2026) — with one figure left, the four-column
+              band was a wide, mostly empty box. The average is a compact card
+              now: the number, "out of 5", and the six-month line beside it.
+              It was:
           <div className="pea-figure pea-figure--static">
             <strong>{stats.averageRating == null ? '—' : avg(stats.averageRating)}</strong><span>Average rating</span>
             <TrendLine points={stats.averageTrend} />
           </div>
+          */}
+          <div className="pea-figure pea-figure--static pea-figure--avg">
+            <span className="pea-figure-label">Average rating</span>
+            <div className="pea-figure-line">
+              <strong>{stats.averageRating == null ? '—' : avg(stats.averageRating)}</strong>
+              <em>/ 5</em>
+              {/* H2 (HR, 29-09-2026; removed 07-10-2026) — the six-month line was
+                  "Average Rating by Month" in miniature. It was:
+              <TrendLine points={stats.averageTrend} /> */}
+            </div>
+          </div>
         </div>
       </section>
 
-      {/* Chips and filters stay in reach down a long board. */}
+      {/* Filters and chips stay in reach down a long board.
+          Board tidy-up (01-10-2026) — the two rows changed places: narrow the
+          list first (who, which manager, when), then pick a status from what
+          is left. They sit in one toolbar, with the Cards / Table switch and
+          the Email log at the right of the filters. The switch used to sit
+          beside the ratings key, below. */}
       <div className="pea-board-controls">
-        {/* ── Status chips ─────────────────────────────────────────────── */}
-        <div className="pea-chips" role="tablist" aria-label="Status">
-          {chips.map((c) => (
-            <button
-              key={c.key}
-              type="button"
-              role="tab"
-              aria-selected={status === c.key}
-              className={`pea-chip${status === c.key ? ' is-active' : ''}`}
-              onClick={() => { set({ status: c.key }); setSelected([]); }}
-            >
-              {c.tone && <span className={`pea-chip-dot pea-bg-${c.tone}`} />}
-              {c.label}
-              <span className="pea-chip-count">{c.count ?? 0}</span>
-            </button>
-          ))}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={status === 'attention'}
-            className={`pea-chip pea-chip--attention${status === 'attention' ? ' is-active' : ''}`}
-            onClick={() => { set({ status: 'attention' }); setSelected([]); }}
-          >
-            <FlagOutlined /> Needs attention <span className="pea-chip-count">{counts.attention ?? 0}</span>
-          </button>
-        </div>
-
+       <div className="pea-board-toolbar">
         {/* ── Filters ─────────────────────────────────────────────────── */}
         <div className="pea-filters">
           <Input
             allowClear
             prefix={<SearchOutlined />}
-            placeholder="Search employee or manager…"
+            placeholder="Search Commando or manager…"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             className="pea-filter-search"
@@ -266,7 +270,7 @@ export default function EvaluationBoard() {
             className="pea-filter-select"
           />
           <RangePicker
-            format="DD-MMM-YYYY"
+            format={DATE_FORMAT}
             placeholder={['Any date', '']}
             value={filters.from || filters.to ? [filters.from ? dayjs(filters.from) : null, filters.to ? dayjs(filters.to) : null] : null}
             onChange={(v) => set({
@@ -277,12 +281,56 @@ export default function EvaluationBoard() {
             className="pea-filter-date"
           />
           <span className="pea-grow" />
+          <Segmented
+            value={view}
+            onChange={(v) => { set({ view: v }); setSelected([]); }}
+            options={[
+              { value: 'cards', label: 'Cards', icon: <AppstoreOutlined /> },
+              { value: 'table', label: 'Table', icon: <UnorderedListOutlined /> },
+            ]}
+          />
+          {/* H4 (HR, 29-09-2026) — the work list is removed; this link went to it.
           <Tooltip title="The previous list: group by manager for one message per manager, and every email PEA has sent.">
             <Link to="/evaluations/worklist"><Button type="text" icon={<MailOutlined />}>Work list &amp; emails</Button></Link>
           </Tooltip>
+          */}
+          <Tooltip title="Every email PEA has sent, to whom, and whether it went — the place to check that a manager received theirs.">
+            {/* Board tidy-up — an outlined button, to match the controls beside it. It was type="text". */}
+            <Link to="/evaluations/emails"><Button icon={<MailOutlined />}>Email log</Button></Link>
+          </Tooltip>
         </div>
+
+        {/* ── Status chips ─────────────────────────────────────────────── */}
+        <div className="pea-chips" role="tablist" aria-label="Status">
+          {chips.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              role="tab"
+              aria-selected={status === c.key}
+              className={`pea-chip${status === c.key ? ' is-active' : ''}`}
+              onClick={() => { set({ status: c.key }); setSelected([]); }}
+            >
+              {c.tone && <span className={`pea-chip-dot pea-bg-${c.tone}`} />}
+              {c.label}
+              <span className="pea-chip-count">{c.count ?? 0}</span>
+            </button>
+          ))}
+          <button
+            type="button"
+            role="tab"
+            aria-selected={status === 'attention'}
+            className={`pea-chip pea-chip--attention${status === 'attention' ? ' is-active' : ''}`}
+            onClick={() => { set({ status: 'attention' }); setSelected([]); }}
+          >
+            <FlagOutlined /> Needs attention <span className="pea-chip-count">{counts.attention ?? 0}</span>
+          </button>
+        </div>
+       </div>
       </div>
 
+      {/* The ratings key, on its own quiet line. The Cards / Table switch that
+          shared this row is in the toolbar above now. */}
       <div className="pea-legend-row">
         <div className="pea-legend">
           <span>Ratings</span>
@@ -290,14 +338,10 @@ export default function EvaluationBoard() {
           <span className="pea-rchip pea-rchip--legend pea-tone-info">3</span> Satisfied
           <span className="pea-rchip pea-rchip--legend pea-tone-ok">4–5</span> Highly satisfied / Exceptional
         </div>
-        <Segmented
-          value={view}
-          onChange={(v) => { set({ view: v }); setSelected([]); }}
-          options={[
-            { value: 'cards', label: 'Cards', icon: <AppstoreOutlined /> },
-            { value: 'table', label: 'Table', icon: <UnorderedListOutlined /> },
-          ]}
-        />
+        <span className="pea-grow" />
+        <span className="pea-legend-count">
+          {status === 'all' ? `${counts.all ?? 0} evaluations` : `${data?.total ?? 0} of ${counts.all ?? 0} evaluations`}
+        </span>
       </div>
 
       {status === 'attention' && (
@@ -445,7 +489,8 @@ function BoardTable({ data, loading, selected, setSelected, onOpen, onRemind, re
       return r.remarks ? <span className="pea-clamp-2">{r.remarks}</span> : <em className="pea-muted">No overall comment</em>;
     }
     const text = {
-      waiting: `No comments yet — the link is with ${r.rmName}.`,
+      // M3 / M7 — was `${r.rmName}`: the link may be with an acting manager.
+      waiting: `No comments yet — the link is with ${holderName(r)}.`,
       opened: 'Manager has the form open — comments appear when submitted.',
       not_sent: 'Nothing has gone to the manager yet.',
       scheduled: 'Scheduled — the form goes out on the due date.',
@@ -510,7 +555,7 @@ function BoardTable({ data, loading, selected, setSelected, onOpen, onRemind, re
           },
           { title: 'Status', width: 170, render: (_, r) => <BucketPill bucket={r.bucket} /> },
           {
-            title: 'Employee',
+            title: 'Commando',
             width: 230,
             render: (_, r) => (
               <div className="pea-cell-person">
@@ -534,7 +579,9 @@ function BoardTable({ data, loading, selected, setSelected, onOpen, onRemind, re
               </span>
             ),
           },
-          { title: 'Submitted', width: 100, className: 'pea-num', render: (_, r) => shortDate(r.submittedAt) },
+          // Board tidy-up — dd-MM-yyyy needs more than 100px, or it wraps after the month.
+          // { title: 'Submitted', width: 100, className: 'pea-num', render: (_, r) => shortDate(r.submittedAt) },
+          { title: 'Submitted', width: 124, className: 'pea-num pea-cell-date', render: (_, r) => shortDate(r.submittedAt) },
           {
             title: 'Average',
             width: 90,

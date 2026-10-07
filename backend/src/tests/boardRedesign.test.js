@@ -17,7 +17,7 @@
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { attentionReasons, ratingBand } from '../services/evaluationBoard.service.js';
-import { reasonRequired, scoreProblems } from '../services/evaluation.service.js';
+import { reasonRequired, scoreProblems, cleanDraft, DRAFT_TEXT_MAX } from '../services/evaluation.service.js';
 import { parseBody } from '../controllers/evaluation.controller.js';
 import { renderForm } from '../views/evaluationForm.js';
 import { compile, buildVars, TEMPLATE_DEFS } from '../services/emailTemplate.service.js';
@@ -176,7 +176,126 @@ describe('a comment on every parameter — the server gate', () => {
     const ratings = allRated({ x_factor: { comments: '' } });
     delete ratings.communication;
     const { problems } = scoreProblems(seven, ratings);
-    assert.deepEqual(problems.map((p) => p.field), ['rating', 'comments_x_factor']);
+    // U2 — a missing rating names its question; it was the anonymous 'rating'.
+    assert.deepEqual(problems.map((p) => p.field), ['rating_communication', 'comments_x_factor']);
+    assert.equal(problems[0].label, 'Label communication');
+  });
+});
+
+describe('the manager form — progress, missing ratings, grouping, last time, drafts (U1 U2 U3 P10 P11)', () => {
+  const params = [
+    { param_key: 'quality_of_work', param_label: 'Quality of Code / Work', sort_order: 1 },
+    { param_key: 'meeting_deadline', param_label: 'Meeting Deadline', sort_order: 2 },
+  ];
+  const data = {
+    token: '00000000-0000-0000-0000-000000000000',
+    askConfirmation: false,
+    params,
+    cycle: { seq_no: 3, is_extension: false, periodLabel: '10-08-2026 to 09-09-2026' },
+    employee: { full_name: 'Amit Verma', office_email: 'a@example.com', dojLabel: '10-03-2026', is_experienced: false },
+  };
+
+  test('U1 — the form says how many questions are answered: a rating AND a comment', () => {
+    const html = renderForm(data, {
+      submitted: { ratings: { quality_of_work: { rating: '4', comments: 'Solid.' }, meeting_deadline: { rating: '3', comments: '  ' } } },
+    });
+    assert.match(html, /id="progressCount">1 of 2 answered</);
+    assert.match(html, /id="progressBar" style="width:50%"/);
+  });
+
+  test('U2 — a missing rating is linked from the summary and marked on its question', () => {
+    const html = renderForm(data, {
+      problems: [{ field: 'rating_meeting_deadline', label: 'Meeting Deadline', text: 'Meeting Deadline — choose a rating.' }],
+    });
+    assert.match(html, /<a href="#q_meeting_deadline">Meeting Deadline<\/a> — choose a rating\./);
+    assert.match(html, /<div class="q invalid" id="q_meeting_deadline">/);
+    assert.match(html, /id="e_rating_meeting_deadline">⚠ Choose a rating for this question\./);
+    assert.match(html, /<div class="q" id="q_quality_of_work">/);
+  });
+
+  test('U3 — each question\'s options are one group, named by the question', () => {
+    const html = renderForm(data);
+    // Counted in the form itself — the page's <style> block mentions the tag too.
+    const form = html.slice(html.indexOf('<form'));
+    assert.equal(form.match(/<fieldset/g).length, params.length);
+    assert.match(html, /<legend><span class="num">2\.<\/span>Meeting Deadline <span class="req">\*<\/span><\/legend>/);
+  });
+
+  test('P10 — last time\'s rating and comment sit under each question', () => {
+    const html = renderForm({
+      ...data,
+      previous: {
+        seq_no: 2,
+        submittedLabel: '09-08-2026',
+        average: 3.5,
+        remarks: 'Settling in <b>well</b>.',
+        scores: { meeting_deadline: { rating: 3, comments: 'Missed one sprint.' }, quality_of_work: { rating: 4, comments: null } },
+      },
+    });
+    assert.match(html, /Last time \(Evaluation 2\): 3 — Satisfied/);
+    assert.match(html, /Missed one sprint\./);
+    assert.match(html, /Last time \(Evaluation 2\): 4 — Highly Satisfied/);
+    assert.match(html, /No comment was written\./);
+    assert.match(html, /Previous evaluation — Evaluation 2, submitted 09-08-2026, average 3\.50 \/ 5/);
+    assert.match(html, /Settling in &lt;b&gt;well&lt;\/b&gt;\./);
+  });
+
+  test('P10 — a first evaluation shows nothing from before', () => {
+    assert.ok(!/Last time/.test(renderForm(data)));
+  });
+
+  test('P11 — "Save draft" appears only where the database can hold a draft', () => {
+    assert.ok(!/id="draftBtn"/.test(renderForm(data)));
+    const html = renderForm({ ...data, draftEnabled: true, draft: { savedLabel: '01-10-2026 14:05' } });
+    assert.match(html, /id="draftBtn" class="btn-secondary" formaction="\/api\/evaluation\/00000000-0000-0000-0000-000000000000\/draft" formnovalidate/);
+    assert.match(html, /Draft saved 01-10-2026 14:05/);
+  });
+
+  test('P11 — a draft keeps unfinished answers and refuses what could not be one', () => {
+    const draft = cleanDraft({
+      ratings: {
+        quality_of_work: { rating: '4', comments: 'Half a thought' },
+        meeting_deadline: { rating: '9', comments: '' }, // not a rating, no comment: dropped
+        'bad key!': { rating: '3', comments: 'x' },
+      },
+      remarks: 'x'.repeat(DRAFT_TEXT_MAX + 50),
+      confirmation_status: 'Promote',
+    });
+    assert.deepEqual(draft.ratings, { quality_of_work: { rating: '4', comments: 'Half a thought' } });
+    assert.equal(draft.remarks.length, DRAFT_TEXT_MAX);
+    assert.equal(draft.confirmation_status, '');
+  });
+
+  test('P11 — a draft may be entirely empty; nothing is required of it', () => {
+    assert.deepEqual(cleanDraft({}), { ratings: {}, remarks: '', confirmation_status: '', confirmation_reason: '' });
+  });
+});
+
+describe('the confirmation decision follows the 8-month limit (B2, M2)', () => {
+  const base = {
+    token: '00000000-0000-0000-0000-000000000000',
+    askConfirmation: true,
+    params: [{ param_key: 'quality_of_work', param_label: 'Quality of Code / Work', sort_order: 1 }],
+    cycle: { seq_no: 8, is_extension: true, periodLabel: '03-08-2026 to 02-09-2026' },
+    employee: { full_name: 'Amit Verma', office_email: 'a@example.com', dojLabel: '05-01-2026', is_experienced: false },
+  };
+  const option = (value) => ({ value, label: value, help: 'x' });
+
+  test('at the last allowed evaluation the form offers no "Extend"', () => {
+    const html = renderForm({ ...base, extensionsLeft: 0, confirmationOptions: [option('Confirmed'), option('Not Confirmed')] });
+    assert.ok(!/<option value="Extend/.test(html));
+    assert.match(html, /reached its 8-month limit, so it can no longer be extended/);
+  });
+
+  test('after one extension it offers one more month, not two', () => {
+    const html = renderForm({
+      ...base,
+      extensionsLeft: 1,
+      confirmationOptions: [option('Confirmed'), option('Not Confirmed'), option('Extend for 1 month')],
+    });
+    assert.match(html, /<option value="Extend for 1 month"/);
+    assert.ok(!/<option value="Extend for 2 months"/.test(html));
+    assert.match(html, /extended by one more month at most/);
   });
 });
 
@@ -216,7 +335,7 @@ describe('the HR "evaluation submitted" email', () => {
   });
 
   test('says when the extension goes out, and links to the evaluation in PEA', () => {
-    assert.match(body, /Evaluation 7 \(extension\) has been scheduled for 22-Oct-2026, and Kavita will receive a new link/);
+    assert.match(body, /Evaluation 7 \(extension\) has been scheduled for 22-10-2026, and Kavita will receive a new link/);
     assert.match(body, /\/evaluations\/4821/);
     assert.match(body, /Open in PEA/);
   });

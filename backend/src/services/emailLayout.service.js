@@ -28,7 +28,7 @@ export const BRAND = Object.freeze({
   logo: 'https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png',
 });
 
-export const DEFAULT_SUBTITLE = 'AAPNA Infotech — Performance Evaluation';
+export const DEFAULT_SUBTITLE = 'AAPNA Infotech — Probation Period Evaluation Platform';
 
 const FONT_STACK = 'Arial,Helvetica,sans-serif';
 
@@ -85,7 +85,7 @@ function signatureHtml() {
 /** The grey footer band. */
 function footerHtml() {
   return `<tr><td style="background:${BRAND.footerBg};padding:16px;text-align:center;font-family:${FONT_STACK};font-size:12px;color:${BRAND.footerText}">`
-    + `This email was sent by AAPNA Infotech's performance evaluation system.<br>`
+    + `This email was sent by the AAPNA Probation Period Evaluation Platform.<br>`
     + `&copy; ${new Date().getFullYear()} AAPNA Infotech. All rights reserved.`
     + `</td></tr>`;
 }

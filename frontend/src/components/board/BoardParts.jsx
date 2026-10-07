@@ -18,8 +18,12 @@ import {
 import StatusPill from '../StatusPill.jsx';
 import {
   avatarTone, initials, ratingTone, decisionTone, bucketMeta, evaluationLine, submittedLine,
-  shortDate, daysLabel, avg, missingComments,
+  shortDate, daysLabel, avg, missingComments, answeredName, holderName,
 } from '../../evaluationDisplay.js';
+
+// M3 / U13 (review of 01-10-2026) — every `answeredName(r)` and `holderName(r)`
+// in this file was `r.rmName`, and `r.withEmail || r.rmEmail` was `r.rmEmail`:
+// today's reporting manager, whoever had actually answered or held the link.
 
 /** A round initials badge in the person's stable colour. */
 export function Avatar({ name, size = 'md', className = '' }) {
@@ -181,7 +185,7 @@ export function EvaluationCard({ r, to }) {
       </header>
 
       <div className="pea-ev-meta">
-        <ClockCircleOutlined /> {legacy ? `Submitted by ${r.rmName} · recorded on the old form` : submittedLine(r)}
+        <ClockCircleOutlined /> {legacy ? `Submitted by ${answeredName(r)} · recorded on the old form` : submittedLine(r)}
       </div>
 
       {!legacy && (
@@ -205,7 +209,7 @@ export function EvaluationCard({ r, to }) {
         <LegacyBody r={r} />
       ) : (
         <>
-          <QuoteBlock text={r.remarks} author={r.remarks ? r.rmName : null} />
+          <QuoteBlock text={r.remarks} author={r.remarks ? answeredName(r) : null} />
 
           {r.reason && (
             <p className="pea-ev-reason pea-clamp-2">
@@ -245,16 +249,20 @@ function notSentReason(r) {
  */
 export function ProgressCard({ r, to, onRemind, reminding }) {
   const detail = {
-    waiting: `Sent ${shortDate(r.sentAt)} to ${r.rmName} · waiting ${daysLabel(r.waitingDays)}${
+    // M3 / M7 — "to" and "by" are whoever holds the link, which is an acting
+    // manager when HR sent it to one. They were always r.rmName.
+    waiting: `Sent ${shortDate(r.sentAt)} to ${holderName(r)}${r.delegated ? ' (acting manager)' : ''} · waiting ${daysLabel(r.waitingDays)}${
       r.reminderCount ? ` · ${r.reminderCount} reminder${r.reminderCount === 1 ? '' : 's'}` : ''}`,
-    opened: `Opened ${shortDate(r.openedAt)} by ${r.rmName} · not submitted yet`,
+    // P11 — a saved draft says the manager has started, not just looked.
+    opened: `Opened ${shortDate(r.openedAt)} by ${holderName(r)} · ${
+      r.draftSavedAt ? `draft saved ${shortDate(r.draftSavedAt)} · ` : ''}not submitted yet`,
     not_sent: `Due ${shortDate(r.dueDate)} · not sent — ${notSentReason(r)}`,
     scheduled: `Due ${shortDate(r.dueDate)} · sent to ${r.rmName} automatically`,
     closed: 'Closed — this evaluation is no longer needed.',
   }[r.bucket];
 
   const note = {
-    waiting: `No comments yet — the link is with ${r.rmName}.`,
+    waiting: `No comments yet — the link is with ${holderName(r)}.`,
     opened: 'Manager has the form open — comments will appear here when submitted.',
     not_sent: 'Nothing has gone to the manager yet.',
     scheduled: 'Scheduled — the form goes out on the due date.',
@@ -268,7 +276,7 @@ export function ProgressCard({ r, to, onRemind, reminding }) {
     action = (
       <Popconfirm
         title="Send an extra reminder?"
-        description={<div style={{ maxWidth: 280 }}>Emails {r.rmEmail} again with the link they already have.</div>}
+        description={<div style={{ maxWidth: 280 }}>Emails {r.withEmail || r.rmEmail} again with the link they already have.</div>}
         okText="Send"
         onConfirm={() => onRemind?.(r)}
       >
@@ -335,7 +343,7 @@ export function LoadProblem({ error, onRetry, extra, what = 'This evaluation' })
         <span className="pea-state-icon"><LockOutlined /></span>
         <h3>You don’t have access to evaluations</h3>
         <p>
-          Ask an admin to switch on <strong>Evaluations</strong> or <strong>Employees</strong> for you under Admin
+          Ask an admin to switch on <strong>Evaluations</strong> or <strong>Commandos</strong> for you under Admin
           Portal → Module Access.
         </p>
       </div>

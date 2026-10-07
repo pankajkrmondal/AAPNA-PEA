@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Card, Spin, Result, Space, Typography, Table, Collapse, Empty } from 'antd';
 import StatusPill from '../components/StatusPill.jsx';
+import { formatDate } from '../formatDate.js';
 
 // Keyed on the wording selfView.service.js sends, which uses the shared state
 // names told from the employee's own side. The tones are the same six used on
@@ -45,7 +46,7 @@ export default function SelfView() {
           <div className="pea-brand-mark">PEA</div>
           <div className="pea-brand-text">
             <span className="pea-brand-name">AAPNA</span>
-            <span className="pea-brand-sub">Performance Evaluation</span>
+            <span className="pea-brand-sub">Probation Period Evaluation Platform</span>
           </div>
         </div>
         {children}
@@ -60,7 +61,10 @@ export default function SelfView() {
 
   const d = state.data;
   const showAverages = d.level === 'averages' || d.level === 'full';
-  const completed = d.evaluations.filter((e) => e.status === 'Completed').length;
+  // B6 — selfView.service.js sends 'Submitted'; this counted 'Completed', so it
+  // always read "0 of N".
+  // const completed = d.evaluations.filter((e) => e.status === 'Completed').length;
+  const completed = d.evaluations.filter((e) => e.status === 'Submitted').length;
 
   return wrap(
     <>
@@ -69,7 +73,7 @@ export default function SelfView() {
           <span className="pea-pill"><span className="pea-pill-dot" />Your probation</span>
           <h2 className="pea-hero-title">Hello, {d.name.split(' ')[0]}</h2>
           <p className="pea-hero-sub">
-            {d.type} · joined {d.doj} · reporting manager {d.manager}
+            {d.type} · joined {formatDate(d.doj)} · reporting manager {d.manager}
             <br />
             {completed} of {d.evaluations.length} evaluations completed
           </p>
@@ -102,7 +106,7 @@ export default function SelfView() {
               ),
             },
             { title: 'Period', dataIndex: 'period', render: (v) => v || '—' },
-            { title: 'Due', dataIndex: 'due', width: 110, className: 'pea-num' },
+            { title: 'Due', dataIndex: 'due', width: 110, className: 'pea-num', render: (v) => formatDate(v) },
             {
               title: 'Status',
               dataIndex: 'status',
@@ -154,7 +158,7 @@ export default function SelfView() {
       )}
 
       <Typography.Text type="secondary" style={{ textAlign: 'center' }}>
-        This link is personal to you and expires on {new Date(d.expiresAt).toLocaleDateString()}. Questions? Speak to HR.
+        This link is personal to you and expires on {formatDate(d.expiresAt)}. Questions? Speak to HR.
       </Typography.Text>
     </>
   );

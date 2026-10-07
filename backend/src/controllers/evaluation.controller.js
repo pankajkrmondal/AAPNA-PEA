@@ -9,7 +9,8 @@ import * as evaluationService from '../services/evaluation.service.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
 import { renderForm, renderThanks, renderError } from '../views/evaluationForm.js';
-import { RATING_SCALE, CONFIRMATION_OPTIONS } from '../config/ratingScale.js';
+// B2 / M2 — was: import { RATING_SCALE, CONFIRMATION_OPTIONS } from '../config/ratingScale.js';
+import { RATING_SCALE } from '../config/ratingScale.js';
 
 /** True when the caller wants JSON rather than a rendered page. */
 const wantsJson = (req) =>
@@ -61,14 +62,56 @@ export const getForm = catchAsync(async (req, res) => {
     // A manager clicking an expired link should see a plain explanation, not a
     // JSON error body or a stack trace.
     if (wantsJson(req)) throw err;
-    return res.status(err.statusCode || 400).type('html').send(renderError(err.message, err.statusCode));
+    return res
+      .status(err.statusCode || 400)
+      .type('html')
+      .send(renderError(err.message, err.statusCode, { nonce: res.locals.cspNonce }));
   }
 
   if (wantsJson(req)) {
-    return success(res, { ...data, ratingScale: RATING_SCALE, confirmationOptions: CONFIRMATION_OPTIONS });
+    // B2 / M2 — `data.confirmationOptions` is already the allowed subset for
+    // this person. This used to send the full list regardless:
+    // return success(res, { ...data, ratingScale: RATING_SCALE, confirmationOptions: CONFIRMATION_OPTIONS });
+    return success(res, { ...data, ratingScale: RATING_SCALE });
   }
 
-  return res.type('html').send(renderForm(data, { nonce: res.locals.cspNonce }));
+  // P11 — a draft saved against this link refills the form, on any device.
+  // Was: renderForm(data, { nonce: res.locals.cspNonce })
+  return res.type('html').send(renderForm(data, {
+    nonce: res.locals.cspNonce,
+    submitted: data.draft?.values || {},
+  }));
+});
+
+/**
+ * POST /api/evaluation/:token/draft — P11.
+ *
+ * Keeps unfinished answers. The form's script calls this as JSON a few seconds
+ * after the last change; the "Save draft" button posts the form here with no
+ * script at all, and gets the form back with a line saying it was saved.
+ */
+export const saveDraft = catchAsync(async (req, res) => {
+  const body = parseBody(req.body || {});
+
+  let result;
+  try {
+    result = await evaluationService.saveDraft(req.params.token, body);
+  } catch (err) {
+    if (wantsJson(req)) throw err;
+    return res
+      .status(err.statusCode || 400)
+      .type('html')
+      .send(renderError(err.message, err.statusCode, { nonce: res.locals.cspNonce }));
+  }
+
+  if (wantsJson(req)) return success(res, result, 'Draft saved');
+
+  const data = await evaluationService.getFormData(req.params.token);
+  return res.type('html').send(renderForm(data, {
+    nonce: res.locals.cspNonce,
+    submitted: data.draft?.values || body,
+    notice: `Draft saved ${result.savedLabel}. Nothing has been submitted yet — come back to this same link to finish.`,
+  }));
 });
 
 /** POST /api/evaluation/:token/submit */
@@ -101,10 +144,10 @@ export const submitForm = catchAsync(async (req, res) => {
       return res
         .status(err.statusCode || 400)
         .type('html')
-        .send(renderError(err.message, err.statusCode));
+        .send(renderError(err.message, err.statusCode, { nonce: res.locals.cspNonce }));
     }
   }
 
   if (wantsJson(req)) return success(res, result, 'Evaluation submitted');
-  return res.type('html').send(renderThanks(result));
+  return res.type('html').send(renderThanks(result, { nonce: res.locals.cspNonce }));
 });

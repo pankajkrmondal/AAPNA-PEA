@@ -176,14 +176,33 @@ export function dateIn(instant, timeZone = 'Asia/Kolkata') {
 }
 
 /**
- * Format a date for display in emails, e.g. '02-Jan-2023'.
- * Matches the `dd-MMM-yyyy` format the original flow used in its email bodies,
- * so managers see the same thing they are used to.
- * @param {Date} date
- * @returns {string}
+ * Format a date for a person to read, e.g. '02-01-2023' — on the manager's
+ * form, in every email, in a notification and in an exported sheet.
+ *
+ * dd-MM-yyyy is the format HR settled on (H6 / U4, 29-09-2026): one format on
+ * every screen and in every message. Dates on the wire stay 'YYYY-MM-DD' —
+ * see toDateString().
+ *
+ * Accepts a 'YYYY-MM-DD' string as well as a Date, because several callers
+ * hold a date that has already been through toDateString().
+ *
+ * @param {Date|string|null|undefined} date
+ * @returns {string} '' when there is no usable date
  */
+export function formatDisplay(date) {
+  const d = toUtcMidnight(date);
+  if (!d) return '';
+  const day = String(d.getUTCDate()).padStart(2, '0');
+  const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+  return `${day}-${month}-${d.getUTCFullYear()}`;
+}
+
+/* H6 / U4 (HR, 29-09-2026) — the format before, kept for reference. It printed
+   '02-Jan-2023', the dd-MMM-yyyy the original Power Automate flow used.
+
 export function formatDisplay(date) {
   const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const d = String(date.getUTCDate()).padStart(2, '0');
   return `${d}-${MONTHS[date.getUTCMonth()]}-${date.getUTCFullYear()}`;
 }
+*/

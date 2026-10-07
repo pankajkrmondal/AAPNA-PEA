@@ -59,6 +59,6 @@ export const importExcel = catchAsync(async (req, res) => {
     result,
     dryRun
       ? `Test run: ${result.createdRows.length} row(s) would import; ${result.rejected} rejected, ${result.skippedExisting} already in PEA. Nothing was saved.`
-      : `Imported ${result.imported} employee(s); ${result.rejected} rejected, ${result.skippedExisting} already in PEA`
+      : `Imported ${result.imported} Commando(s); ${result.rejected} rejected, ${result.skippedExisting} already in PEA`
   );
 });

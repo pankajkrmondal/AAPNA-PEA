@@ -53,7 +53,7 @@ function EmployeeLinkTab() {
           items={[{
             key: 'self-view-off',
             tone: 'warning',
-            summary: 'Employee self-view is switched off',
+            summary: 'Commando self-view is switched off',
             detail: (
               <>
                 Links can still be created but will not open. Turn it on in{' '}
@@ -66,18 +66,18 @@ function EmployeeLinkTab() {
         <NoticeStrip
           items={[{
             key: 'self-view-level',
-            summary: <>Employees currently see: <strong>{disclosure || '…'}</strong></>,
+            summary: <>Commandos currently see: <strong>{disclosure || '…'}</strong></>,
           }]}
         />
       )}
 
       <Space wrap align="end">
         <div>
-          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Employee</div>
+          <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 4 }}>Commando</div>
           <Select
             showSearch
             style={{ width: 320 }}
-            placeholder="Choose an employee…"
+            placeholder="Choose a Commando…"
             loading={employees.isLoading}
             value={employeeId}
             onChange={(v) => { setEmployeeId(v); setUrl(null); }}
@@ -156,7 +156,7 @@ export default function ManagerLinks() {
       <Tabs
         items={[
           { key: 'manager', label: "Manager's team", children: <ManagerTeamTab /> },
-          { key: 'employee', label: "Employee's own view", children: <EmployeeLinkTab /> },
+          { key: 'employee', label: "Commando's own view", children: <EmployeeLinkTab /> },
           { key: 'evaluation', label: 'Evaluation form', children: <EvaluationLinkTab /> },
         ]}
       />

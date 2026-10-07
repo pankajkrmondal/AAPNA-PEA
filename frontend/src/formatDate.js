@@ -6,10 +6,18 @@
  * because 09/10/2026 means two different days either side of the Atlantic and
  * the reader cannot tell which they are looking at.
  *
- * `15-Sep-2026` is the one HR already reads in the evaluation emails, and the
- * spelled-out month makes it unambiguous everywhere.
+ * H6 / U4 (HR, 29-09-2026): the one format is `15-09-2026` — dd-MM-yyyy, the
+ * format HRD settled on. It replaces `15-Sep-2026` here and in every date
+ * picker; the backend's formatDisplay() does the same for emails and the
+ * manager's form. Dates sent to and from the API stay `YYYY-MM-DD`.
  */
+
+/** The same format for an antd DatePicker / RangePicker `format` prop. */
+export const DATE_FORMAT = 'DD-MM-YYYY';
+
+/* H6 / U4 — only the dd-MMM-yyyy format used these; kept for reference.
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+*/
 
 /**
  * @param {string|Date|null|undefined} value - a Date, an ISO string, or a
@@ -36,7 +44,8 @@ export function formatDate(value, fallback = '—') {
     d = date.getDate();
   }
 
-  return `${String(d).padStart(2, '0')}-${MONTHS[m - 1]}-${y}`;
+  // H6 / U4 — was: return `${String(d).padStart(2, '0')}-${MONTHS[m - 1]}-${y}`;
+  return `${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y}`;
 }
 
 /**

@@ -113,7 +113,7 @@ export default function ResourceTrends() {
           {isFetching && <Spin size="small" />}
           <Input.Search
             allowClear
-            placeholder="Search employee…"
+            placeholder="Search Commando…"
             style={{ width: 200 }}
             onSearch={setSearch}
             onChange={(e) => !e.target.value && setSearch('')}
@@ -161,7 +161,7 @@ export default function ResourceTrends() {
         }}
         columns={[
           {
-            title: 'Employee',
+            title: 'Commando',
             dataIndex: 'name',
             fixed: 'left',
             width: 210,

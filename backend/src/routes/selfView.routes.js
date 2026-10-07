@@ -17,7 +17,7 @@ selfViewLinksRouter.post(
   '/:employeeId',
   requireMinRole('hr'),
   catchAsync(async (req, res) =>
-    success(res, await createSelfViewLink(req.params.employeeId, req.user.username), 'Link created — copy it to the employee', 201)
+    success(res, await createSelfViewLink(req.params.employeeId, req.user.username), 'Link created — copy it to the Commando', 201)
   )
 );
 

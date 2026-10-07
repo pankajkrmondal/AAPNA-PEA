@@ -172,7 +172,8 @@ export function CommentMatrix({ employee }) {
       return (
         <>
           <BucketPill bucket={b} />
-          <div className="pea-muted pea-small pea-mt4">{shortDate(c.submitted_at)} · {employee.rm_name}</div>
+          {/* U13 — was `· {employee.rm_name}`: today's manager, not who answered. */}
+          <div className="pea-muted pea-small pea-mt4">{shortDate(c.submitted_at)} · {c.submitted_by_name || employee.rm_name}{c.entered_by ? ' · entered by HR' : ''}</div>
         </>
       );
     }

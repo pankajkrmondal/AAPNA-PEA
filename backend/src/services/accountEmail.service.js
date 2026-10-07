@@ -51,7 +51,7 @@ function layout(user, inner) {
 <body style="font-family:Calibri,Arial,sans-serif;font-size:14px;color:#333;line-height:1.6;">
   <div style="max-width:600px;margin:0 auto;padding:20px;border:1px solid #e8ede0;border-radius:5px;">
     <div style="background:#f7f9f6;padding:15px;text-align:center;border-bottom:2px solid #7cb342;margin-bottom:20px;">
-      <h2 style="margin:0;color:#33691e;">AAPNA PEA — Evaluation Platform</h2>
+      <h2 style="margin:0;color:#33691e;">AAPNA — Probation Period Evaluation Platform</h2>
     </div>
     <p>Dear ${esc(fullName(user))},</p>
     ${inner}

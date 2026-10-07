@@ -18,8 +18,8 @@ describe('delete employee — the typed name must match', () => {
   });
 
   test('a blank or missing name is refused', () => {
-    assert.throws(() => assertDeleteConfirmed(employee, ''), /type the employee's full name/);
-    assert.throws(() => assertDeleteConfirmed(employee, undefined), /type the employee's full name/);
+    assert.throws(() => assertDeleteConfirmed(employee, ''), /type the Commando's full name/);
+    assert.throws(() => assertDeleteConfirmed(employee, undefined), /type the Commando's full name/);
   });
 
   test('a different or partial name is refused', () => {

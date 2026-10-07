@@ -3,12 +3,17 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card, Upload, Button, Space, Alert, Table, Tag, Row, Col, Statistic, App, Popconfirm, Typography, Steps, Tooltip,
 } from 'antd';
+// U8 (decided 02-10-2026) — `ClusterOutlined` was the icon of the removed "Rebuild map" button:
+// import {
+//   InboxOutlined, EyeOutlined, ExperimentOutlined, CloudUploadOutlined, ClusterOutlined,
+// } from '@ant-design/icons';
 import {
-  InboxOutlined, EyeOutlined, ExperimentOutlined, CloudUploadOutlined, ClusterOutlined,
+  InboxOutlined, EyeOutlined, ExperimentOutlined, CloudUploadOutlined,
 } from '@ant-design/icons';
 import api, { unwrap, USER_KEY } from '../api.js';
 import { isAdminTier } from '../auth.js';
 import HintIcon from '../components/HintIcon.jsx';
+import { formatDate } from '../formatDate.js';
 
 /**
  * Load the master sheet without a developer. Plan R5: the migration is
@@ -55,11 +60,16 @@ export default function ImportSheet({ embedded = false } = {}) {
     onError: (err) => { message.error(err.friendlyMessage); },
   });
 
+  /* U8 (decided 02-10-2026) — a joiner's project leader comes from the Leaders
+     list in Microsoft 365 and from nowhere else, so there is no map to rebuild
+     after an upload. Kept for reference:
+
   const seedMap = useMutation({
     mutationFn: () => api.post('/intake/rm-pl-map/seed').then((r) => r.data),
     onSuccess: (res) => { message.success(res.message); },
     onError: (err) => { message.error(err.friendlyMessage); },
   });
+  */
 
   const step = result && !result.dryRun ? 3 : result?.dryRun ? 2 : preview ? 1 : 0;
   const busy = runPreview.isPending || runImport.isPending;
@@ -152,11 +162,11 @@ export default function ImportSheet({ embedded = false } = {}) {
           {isAdmin ? (
             <Popconfirm
               title="Import for real?"
-              description="Creates employees and generates their evaluation schedules. Existing office emails are skipped, not overwritten."
+              description="Creates Commandos and generates their evaluation schedules. Existing office emails are skipped, not overwritten."
               onConfirm={() => runImport.mutate(false)}
               disabled={!file || !result?.dryRun}
             >
-              <Tooltip title="Admins only, enabled after a Test run. Asks to confirm, then creates the employees and generates their evaluation schedules. Office emails already in PEA are skipped, not overwritten. Writes data.">
+              <Tooltip title="Admins only, enabled after a Test run. Asks to confirm, then creates the Commandos and generates their evaluation schedules. Office emails already in PEA are skipped, not overwritten. Writes data.">
                 <Button
                   type="primary"
                   icon={<CloudUploadOutlined />}
@@ -170,7 +180,7 @@ export default function ImportSheet({ embedded = false } = {}) {
           ) : (
             <Typography.Text type="secondary">
               Only an admin can run the final import.
-              <HintIcon title="Import creates the employees and generates their evaluation schedules, so only Admins and Super Admins can run it. You can still Preview and Test run." />
+              <HintIcon title="Import creates the Commandos and generates their evaluation schedules, so only Admins and Super Admins can run it. You can still Preview and Test run." />
             </Typography.Text>
           )}
         </Space>
@@ -236,7 +246,7 @@ export default function ImportSheet({ embedded = false } = {}) {
                 columns={[
                   { title: 'Row', dataIndex: 'excelRow', width: 70 },
                   { title: 'Name', dataIndex: 'name' },
-                  { title: 'DOJ', dataIndex: 'doj', width: 110 },
+                  { title: 'DOJ', dataIndex: 'doj', width: 110, render: (v) => formatDate(v) },
                   { title: 'Sheet status', dataIndex: 'was', render: (v) => v || 'blank' },
                 ]}
               />
@@ -284,7 +294,7 @@ export default function ImportSheet({ embedded = false } = {}) {
               { title: 'Name', dataIndex: 'full_name' },
               { title: 'Office email', dataIndex: 'office_email' },
               { title: 'Type', dataIndex: 'type', render: (v) => <Tag>{v}</Tag> },
-              { title: 'DOJ', dataIndex: 'doj', width: 110 },
+              { title: 'DOJ', dataIndex: 'doj', width: 110, render: (v) => formatDate(v) },
               {
                 title: 'Status',
                 dataIndex: 'confirmation_status',
@@ -327,6 +337,11 @@ export default function ImportSheet({ embedded = false } = {}) {
             />
           )}
 
+          {/* U8 (decided 02-10-2026) — removed from the screen, kept for
+              reference. The step it asked for is no longer needed: the New
+              Joiner Inbox takes each joiner's project leader from the Leaders
+              list, not from this roster.
+
           {!result.dryRun && result.imported > 0 && (
             <Alert
               type="success"
@@ -341,6 +356,7 @@ export default function ImportSheet({ embedded = false } = {}) {
               }
             />
           )}
+          */}
         </Card>
       )}
     </>

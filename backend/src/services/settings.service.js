@@ -20,6 +20,7 @@ import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
 import { notifyStaff } from './inAppNotification.service.js';
 import { TEMPLATE_DEFS, listTemplateCatalog, validateDraft, renderPreview } from './emailTemplate.service.js';
+import { DIRECTORY_DEFAULTS, WITHOUT_MANAGER, TITLE_WORD_DEFAULTS } from './directory.service.js';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -87,6 +88,13 @@ export const REGISTRY = Object.freeze([
   },
 
   // ── Probation ──────────────────────────────────────────────────────────
+  // Archive (07-10-2026) — Harish: archive "straight away", so it starts at 0.
+  {
+    key: 'archive_after_days', group: 'Probation', type: 'integer', min: 0, max: 365,
+    default: '0',
+    label: 'Archive Commandos this many days after the probation ends',
+    help: 'Someone confirmed, not confirmed, or marked as having left moves to the archive this many days after the decision or the exit — 0 means the morning after. Archived Commandos leave the Commandos list, the Evaluations board, the Dashboard, Trends and their manager\'s team link; their record stays, read-only, under Commandos → Status → Archived, and HR can restore them. Anyone whose flagged feedback nobody has read yet waits until someone has.',
+  },
   {
     key: 'confirmation_deadline_months', group: 'Probation', type: 'integer', min: 1, max: 24,
     label: 'Confirmation deadline (months)',
@@ -119,10 +127,67 @@ export const REGISTRY = Object.freeze([
     label: 'Look back for new accounts (days)',
     help: 'Wide enough for a delayed joining date; narrow enough not to enqueue years of staff.',
   },
+  // H1 (AD sync) — one domain became a list. The entry before, kept for reference:
+  // {
+  //   key: 'azure_email_domain', group: 'New joiners', type: 'domain',
+  //   label: 'Joiner email domain',
+  //   help: 'Only accounts on this domain are treated as joiners.',
+  // },
+  // Decided 02-10-2026 — all three of the flow's domains are followed. The
+  // list is stored under its own key, `azure_email_domains`; the one-domain key
+  // above is left as it is, because a build from before this change reads it
+  // as a single domain. See DIRECTORY_DEFAULTS in directory.service.js.
   {
-    key: 'azure_email_domain', group: 'New joiners', type: 'domain',
-    label: 'Joiner email domain',
-    help: 'Only accounts on this domain are treated as joiners.',
+    key: 'azure_email_domains', group: 'New joiners', type: 'domain_list', critical: true,
+    default: DIRECTORY_DEFAULTS.azure_email_domains,
+    label: 'Joiner email domains',
+    help: 'Only accounts on these domains are treated as joiners, and only these are checked for leavers. Separate them with a comma. It starts at the three the MRA Reconcile flow follows: aapnainfotech.com, mera.work, karyakeeper.com.',
+  },
+  // H1 / U8 (AD sync) — the flow's rules for who counts, as settings.
+  {
+    key: 'azure_contractor_group_id', group: 'New joiners', type: 'guid', critical: true,
+    default: DIRECTORY_DEFAULTS.azure_contractor_group_id,
+    label: 'Contractor list (Microsoft 365 group id)',
+    help: 'Members of this distribution list are contract staff and are never offered as new joiners; one already waiting is taken off the inbox. It starts at the list the MRA Reconcile flow uses (d598b53f-9221-4c67-a1b4-fdd1ba9162d9). Blank: contract staff are not filtered out. While it is set, the check stops and changes nothing if it cannot read who is on the list, or finds nobody on it — which is also what a mistyped id looks like. No extra Microsoft 365 permission is needed.',
+  },
+  {
+    key: 'azure_leaders_group_id', group: 'New joiners', type: 'guid', critical: true,
+    default: DIRECTORY_DEFAULTS.azure_leaders_group_id,
+    label: 'Leaders list (Microsoft 365 group id)',
+    help: 'The project leader suggested for a joiner is the first person on this list at or above their reporting manager, looking at six people at most. This list is the only source: when nobody up the chain is on it, no project leader is suggested and HR chooses one. HR still confirms it for each joiner. It starts at the list the MRA Reconcile flow uses (a7faa0e9-353b-42a5-83ed-859f38abd0cd). Blank: no project leader is suggested for anyone.',
+  },
+  {
+    key: 'azure_excluded_emails', group: 'New joiners', type: 'email_list',
+    default: DIRECTORY_DEFAULTS.azure_excluded_emails,
+    label: 'Never offer these as joiners',
+    help: 'Addresses the Microsoft 365 check leaves out — anyone who should not be evaluated but is not on the Contractor list. One already waiting is taken off the inbox.',
+  },
+  {
+    key: 'azure_system_mailboxes', group: 'New joiners', type: 'email_list',
+    default: DIRECTORY_DEFAULTS.azure_system_mailboxes,
+    label: 'System mailboxes',
+    help: 'Shared mailboxes that are not people. Never offered as joiners, and not offered when picking a reporting manager or project leader. The four the MRA Reconcile flow names are filled in.',
+  },
+  {
+    key: 'azure_joiners_without_manager', group: 'New joiners', type: 'choice', critical: true,
+    options: WITHOUT_MANAGER,
+    default: DIRECTORY_DEFAULTS.azure_joiners_without_manager,
+    label: 'New accounts with no manager in Microsoft 365',
+    help: 'leave_out: they are not offered until Microsoft 365 has a manager for them, as the MRA Reconcile flow does; the New joiners screen names them, and one already waiting is taken off the inbox. show: they wait in the inbox with the reporting manager marked "Missing", for HR to fill in — what PEA did before 02-10-2026.',
+  },
+  // H1 (07-10-2026) — Microsoft 365 holds no years of experience, so the
+  // designation SUGGESTS fresher or experienced. HR confirms it for every joiner.
+  {
+    key: 'joiner_title_words_fresher', group: 'New joiners', type: 'word_list',
+    default: TITLE_WORD_DEFAULTS.joiner_title_words_fresher,
+    label: 'Designation words that suggest Fresher',
+    help: 'A new joiner whose Microsoft 365 job title contains one of these words, as a whole word, arrives in the New Joiner Inbox with Fresher suggested. It is only a suggestion: HR or an admin confirms it before anything is scheduled. Separate the words with a comma. Blank: Fresher is never suggested.',
+  },
+  {
+    key: 'joiner_title_words_experienced', group: 'New joiners', type: 'word_list',
+    default: TITLE_WORD_DEFAULTS.joiner_title_words_experienced,
+    label: 'Designation words that suggest Experienced',
+    help: 'The same for Experienced. "Associate" is here because an associate has one to two years\' experience. A title with words from both lists is suggested as Experienced; a title with neither gets no suggestion and HR chooses. Blank: Experienced is never suggested.',
   },
   {
     key: 'azure_field_sync_enabled', group: 'New joiners', type: 'boolean', critical: true,
@@ -158,8 +223,8 @@ export const REGISTRY = Object.freeze([
     key: 'employee_self_view', group: 'Access', type: 'choice', critical: true,
     options: ['off', 'schedule', 'averages', 'full'],
     default: 'averages',
-    label: 'Employee self-view',
-    help: 'What an employee sees through their own link. off: nothing. schedule: dates and status only. averages: plus their average ratings. full: plus per-parameter ratings and manager comments. HR chose averages (13 Sep).',
+    label: 'Commando self-view',
+    help: 'What a Commando sees through their own link. off: nothing. schedule: dates and status only. averages: plus their average ratings. full: plus per-parameter ratings and manager comments. HR chose averages (13 Sep).',
   },
 ]);
 
@@ -169,13 +234,17 @@ const NOT_IN_EFFECT = Object.freeze({
   fresher_interval_days: 'Fixed at 30 by the evaluation rule in cycleGenerator.service.js.',
   experienced_cycle_count: 'Fixed at 3 by the evaluation rule in cycleGenerator.service.js.',
   experienced_interval_days: 'Fixed at 60 by the evaluation rule in cycleGenerator.service.js.',
-  extension_1month_day: 'Fixed at DOJ + 210 days by the extension rule in cycleGenerator.service.js.',
-  extension_2month_day: 'Fixed at DOJ + 240 days by the extension rule in cycleGenerator.service.js.',
+  // B1 / M2 — these said "Fixed at DOJ + 210 days" and "DOJ + 240 days"; an
+  // extension is dated from the previous evaluation now, not from joining.
+  extension_1month_day: 'Not used. An extension evaluation is 30 days after the previous one, set by the extension rule in cycleGenerator.service.js.',
+  extension_2month_day: 'Not used. A second extension evaluation is 30 days after the first; no probation runs past 8 months.',
   sender_email: 'Set by PEA_SENDER_EMAIL / MS_DEFAULT_SENDER_EMAIL in the .env file.',
   reply_to_email: 'Set by PEA_REPLY_TO in the .env file.',
   sweep_timezone: 'Set by TZ in the .env file.',
   skip_weekends: 'Always on — due dates are moved off weekends when the schedule is generated.',
   rm_pl_map_seeded_at: 'Written automatically when the RM→PL map is rebuilt.',
+  // Decided 02-10-2026 — replaced by the list of domains, under its own key.
+  azure_email_domain: 'Not used. One domain became a list: "Joiner email domains" under New joiners.',
 });
 
 const byKey = new Map(REGISTRY.map((r) => [r.key, r]));
@@ -277,6 +346,34 @@ export function normaliseValue(def, raw) {
       const d = s.toLowerCase().replace(/^@/, '');
       if (!/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d)) fail('must be a domain such as aapnainfotech.com');
       return d;
+    }
+
+    // H1 (AD sync) — one or more domains. At least one: a blank list would
+    // mean "every domain", guests included.
+    case 'domain_list': {
+      const list = s.split(/[;,\s]+/).map((d) => d.trim().toLowerCase().replace(/^@/, '')).filter(Boolean);
+      if (!list.length) fail('enter at least one domain such as aapnainfotech.com');
+      const bad = list.filter((d) => !/^[a-z0-9-]+(\.[a-z0-9-]+)+$/.test(d));
+      if (bad.length) fail(`not a valid domain: ${bad.join(', ')}`);
+      return [...new Set(list)].join(',');
+    }
+
+    // H1 (AD sync) — a Microsoft 365 group's object id, or blank for "not set".
+    case 'guid': {
+      const g = s.toLowerCase();
+      if (g && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(g)) {
+        fail('must be a group id such as d598b53f-9221-4c67-a1b4-fdd1ba9162d9, or blank');
+      }
+      return g;
+    }
+
+    // H1 (07-10-2026) — plain words, e.g. the designation words. Blank is allowed:
+    // it switches that suggestion off.
+    case 'word_list': {
+      const list = s.split(/[;,]+/).map((w) => w.trim().toLowerCase()).filter(Boolean);
+      const bad = list.filter((w) => !/^[a-z0-9]+$/.test(w));
+      if (bad.length) fail(`one word each, letters and numbers only: ${bad.join(', ')}`);
+      return [...new Set(list)].join(',');
     }
 
     case 'choice':

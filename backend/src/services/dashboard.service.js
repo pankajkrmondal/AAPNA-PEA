@@ -19,6 +19,7 @@ import prisma from '../config/database.js';
 import config from '../config/index.js';
 import { todayIn, dateIn, toDateString, addDays } from '../utils/dateUtils.js';
 import { findDeadlineBreaches } from './confirmationDeadline.service.js';
+import { archivedIds, notInIds } from '../utils/archiveScope.js';
 
 /**
  * Headline counts plus the lists HR needs to act on.
@@ -29,6 +30,13 @@ export async function getDashboard() {
   const soon = addDays(today, 14);
 
   const activeEmployee = { halt_process: false, employment_status: 'active' };
+
+  // Archive (07-10-2026) — every figure and list leaves archived Commandos out.
+  // `notArchived` on a Commando query, `notArchivedCycle` on an evaluation one;
+  // both are {} until the archive exists here, so the figures are as before.
+  const archived = await archivedIds();
+  const notArchived = notInIds(archived);
+  const notArchivedCycle = notInIds(archived, 'employee_id');
 
   const [
     totalEmployees,
@@ -47,10 +55,13 @@ export async function getDashboard() {
     completedCycles,
     totalCycles,
   ] = await Promise.all([
-    prisma.pea_employees.count(),
-    prisma.pea_employees.count({ where: { employment_status: 'active' } }),
-    prisma.pea_employees.count({ where: { is_experienced: false, employment_status: 'active' } }),
-    prisma.pea_employees.count({ where: { is_experienced: true, employment_status: 'active' } }),
+    // Archive (07-10-2026) — each count below gained `...notArchived` (or
+    // `...notArchivedCycle`); nothing else in them changed. It was e.g.
+    // prisma.pea_employees.count({ where: { employment_status: 'active' } }).
+    prisma.pea_employees.count({ where: { ...notArchived } }),
+    prisma.pea_employees.count({ where: { employment_status: 'active', ...notArchived } }),
+    prisma.pea_employees.count({ where: { is_experienced: false, employment_status: 'active', ...notArchived } }),
+    prisma.pea_employees.count({ where: { is_experienced: true, employment_status: 'active', ...notArchived } }),
     // Still in probation = no decision yet, OR extended. An extension IS a
     // probation that is still running, so counting only the nulls quietly
     // dropped every extended person and made the figure read low.
@@ -58,13 +69,14 @@ export async function getDashboard() {
       where: {
         employment_status: 'active',
         OR: [{ confirmation_status: null }, { confirmation_status: { startsWith: 'Extend' } }],
+        ...notArchived,
       },
     }),
-    prisma.pea_employees.count({ where: { confirmation_status: 'Confirmed' } }),
-    prisma.pea_employees.count({ where: { confirmation_status: 'Not Confirmed' } }),
-    prisma.pea_employees.count({ where: { confirmation_status: { startsWith: 'Extend' } } }),
-    prisma.pea_employees.count({ where: { halt_process: true } }),
-    prisma.pea_employees.count({ where: { employment_status: 'left' } }),
+    prisma.pea_employees.count({ where: { confirmation_status: 'Confirmed', ...notArchived } }),
+    prisma.pea_employees.count({ where: { confirmation_status: 'Not Confirmed', ...notArchived } }),
+    prisma.pea_employees.count({ where: { confirmation_status: { startsWith: 'Extend' }, ...notArchived } }),
+    prisma.pea_employees.count({ where: { halt_process: true, ...notArchived } }),
+    prisma.pea_employees.count({ where: { employment_status: 'left', ...notArchived } }),
 
     // Due, still pending — nobody has been asked.
     prisma.pea_evaluation_cycles.count({
@@ -77,7 +89,7 @@ export async function getDashboard() {
     prisma.pea_evaluation_cycles.count({
       where: { status: 'pending', due_date: { gt: today, lte: soon }, employee: activeEmployee },
     }),
-    prisma.pea_evaluation_cycles.count({ where: { status: 'completed' } }),
+    prisma.pea_evaluation_cycles.count({ where: { status: 'completed', ...notArchivedCycle } }),
     // "Submitted of those DUE", not of every cycle ever scheduled.
     //
     // The old denominator counted future evaluations and ones closed as no
@@ -91,6 +103,7 @@ export async function getDashboard() {
           { status: { in: ['email_sent', 'opened'] } },
           { status: 'pending', due_date: { lte: today } },
         ],
+        ...notArchivedCycle,
       },
     }),
   ]);
@@ -117,7 +130,7 @@ export async function getDashboard() {
       take: 25,
     }),
     prisma.pea_evaluation_cycles.findMany({
-      where: { status: 'completed', submitted_at: { not: null } },
+      where: { status: 'completed', submitted_at: { not: null }, ...notArchivedCycle },
       include: {
         employee: { select: { id: true, full_name: true } },
         scores: { select: { comments: true } },
@@ -128,7 +141,7 @@ export async function getDashboard() {
   ]);
 
   const ratingAgg = await prisma.pea_evaluation_cycles.aggregate({
-    where: { status: 'completed', avg_rating: { not: null } },
+    where: { status: 'completed', avg_rating: { not: null }, ...notArchivedCycle },
     _avg: { avg_rating: true },
   });
 
@@ -149,6 +162,9 @@ export async function getDashboard() {
       extended,
       halted,
       left,
+      // Archive (07-10-2026) — how many are archived; null when there is no
+      // archive here, so the screen can leave the figure out.
+      archived: archived ? archived.length : null,
     },
 
     evaluations: {

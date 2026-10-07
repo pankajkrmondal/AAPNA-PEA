@@ -19,6 +19,8 @@ import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
 import { queueEmail } from './notification.service.js';
 import { addDays, formatDisplay, toDateString, todayIn } from '../utils/dateUtils.js';
+// Archive (07-10-2026) — a manager's team link leaves archived Commandos out.
+import { notArchivedSql } from '../utils/archiveScope.js';
 
 const norm = (v) => (v || '').trim().toLowerCase() || null;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -36,8 +38,10 @@ export async function listManagers() {
                               OR confirmation_status LIKE 'Extend%')::int AS in_probation
       FROM pea_employees
      WHERE employment_status = 'active' AND coalesce(trim(rm_email), '') <> ''
+       ${await notArchivedSql('pea_employees')}
      GROUP BY lower(trim(rm_email))
      ORDER BY max(rm_name)`;
+  // Archive (07-10-2026) — the line after the WHERE leaves archived people out.
   return rows;
 }
 
@@ -170,9 +174,11 @@ export async function getTeamView(token) {
   const today = todayIn(config.scheduler.timezone);
   const apiBase = config.frontendUrl.replace(/\/+$/, '');
 
+  // Archive (07-10-2026) — the last line leaves archived people out of the team.
   const team = await prisma.$queryRaw`
     SELECT id FROM pea_employees
-     WHERE employment_status = 'active' AND lower(trim(rm_email)) = ${link.rm_email}`;
+     WHERE employment_status = 'active' AND lower(trim(rm_email)) = ${link.rm_email}
+       ${await notArchivedSql('pea_employees')}`;
 
   const employees = await prisma.pea_employees.findMany({
     where: { id: { in: team.map((t) => t.id) } },
@@ -221,7 +227,7 @@ export async function getTeamView(token) {
       return {
         number: c.seq_no,
         extension: c.is_extension,
-        period: c.period_from && c.period_to ? `${toDateString(c.period_from)} → ${toDateString(c.period_to)}` : null,
+        period: c.period_from && c.period_to ? `${formatDisplay(c.period_from)} → ${formatDisplay(c.period_to)}` : null,
         due: toDateString(c.due_date),
         status: c.status,
         overdue: c.status === 'pending' && c.due_date < today,

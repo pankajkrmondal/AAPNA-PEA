@@ -19,6 +19,9 @@ import logger from '../config/logger.js';
 import config from '../config/index.js';
 import { sendMail } from './graphMailer.service.js';
 import { render, buildVars } from './emailTemplate.service.js';
+import { hasRecipientColumns } from '../utils/schemaCapabilities.js';
+import { modulesFor } from './modulePermissions.service.js';
+import { todayIn, toUtcMidnight, formatDisplay } from '../utils/dateUtils.js';
 
 /** Read a setting, falling back when the row is absent. */
 async function setting(key, fallback = null) {
@@ -94,12 +97,32 @@ async function resolveRecipients(type, employee, context = {}) {
 
     case 'evaluation_link':
     case 'reminder':
-      // To the reporting manager, cc the project leader plus the standing list.
-      // plFor() honours the "never copy as project leader" list.
-      return {
-        to: [employee.rm_email].filter(Boolean),
-        cc: [...new Set([...plFor(employee), ...ccList].filter(Boolean))],
-      };
+    case 'evaluation_reopened': {
+      // To whoever holds the link, cc the project leader plus the standing
+      // list. plFor() honours the "never copy as project leader" list.
+      //
+      // M3 / M7 — "whoever holds the link" is the person it was issued to:
+      // normally the reporting manager, an acting manager when HR sent it to
+      // one. A reminder must chase the person who can actually answer, and an
+      // acting manager's emails copy the real manager so nothing is answered in
+      // their name without their knowing. It was always the current manager:
+      //
+      // return {
+      //   to: [employee.rm_email].filter(Boolean),
+      //   cc: [...new Set([...plFor(employee), ...ccList].filter(Boolean))],
+      // };
+      const holder = String(context.sentTo?.email || employee.rm_email || '').trim();
+      const to = [holder].filter(Boolean);
+      const copyManager = context.sentTo?.delegated ? [employee.rm_email] : [];
+      const cc = [...new Set([...plFor(employee), ...ccList, ...copyManager].filter(Boolean))]
+        .filter((address) => address.toLowerCase() !== holder.toLowerCase());
+      return { to, cc };
+    }
+
+    // H1 (07-10-2026) — new joiners waiting for review. Harish: to "the admin
+    // and hr" — the PEA users who can act on it, not the HR recipients list.
+    case 'joiners_waiting':
+      return { to: await reviewRecipientsNow(), cc: [] };
 
     case 'acknowledgement':
     case 'extend_alert':
@@ -109,6 +132,131 @@ async function resolveRecipients(type, employee, context = {}) {
     default:
       return { to: hrList, cc: [] };
   }
+}
+
+/**
+ * Who is emailed when new joiners wait for review — H1 (07-10-2026). Pure.
+ *
+ * Every active super admin and admin, and every active HR user who can open
+ * the New joiners screen: an HR user with that screen switched off could not
+ * act on the email. The same people the bell tells. Each address once.
+ *
+ * @param {Array<{id: number, email: string, role: string, is_active: boolean}>} users
+ * @param {Map<number, string[]>} modulesById - the modules each HR user can open
+ * @returns {string[]}
+ */
+export function reviewRecipients(users, modulesById = new Map()) {
+  const seen = new Set();
+  const out = [];
+  for (const u of users) {
+    if (!u.is_active) continue;
+    const role = String(u.role || '').trim().toLowerCase();
+    const admin = role === 'superadmin' || role === 'admin';
+    const hr = role === 'hr' && (modulesById.get(u.id) || []).includes('new_joiners');
+    if (!admin && !hr) continue;
+    const email = String(u.email || '').trim();
+    if (!email || seen.has(email.toLowerCase())) continue;
+    seen.add(email.toLowerCase());
+    out.push(email);
+  }
+  return out;
+}
+
+/** reviewRecipients() for the users as they are now. */
+async function reviewRecipientsNow() {
+  const users = await prisma.pea_users.findMany({
+    where: { is_active: true, role: { in: ['superadmin', 'admin', 'hr'] } },
+    select: { id: true, email: true, role: true, is_active: true },
+  });
+  const modulesById = new Map();
+  for (const u of users.filter((x) => x.role === 'hr')) {
+    // eslint-disable-next-line no-await-in-loop
+    modulesById.set(u.id, await modulesFor(u));
+  }
+  return reviewRecipients(users, modulesById);
+}
+
+/**
+ * Who an evaluation's link was issued to, or null when nothing is recorded
+ * (never sent, sent before the 2026-10-02 DDL, or no such columns here) — in
+ * which case the reporting manager is used, as before. M3 / M7.
+ *
+ * Never throws: a reminder must not fail because this could not be read.
+ *
+ * @param {bigint} cycleId
+ * @returns {Promise<{name: string, email: string, delegated: boolean}|null>}
+ */
+async function linkHolder(cycleId) {
+  try {
+    if (!(await hasRecipientColumns())) return null;
+    const [row] = await prisma.$queryRaw`
+      SELECT sent_to_name, sent_to_email, delegated FROM pea_evaluation_cycles WHERE id = ${cycleId}`;
+    if (!row?.sent_to_email) return null;
+    return { name: row.sent_to_name || row.sent_to_email, email: row.sent_to_email, delegated: !!row.delegated };
+  } catch (err) {
+    logger.warn(`Could not read who holds the link for evaluation ${cycleId}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * The probation as scheduled, for the {{probation_…}} placeholders — H8.
+ *
+ * It ends when the last evaluation's period ends, so an extension moves it,
+ * and it has as many evaluations as are scheduled. The start is the joining
+ * date, which buildVars() already has.
+ *
+ * Never throws: an email must not go unsent because one line of context could
+ * not be worked out. Without it the email simply leaves the line out.
+ *
+ * Exported for the bell notifications, which state the same timeline (H8).
+ *
+ * @param {bigint|number|null} employeeId
+ * @returns {Promise<{end: Date|null, total: number}|null>}
+ */
+export async function probationContext(employeeId) {
+  if (!employeeId) return null;
+  try {
+    const found = await prisma.pea_evaluation_cycles.aggregate({
+      where: { employee_id: employeeId },
+      _max: { period_to: true },
+      _count: true,
+    });
+    return found._count ? { end: found._max.period_to, total: found._count } : null;
+  } catch (err) {
+    logger.warn(`Probation dates for employee ${employeeId} could not be read: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * The probation timeline in a bell notification — H8, extended 05-10-2026.
+ *
+ * HR asked for the probation to be stated in "all relevant emails/
+ * notifications". The emails carry it in the subject and the probation line;
+ * the bell is read on its own, so it says it too:
+ *
+ *   "Evaluation 3 of 6 · probation ends 28-12-2026"
+ *   "Probation ends 28-12-2026"            (no evaluation, e.g. Record decision)
+ *   "… · probation ended 28-12-2026"       (once the end date has passed)
+ *
+ * Pure, so it is testable without a database. Empty when nothing is known, and
+ * the caller then words the notification as it did before.
+ *
+ * @param {{seqNo?: number|null, probation: {end: Date|null, total: number}|null, today?: Date}} p
+ *   `today` is UTC midnight in PEA's time zone; it defaults to today
+ * @returns {string}
+ */
+export function probationNote({ seqNo = null, probation, today = todayIn(config.scheduler.timezone) }) {
+  if (!probation) return '';
+  const parts = [];
+  if (seqNo && probation.total) parts.push(`evaluation ${seqNo} of ${probation.total}`);
+  if (probation.end) {
+    const ended = toUtcMidnight(probation.end) < toUtcMidnight(today);
+    parts.push(`probation ${ended ? 'ended' : 'ends'} ${formatDisplay(probation.end)}`);
+  }
+  const text = parts.join(' · ');
+  return text ? text[0].toUpperCase() + text.slice(1) : '';
 }
 
 /**
@@ -185,6 +333,13 @@ export async function queueEmail({
       ? await prisma.pea_employees.findUnique({ where: { id: resolvedEmployeeId } })
       : null);
 
+  // M3 / M7 — who holds this evaluation's link. A caller issuing a link says so
+  // itself; a reminder, which only has the cycle, is told from the record.
+  if (!context.sentTo && resolvedCycleId) {
+    const sentTo = await linkHolder(resolvedCycleId);
+    if (sentTo) context = { ...context, sentTo };
+  }
+
   const real = await resolveRecipients(type, employee || {}, context);
 
   let to;
@@ -202,9 +357,12 @@ export async function queueEmail({
   // Render subject and body from the template HR controls on the Email
   // Templates screen. `subject` is only a fallback if rendering fails — a
   // caller's subject must never override the one HR wrote.
-  let rendered = { subject: subject || 'Performance Evaluation notification', body: '' };
+  let rendered = { subject: subject || 'Probation Evaluation notification', body: '' };
   try {
-    rendered = await render(type, buildVars(full, { ...context, employee }));
+    // H8 — every email about one person says where they are in their probation.
+    // Was: buildVars(full, { ...context, employee })
+    const probation = context.probation ?? (await probationContext(employee?.id ?? resolvedEmployeeId));
+    rendered = await render(type, buildVars(full, { ...context, employee, probation }));
   } catch (err) {
     logger.warn(`Template "${type}" could not be rendered: ${err.message}`);
   }

@@ -47,12 +47,22 @@ export const scan = catchAsync(async (req, res) => {
     }
   }
 
+  // H1 — the scan now leaves some accounts out on purpose; say how many and
+  // why, so "nothing new" is not mistaken for "nothing looked at". It was:
+  //   dryRun
+  //     ? `Test run — ${report.candidatesNew} new joiner(s) would be added to the inbox, nothing was saved`
+  //     : `Scan complete — ${report.candidatesNew} new joiner(s), ${report.leaversFlagged} leaver flag(s) raised`
+  const leftOut = intake.describeSkipped(report.skipped);
+  const rulesNote =
+    (leftOut ? ` · left out: ${leftOut}` : '') +
+    (report.inboxRemoved ? ` · ${report.inboxRemoved} taken off the inbox` : '');
+
   return success(
     res,
     report,
     dryRun
-      ? `Test run — ${report.candidatesNew} new joiner(s) would be added to the inbox, nothing was saved`
-      : `Scan complete — ${report.candidatesNew} new joiner(s), ${report.leaversFlagged} leaver flag(s) raised`
+      ? `Test run — ${report.candidatesNew} new joiner(s) would be added to the inbox, nothing was saved${rulesNote}`
+      : `Scan complete — ${report.candidatesNew} new joiner(s), ${report.leaversFlagged} leaver flag(s) raised${rulesNote}`
   );
 });
 
