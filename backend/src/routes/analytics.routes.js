@@ -37,10 +37,10 @@ router.get('/resource-trends', catchAsync(async (req, res) => {
 
 /** GET /api/analytics/resource-trends/:employeeId — one person, every parameter by evaluation. */
 router.get('/resource-trends/:employeeId', catchAsync(async (req, res) => {
-  if (!/^\d+$/.test(req.params.employeeId)) throw new AppError('Invalid employee id.', 400);
+  if (!/^\d+$/.test(req.params.employeeId)) throw new AppError('Invalid Commando id.', 400);
 
   const trend = await getEmployeeTrend(req.params.employeeId);
-  if (!trend) throw new AppError('Employee not found.', 404);
+  if (!trend) throw new AppError('Commando not found.', 404);
 
   success(res, trend);
 }));

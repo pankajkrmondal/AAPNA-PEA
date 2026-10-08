@@ -18,6 +18,7 @@ import {
   usedPlaceholders,
 } from '../services/emailTemplate.service.js';
 import { wrapBrandedEmail, hasOwnSignature } from '../services/emailLayout.service.js';
+import { probationNote } from '../services/notification.service.js';
 
 describe('built-in templates', () => {
   for (const key of TEMPLATE_KEYS) {
@@ -46,7 +47,7 @@ describe('built-in templates', () => {
       assert.doesNotMatch(out.body, /\{\{/);
       assert.match(out.body, /aapna-gptw-black\.png/); // logo
       assert.match(out.body, /AAPNA \| HR Team/); // sign-off
-      assert.match(out.body, /performance evaluation system/); // footer
+      assert.match(out.body, /Probation Period Evaluation Platform/); // footer
       assert.ok(out.body.includes(out.subject.replace(/&/g, '&amp;').replace(/'/g, '\'')), 'subject is the header headline');
     });
   }
@@ -68,7 +69,8 @@ describe('sending with real values', () => {
     assert.match(out.body, /<strong>4 \/ 5<\/strong>/);
     assert.doesNotMatch(out.body, /undefined/);
     assert.match(out.body, /Good work/);
-    assert.equal(out.subject, 'Performance Evaluation 1 submitted - E2E Test Person');
+    // H8 — was 'Performance Evaluation 1 submitted - E2E Test Person'.
+    assert.equal(out.subject, 'Probation Evaluation 1 submitted - E2E Test Person');
   });
 
   test('the old caller name "avg" is still understood', () => {
@@ -99,6 +101,97 @@ describe('sending with real values', () => {
     const out = compile({ subject: 'Hi {{manager_name}}', body: '<p>{{remarks}}</p>' }, buildVars(null, {}));
     assert.equal(out.subject, 'Hi');
     assert.doesNotMatch(out.body, /\{\{/);
+  });
+});
+
+describe('every email about one person mentions the probation (H8)', () => {
+  const cycle = {
+    seq_no: 2,
+    token: '11111111-1111-1111-1111-111111111111',
+    period_from: new Date(Date.UTC(2026, 6, 31)),
+    period_to: new Date(Date.UTC(2026, 7, 30)),
+    employee: {
+      full_name: 'Priya Sharma',
+      office_email: 'psharma@aapnainfotech.com',
+      doj: new Date(Date.UTC(2026, 6, 1)),
+      rm_name: 'Chhavi Verma',
+      rm_email: 'cverma@aapnainfotech.com',
+    },
+  };
+  const probation = { end: new Date(Date.UTC(2026, 11, 28)), total: 6 };
+
+  test('the request and the reminder say "Probation Evaluation 2 of 6" in the subject', () => {
+    const vars = buildVars(cycle, { probation, reminderNumber: 1 });
+    assert.equal(compile(TEMPLATE_DEFS.evaluation_link, vars).subject, 'Probation Evaluation 2 of 6 - Priya Sharma');
+    assert.equal(compile(TEMPLATE_DEFS.reminder, vars).subject, 'Reminder 1 - Probation Evaluation 2 of 6 - Priya Sharma');
+  });
+
+  test('the body states the probation period and where the evaluation falls in it', () => {
+    const vars = buildVars(cycle, { probation });
+    for (const key of ['evaluation_link', 'reminder', 'acknowledgement', 'extend_alert']) {
+      assert.match(
+        compile(TEMPLATE_DEFS[key], vars).body,
+        /Probation period:<\/strong> 01-07-2026 to 28-12-2026 &middot; evaluation 2 of 6/,
+        `${key} has no probation line`
+      );
+    }
+  });
+
+  test('an extension evaluation says so, and the end date is the extended one', () => {
+    const vars = buildVars(
+      { ...cycle, seq_no: 7, is_extension: true },
+      { probation: { end: new Date(Date.UTC(2027, 0, 27)), total: 7 } }
+    );
+    assert.match(compile(TEMPLATE_DEFS.evaluation_link, vars).body, /to 27-01-2027 &middot; evaluation 7 of 7 \(extended period\)/);
+  });
+
+  test('without the totals the number stands alone and no half line is printed', () => {
+    const vars = buildVars(cycle, {});
+    assert.equal(compile(TEMPLATE_DEFS.evaluation_link, vars).subject, 'Probation Evaluation 2 - Priya Sharma');
+    assert.doesNotMatch(compile(TEMPLATE_DEFS.evaluation_link, vars).body, /Probation period:/);
+  });
+
+  test('no default wording still says "performance evaluation"', () => {
+    for (const key of TEMPLATE_KEYS) {
+      const def = TEMPLATE_DEFS[key];
+      assert.doesNotMatch(`${def.subject} ${def.body}`, /performance evaluation/i, `${key} still says "performance evaluation"`);
+    }
+  });
+
+  // 05-10-2026 — HR's item says "emails/notifications": the bell says it too.
+  describe('the bell notification states the same timeline', () => {
+    const today = new Date(Date.UTC(2026, 9, 5));
+
+    test('an evaluation: "Evaluation 3 of 6 · probation ends 28-12-2026"', () => {
+      assert.equal(probationNote({ seqNo: 3, probation, today }), 'Evaluation 3 of 6 · probation ends 28-12-2026');
+    });
+
+    test('no evaluation (HR recorded a decision): the end date alone', () => {
+      assert.equal(probationNote({ probation, today }), 'Probation ends 28-12-2026');
+    });
+
+    test('once the end date has passed it says "ended"', () => {
+      assert.equal(
+        probationNote({ seqNo: 6, probation, today: new Date(Date.UTC(2027, 0, 4)) }),
+        'Evaluation 6 of 6 · probation ended 28-12-2026'
+      );
+    });
+
+    test('on the last day it still says "ends"', () => {
+      assert.equal(probationNote({ probation, today: new Date(Date.UTC(2026, 11, 28)) }), 'Probation ends 28-12-2026');
+    });
+
+    test('nothing known: empty, so the notification reads as it did before', () => {
+      assert.equal(probationNote({ seqNo: 3, probation: null, today }), '');
+    });
+  });
+
+  test('a template HR edited before H8 still saves: the old placeholders are all still allowed', () => {
+    const old = {
+      subject: 'Performance Evaluation {{evaluation_number}} - {{employee_name}}',
+      body: '<p>Hello {{manager_name}},</p>{{form_button}}{{rating_table}}',
+    };
+    assert.doesNotThrow(() => validateDraft('evaluation_link', old));
   });
 });
 

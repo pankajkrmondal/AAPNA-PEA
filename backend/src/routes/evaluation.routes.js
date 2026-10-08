@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { getForm, submitForm } from '../controllers/evaluation.controller.js';
+import { getForm, submitForm, saveDraft } from '../controllers/evaluation.controller.js';
 import { noStore } from '../middleware/noStore.js';
 
 const router = Router();
@@ -29,7 +29,19 @@ const formLimiter = rateLimit({
   message: 'Too many requests. Please wait a few minutes and try again.',
 });
 
-router.use(formLimiter);
+// P11 — a draft saves itself while the manager types (at most every 15 seconds),
+// which would use up the form's own allowance in a few minutes. It has its
+// own, wider one; the token still has to exist and be open for a save to work.
+const draftLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 120,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: 'Too many requests. Please wait a few minutes and try again.',
+});
+
+// P11 — the limiter is per route now, so drafts do not count against the form.
+// It was: router.use(formLimiter);
 
 // The page depends on state HR can change at any moment (pause, resume,
 // re-send, submit), so a browser must never reuse an earlier response.
@@ -37,7 +49,8 @@ router.use(noStore);
 
 // Form bodies arrive urlencoded from the browser; app.js also parses JSON for
 // API clients.
-router.get('/:token', getForm);
-router.post('/:token/submit', submitForm);
+router.get('/:token', formLimiter, getForm);
+router.post('/:token/submit', formLimiter, submitForm);
+router.post('/:token/draft', draftLimiter, saveDraft);
 
 export default router;

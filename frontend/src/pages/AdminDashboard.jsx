@@ -24,6 +24,7 @@ import {
 } from '@ant-design/icons';
 import api, { unwrap } from '../api.js';
 import RoleBadge from '../components/RoleBadge.jsx';
+import { formatDate, formatDateTime } from '../formatDate.js';
 import { MODULES, NESTED_MODULES, ROLE_LABEL, initialsOf, isAdminTier, isSuperadmin, outranks } from '../auth.js';
 
 const { Title, Text } = Typography;
@@ -49,7 +50,7 @@ function exportCsv(rows) {
     ['Email', (r) => r.email],
     ['Role', (r) => ROLE_LABEL[r.role] || r.role],
     ['Status', (r) => (r.is_active ? 'Active' : 'Inactive')],
-    ['Created', (r) => r.created_at?.slice(0, 10)],
+    ['Created', (r) => formatDate(r.created_at, '')],
     ['Last sign-in', (r) => (r.last_login_at ? new Date(r.last_login_at).toISOString() : '')],
   ];
   // Quote every cell, and defuse anything a spreadsheet would run as a formula.
@@ -370,12 +371,12 @@ export default function AdminDashboard({ me }) {
     {
       title: 'Created',
       dataIndex: 'created_at',
-      render: (v) => <Text type="secondary" style={{ fontSize: 12 }}>{v ? v.slice(0, 10) : '—'}</Text>,
+      render: (v) => <Text type="secondary" style={{ fontSize: 12 }}>{formatDate(v)}</Text>,
     },
     {
       title: 'Last sign-in',
       dataIndex: 'last_login_at',
-      render: (v) => <Text type="secondary" style={{ fontSize: 12 }}>{v ? new Date(v).toLocaleString() : 'never'}</Text>,
+      render: (v) => <Text type="secondary" style={{ fontSize: 12 }}>{formatDateTime(v, 'never')}</Text>,
     },
     {
       title: 'Actions',

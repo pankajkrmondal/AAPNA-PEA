@@ -17,6 +17,7 @@ import usersRoutes from './users.routes.js';
 import { selfViewLinksRouter, selfViewPublicRouter } from './selfView.routes.js';
 import { managerLinksRouter, managerPublicRouter } from './managerPortal.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
+import directoryRoutes from './directory.routes.js';
 
 const router = Router();
 
@@ -84,6 +85,8 @@ router.use('/users', usersRoutes);
 router.use('/self-view-links', selfViewLinksRouter);
 router.use('/manager-links', managerLinksRouter);
 router.use('/dashboard', dashboardRoutes);
+// U8 — the people picker for reporting manager and project leader.
+router.use('/directory', directoryRoutes);
 
 // PUBLIC — no authenticate middleware. The token in the URL is the credential;
 // reporting managers have no PEA account. See evaluation.routes.js and

@@ -115,11 +115,11 @@ test.describe('Link generation', () => {
   });
 
   test("the employee tab's disclosure notice is one line", async ({ page }) => {
-    await page.getByRole('tab', { name: "Employee's own view" }).click();
+    await page.getByRole('tab', { name: "Commando's own view" }).click();
 
     const strip = page.locator('.pea-notice');
     await expect(strip).toBeVisible();
-    await expect(strip).toContainText('Employees currently see');
+    await expect(strip).toContainText('Commandos currently see');
 
     // Nothing to expand when the setting is healthy, so no toggle is offered.
     const box = await strip.boundingBox();

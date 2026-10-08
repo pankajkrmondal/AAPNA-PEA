@@ -28,9 +28,9 @@ export const outranks = (requesterRole, targetRole) => rankOf(requesterRole) > r
 export const MODULES = [
   { key: 'dashboard', path: '/', label: 'Dashboard', emoji: '📊', desc: 'What needs action today, and how evaluations are trending' },
   { key: 'evaluations', path: '/evaluations', label: 'Evaluations', emoji: '📋', desc: 'Every evaluation in one list — what is due, who it is waiting on, and what came back' },
-  { key: 'employees', path: '/employees', label: 'Employees', emoji: '👥', desc: 'Search, update and manage employee probation records' },
+  { key: 'employees', path: '/employees', label: 'Commandos', emoji: '👥', desc: 'Search, update and manage Commando probation records' },
   { key: 'new_joiners', path: '/new-joiners', label: 'New joiners', emoji: '🆕', desc: 'Review joiners and leavers found in Microsoft 365, and add anyone by hand' },
-  { key: 'manager_portal', path: '/manager-portal', label: 'Link generation', emoji: '🔗', desc: 'Create evaluation, team and employee links to share' },
+  { key: 'manager_portal', path: '/manager-portal', label: 'Link generation', emoji: '🔗', desc: 'Create evaluation, team and Commando links to share' },
   // Upload sheet sits directly after Link generation: it is a task HR performs,
   // not a setting they adjust, and buried in a Settings tab it was the one
   // screen people had to be told where to find.

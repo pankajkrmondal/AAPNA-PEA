@@ -41,7 +41,7 @@ export default function ManagerPortal() {
           <div className="pea-brand-mark">PEA</div>
           <div className="pea-brand-text">
             <span className="pea-brand-name">AAPNA</span>
-            <span className="pea-brand-sub">Performance Evaluation</span>
+            <span className="pea-brand-sub">Probation Period Evaluation Platform</span>
           </div>
         </div>
         {children}
@@ -92,7 +92,7 @@ export default function ManagerPortal() {
               <span className="pea-section-title">{person.name}</span>
               {/* Fresher / Experienced is a classification, not a state — no dot. */}
               <StatusPill tone="mute" nodot>{person.type}</StatusPill>
-              <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>joined {person.doj}</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12, fontWeight: 400 }}>joined {formatDate(person.doj)}</Typography.Text>
               {person.paused && <StatusPill tone="warn">Paused by HR</StatusPill>}
               {person.decision && (
                 <StatusPill tone={person.decision === 'Confirmed' ? 'ok' : 'crit'}>

@@ -37,8 +37,14 @@ import prisma from '../config/database.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
 import { RATING_SCALE, LOW_RATING_AT_OR_BELOW as LOW_RATING } from '../config/ratingScale.js';
-import { hasDecisionReason, hasEvaluationReads } from '../utils/schemaCapabilities.js';
+import {
+  hasDecisionReason, hasEvaluationReads, hasDraftColumns, hasRecipientColumns, hasFollowups, hasRevisions,
+} from '../utils/schemaCapabilities.js';
+import { FOLLOW_UP_OUTCOMES, reopenBlocker } from './evaluationActions.service.js';
 import { todayIn, toDateString, daysBetween, dateIn } from '../utils/dateUtils.js';
+// Archive (07-10-2026) — archived Commandos are out of the board and its counts.
+import { hasArchiveColumns } from '../utils/schemaCapabilities.js';
+import { notArchivedSql, archiveRecord } from '../utils/archiveScope.js';
 
 /** An average below this needs a read. A single low question does too (LOW_RATING_AT_OR_BELOW). */
 export const LOW_AVERAGE = 2.5;
@@ -129,6 +135,9 @@ const bucketSql = (today) => Prisma.sql`CASE
  */
 function filterSql(q) {
   const parts = [Prisma.sql`e.employment_status = 'active'`];
+  // Archive (07-10-2026) — set by getBoard() / getEvaluation() once the archive
+  // exists here; the column cannot be named before then.
+  if (q._notArchived) parts.push(Prisma.sql`e.archived_at IS NULL`);
 
   const search = String(q.search || '').trim();
   if (search) {
@@ -181,12 +190,57 @@ const ORDER_SQL = Prisma.sql`
   b.due_date ASC,
   b.id ASC`;
 
-/** The bucketed, filtered set as a CTE body. */
-function baseSql(q, today) {
+/**
+ * "Needs attention" as the lists and counts use it — P8.
+ *
+ * The rules in ATTENTION_SQL, minus anything HR has already dealt with: once
+ * an outcome is recorded against an evaluation it stops needing attention, for
+ * everyone. Before the 2026-10-02 DDL there is nowhere to record an outcome, so
+ * it is the plain rule.
+ */
+async function openAttentionSql() {
+  if (!(await hasFollowups())) return ATTENTION_SQL;
+  return Prisma.sql`(${ATTENTION_SQL}
+    AND NOT EXISTS (SELECT 1 FROM pea_evaluation_followups f WHERE f.cycle_id = c.id))`;
+}
+
+/**
+ * Per Commando, how many of their recent flagged evaluations nobody has dealt
+ * with — no follow-up recorded and not opened by anyone. Archive (07-10-2026):
+ * the morning pass waits for these, so a Not Confirmed or a low score is never
+ * archived off the Dashboard's "Read feedback" list before anyone has read it.
+ *
+ * "Recent" is the window that list uses (FEEDBACK_WINDOW_DAYS); older flagged
+ * feedback is no longer on it and does not hold anyone back. Before the read
+ * receipts exist, nothing is counted.
+ *
+ * @returns {Promise<Map<string, number>>} employee id → count
+ */
+export async function unreadFlaggedByEmployee() {
+  if (!(await hasEvaluationReads())) return new Map();
+  const attention = await openAttentionSql();
+  const since = new Date(Date.now() - FEEDBACK_WINDOW_DAYS * 86_400_000);
+  const rows = await prisma.$queryRaw`
+    SELECT c.employee_id::text AS employee_id, count(*)::int AS n
+      FROM pea_evaluation_cycles c
+     WHERE c.submitted_at >= ${since}
+       AND ${attention}
+       AND NOT EXISTS (SELECT 1 FROM pea_evaluation_reads r WHERE r.cycle_id = c.id)
+     GROUP BY c.employee_id`;
+  return new Map(rows.map((r) => [r.employee_id, r.n]));
+}
+
+/**
+ * The bucketed, filtered set as a CTE body.
+ * @param {object} q
+ * @param {Date} today
+ * @param {object} attention - from openAttentionSql(); it was ATTENTION_SQL itself before P8
+ */
+function baseSql(q, today, attention = ATTENTION_SQL) {
   return Prisma.sql`
     SELECT c.id, c.status, c.due_date, c.sent_at, c.submitted_at, c.avg_rating,
            ${bucketSql(today)} AS bucket,
-           ${ATTENTION_SQL}   AS attention
+           ${attention}   AS attention
       FROM pea_evaluation_cycles c
       JOIN pea_employees e ON e.id = c.employee_id
      WHERE ${filterSql(q)}`;
@@ -199,20 +253,26 @@ function baseSql(q, today) {
  */
 async function summarise(q, today) {
   const tz = config.scheduler.timezone;
-  // The line under "Average rating": the monthly average of submitted
-  // evaluations over the last six months, for the same filters.
-  const trendRows = prisma.$queryRaw`
-    WITH b AS (${baseSql(q, today)})
-    SELECT to_char((submitted_at AT TIME ZONE ${tz})::date, 'YYYY-MM') AS month,
-           round(avg(avg_rating), 2)::float AS average
-      FROM b
-     WHERE bucket = 'submitted' AND avg_rating IS NOT NULL
-       AND (submitted_at AT TIME ZONE ${tz})::date >= (date_trunc('month', ${today}::date) - interval '5 months')::date
-     GROUP BY 1
-     ORDER BY 1`;
-
-  const [[row], trend] = await Promise.all([prisma.$queryRaw`
-    WITH b AS (${baseSql(q, today)})
+  const attention = await openAttentionSql();
+  // H2 (HR, 29-09-2026; removed 07-10-2026) — the six-month line beside
+  // "Average rating" was "Average Rating by Month" in miniature, one of the five
+  // sections HR asked to remove. Its query, kept for reference:
+  //
+  // // The line under "Average rating": the monthly average of submitted
+  // // evaluations over the last six months, for the same filters.
+  // const trendRows = prisma.$queryRaw`
+  //   WITH b AS (${baseSql(q, today, attention)})
+  //   SELECT to_char((submitted_at AT TIME ZONE ${tz})::date, 'YYYY-MM') AS month,
+  //          round(avg(avg_rating), 2)::float AS average
+  //     FROM b
+  //    WHERE bucket = 'submitted' AND avg_rating IS NOT NULL
+  //      AND (submitted_at AT TIME ZONE ${tz})::date >= (date_trunc('month', ${today}::date) - interval '5 months')::date
+  //    GROUP BY 1
+  //    ORDER BY 1`;
+  //
+  // and the line below was: const [[row], trend] = await Promise.all([prisma.$queryRaw` … `, trendRows]);
+  const [row] = await prisma.$queryRaw`
+    WITH b AS (${baseSql(q, today, attention)})
     SELECT count(*)::int                                             AS all,
            count(*) FILTER (WHERE bucket = 'submitted')::int         AS submitted,
            count(*) FILTER (WHERE bucket = 'waiting')::int           AS waiting,
@@ -224,7 +284,7 @@ async function summarise(q, today) {
            count(*) FILTER (WHERE bucket = 'submitted' AND NOT attention)::int AS recent,
            count(*) FILTER (WHERE bucket IN ('waiting','opened','not_sent','scheduled'))::int AS in_progress,
            round(avg(avg_rating) FILTER (WHERE bucket = 'submitted'), 2)::float AS average
-      FROM b`, trendRows]);
+      FROM b`;
 
   return {
     counts: {
@@ -240,13 +300,17 @@ async function summarise(q, today) {
       in_progress: row.in_progress,
     },
     stats: {
-      submitted: row.submitted,
-      // "Waiting for manager" includes the ones the manager has opened: the
-      // form being open is not an answer.
-      waitingForManager: row.waiting + row.opened,
-      needAttention: row.attention,
+      // H3 (HR, 29-09-2026) — the board no longer shows these three figures;
+      // they repeated the chip counts above. Kept for reference:
+      //
+      // submitted: row.submitted,
+      // // "Waiting for manager" includes the ones the manager has opened: the
+      // // form being open is not an answer.
+      // waitingForManager: row.waiting + row.opened,
+      // needAttention: row.attention,
       averageRating: row.average,
-      averageTrend: trend.map((t) => ({ month: t.month, average: t.average })),
+      // H2 (07-10-2026) — removed with the line it drew:
+      // averageTrend: trend.map((t) => ({ month: t.month, average: t.average })),
     },
   };
 }
@@ -254,8 +318,9 @@ async function summarise(q, today) {
 /** Ordered ids for one status, optionally one page of them. */
 async function orderedIds(q, status, today, { limit = null, offset = 0 } = {}) {
   const page = limit ? Prisma.sql`LIMIT ${limit} OFFSET ${offset}` : Prisma.empty;
+  const attention = await openAttentionSql();
   const rows = await prisma.$queryRaw`
-    WITH b AS (${baseSql(q, today)})
+    WITH b AS (${baseSql(q, today, attention)})
     SELECT b.id::text AS id FROM b
      WHERE ${statusSql(status)}
      ORDER BY ${ORDER_SQL}
@@ -282,6 +347,57 @@ async function readsFor(ids, userId) {
   return new Set(rows.map((r) => r.id));
 }
 
+/**
+ * When each of these cycles last had a draft saved — P11. Empty until the
+ * 2026-10-02 DDL is applied. Only the time: what the manager has typed so far
+ * is theirs until they submit, and is never shown to HR.
+ */
+async function draftsFor(ids) {
+  if (!ids.length || !(await hasDraftColumns())) return new Map();
+  const rows = await prisma.$queryRaw`
+    SELECT id::text AS id, draft_saved_at AS saved_at
+      FROM pea_evaluation_cycles
+     WHERE id = ANY(${ids.map(BigInt)}::bigint[]) AND draft IS NOT NULL`;
+  return new Map(rows.map((r) => [r.id, r.saved_at]));
+}
+
+/**
+ * Who each of these evaluations went to, who answered, whether an acting
+ * manager had it and whether HR typed it in — M3 / M7 / U13 / B5. Empty until
+ * the 2026-10-02 DDL is applied.
+ */
+async function peopleFor(ids) {
+  if (!ids.length || !(await hasRecipientColumns())) return new Map();
+  const rows = await prisma.$queryRaw`
+    SELECT id::text AS id, sent_to_name, sent_to_email, submitted_by_name, delegated, entered_by
+      FROM pea_evaluation_cycles
+     WHERE id = ANY(${ids.map(BigInt)}::bigint[])`;
+  return new Map(rows.map(({ id, ...rest }) => [id, rest]));
+}
+
+/** One follow-up as the screens show it. */
+const followUpView = (f) => ({
+  outcome: f.outcome,
+  label: FOLLOW_UP_OUTCOMES[f.outcome] || f.outcome,
+  note: f.note || null,
+  by: f.recorded_by,
+  at: f.recorded_at,
+});
+
+/**
+ * The latest thing HR recorded doing about each of these evaluations — P8.
+ * Empty until the 2026-10-02 DDL is applied.
+ */
+async function followUpsFor(ids) {
+  if (!ids.length || !(await hasFollowups())) return new Map();
+  const rows = await prisma.$queryRaw`
+    SELECT DISTINCT ON (cycle_id) cycle_id::text AS id, outcome, note, recorded_by, recorded_at
+      FROM pea_evaluation_followups
+     WHERE cycle_id = ANY(${ids.map(BigInt)}::bigint[])
+     ORDER BY cycle_id, recorded_at DESC`;
+  return new Map(rows.map((r) => [r.id, followUpView(r)]));
+}
+
 const EMPLOYEE_SELECT = {
   id: true, full_name: true, office_email: true, is_experienced: true, doj: true,
   rm_name: true, rm_email: true, pl_email: true, confirmation_status: true,
@@ -302,7 +418,7 @@ async function hydrate(ids, { today, userId }) {
   });
 
   const employeeIds = [...new Set(cycles.map((c) => c.employee_id))];
-  const [siblings, reasons, reads] = await Promise.all([
+  const [siblings, reasons, reads, drafts, people, followUps] = await Promise.all([
     prisma.pea_evaluation_cycles.findMany({
       where: { employee_id: { in: employeeIds } },
       select: { id: true, employee_id: true, seq_no: true, status: true, avg_rating: true, is_extension: true },
@@ -310,6 +426,9 @@ async function hydrate(ids, { today, userId }) {
     }),
     reasonsFor(ids),
     readsFor(ids, userId),
+    draftsFor(ids),
+    peopleFor(ids),
+    followUpsFor(ids),
   ]);
 
   const byEmployee = new Map();
@@ -328,6 +447,9 @@ async function hydrate(ids, { today, userId }) {
       siblings: byEmployee.get(String(c.employee_id)) || [],
       reason: reasons.get(String(c.id)) || null,
       read: reads.has(String(c.id)),
+      draftSavedAt: drafts.get(String(c.id)) || null,
+      people: people.get(String(c.id)) || {},
+      followUp: followUps.get(String(c.id)) || null,
     }));
 }
 
@@ -340,9 +462,10 @@ const tzDays = (from, to) =>
 /**
  * One evaluation as every screen shows it.
  * @param {object} c - cycle with employee and scores
- * @param {{today: Date, siblings: object[], reason: string|null, read: boolean}} ctx
+ * @param {{today: Date, siblings: object[], reason: string|null, read: boolean, draftSavedAt?: Date|null,
+ *          people?: object, followUp?: object|null}} ctx
  */
-function shape(c, { today, siblings, reason, read }) {
+function shape(c, { today, siblings, reason, read, draftSavedAt = null, people = {}, followUp = null }) {
   const e = c.employee;
   const tz = config.scheduler.timezone;
 
@@ -379,6 +502,16 @@ function shape(c, { today, siblings, reason, read }) {
   const awaiting = c.status === 'email_sent' || c.status === 'opened';
   const reasons = attentionReasons({ ...c, scores: c.scores });
 
+  // U13 — who actually answered. The name recorded with the submission; for
+  // one submitted before names were kept, the manager if the address is still
+  // theirs, else the address itself. It used to be the CURRENT manager for
+  // every past evaluation, whoever had been the manager at the time.
+  const sameAsManager = !!c.submitted_by_email
+    && c.submitted_by_email.trim().toLowerCase() === String(e.rm_email || '').trim().toLowerCase();
+  const answeredBy = c.status !== 'completed'
+    ? null
+    : people.submitted_by_name || (c.submitted_by_email && !sameAsManager ? c.submitted_by_email : e.rm_name);
+
   return {
     id: String(c.id),
     employeeId: String(e.id),
@@ -404,8 +537,19 @@ function shape(c, { today, siblings, reason, read }) {
     bucket,
     sentAt: c.sent_at,
     openedAt: c.opened_at,
+    // P11 — the manager has started and saved a draft. Only while it is open:
+    // a submitted evaluation has no draft left.
+    draftSavedAt: awaiting ? draftSavedAt : null,
     submittedAt: c.submitted_at,
     submittedBy: c.submitted_by_email,
+    answeredBy,
+    // M3 / M7 — who has the form now: the person the link was issued to.
+    withName: awaiting ? people.sent_to_name || e.rm_name : null,
+    withEmail: awaiting ? people.sent_to_email || e.rm_email : null,
+    // An acting manager had (or has) this one.
+    delegated: !!people.delegated,
+    // B5 — HR typed these ratings in on the manager's behalf.
+    enteredBy: people.entered_by || null,
     reminderCount: c.reminder_count,
     lastRemindedAt: c.last_reminded_at,
     daysAfterSending: c.submitted_at && c.sent_at ? tzDays(c.sent_at, c.submitted_at) : null,
@@ -428,8 +572,12 @@ function shape(c, { today, siblings, reason, read }) {
     questionCount: scores.length,
     commentedCount: scores.filter((s) => s.comment).length,
 
-    attention: reasons.length > 0,
+    // P8 — once HR has recorded what was done, it no longer needs attention;
+    // the reasons stay, so the page can still say why it was flagged. It was
+    // `attention: reasons.length > 0` before there was anywhere to record that.
+    attention: reasons.length > 0 && !followUp,
     attentionReasons: reasons,
+    followUp,
     read,
 
     // Only while a manager could still use it.
@@ -440,10 +588,12 @@ function shape(c, { today, siblings, reason, read }) {
 
 /** Reporting managers who have at least one active employee, for the filter. */
 async function managerOptions() {
+  // Archive (07-10-2026) — the line after the WHERE leaves archived people out.
   const rows = await prisma.$queryRaw`
     SELECT lower(rm_email) AS email, min(rm_name) AS name, count(*)::int AS people
       FROM pea_employees
      WHERE employment_status = 'active' AND coalesce(rm_email, '') <> ''
+       ${await notArchivedSql('pea_employees')}
      GROUP BY lower(rm_email)
      ORDER BY min(rm_name)`;
   return rows;
@@ -461,6 +611,8 @@ async function managerOptions() {
  * @param {number} [userId] - for read receipts
  */
 export async function getBoard(q = {}, userId = null) {
+  // Archive (07-10-2026) — archived Commandos are left out once the archive exists.
+  q = { ...q, _notArchived: await hasArchiveColumns() };
   const today = todayIn(config.scheduler.timezone);
   const status = STATUS_FILTERS.has(q.status) ? q.status : 'all';
   const page = Math.max(1, parseInt(q.page, 10) || 1);
@@ -544,6 +696,46 @@ async function timelineFor(c) {
 }
 
 /**
+ * Earlier versions of an evaluation HR has reopened, newest first — M6. Empty
+ * until the 2026-10-02 DDL is applied.
+ * @param {string} cycleId
+ */
+async function revisionsFor(cycleId) {
+  if (!(await hasRevisions())) return [];
+  const rows = await prisma.$queryRaw`
+    SELECT id::text AS id, snapshot, reason, reopened_by, reopened_at
+      FROM pea_evaluation_revisions
+     WHERE cycle_id = ${BigInt(cycleId)}
+     ORDER BY reopened_at DESC`;
+  return rows.map((r) => ({
+    id: r.id,
+    reason: r.reason,
+    reopenedBy: r.reopened_by,
+    reopenedAt: r.reopened_at,
+    submittedAt: r.snapshot?.submitted_at || null,
+    answeredBy: r.snapshot?.submitted_by_name || r.snapshot?.submitted_by_email || null,
+    avgRating: r.snapshot?.avg_rating ?? null,
+    decision: r.snapshot?.confirmation_status || null,
+    decisionReason: r.snapshot?.confirmation_reason || null,
+    remarks: r.snapshot?.remarks || null,
+    scores: (r.snapshot?.scores || []).map((s) => ({
+      key: s.param_key, label: s.param_label, rating: s.rating, comment: s.comments || null,
+    })),
+  }));
+}
+
+/** Everything HR has recorded doing about one evaluation, newest first — P8. */
+async function followUpHistory(cycleId) {
+  if (!(await hasFollowups())) return [];
+  const rows = await prisma.$queryRaw`
+    SELECT outcome, note, recorded_by, recorded_at
+      FROM pea_evaluation_followups
+     WHERE cycle_id = ${BigInt(cycleId)}
+     ORDER BY recorded_at DESC`;
+  return rows.map(followUpView);
+}
+
+/**
  * One evaluation, as the profile page shows it.
  *
  * @param {string|number} id
@@ -553,6 +745,9 @@ async function timelineFor(c) {
  */
 export async function getEvaluation(id, q = {}, userId = null) {
   if (!/^\d+$/.test(String(id))) throw new AppError('Evaluation not found', 404);
+  // Archive (07-10-2026) — Previous / Next walk the board's list, which leaves
+  // archived people out; the evaluation itself still opens.
+  q = { ...q, _notArchived: await hasArchiveColumns() };
   const today = todayIn(config.scheduler.timezone);
 
   const [row] = await hydrate([String(id)], { today, userId });
@@ -560,7 +755,9 @@ export async function getEvaluation(id, q = {}, userId = null) {
 
   const cycles = await prisma.pea_evaluation_cycles.findMany({
     where: { employee_id: BigInt(row.employeeId) },
-    include: { scores: { select: { param_key: true, rating: true } } },
+    // M8 — the comments come too now, so HR entry can start from last time's
+    // answers. It was: select: { param_key: true, rating: true }.
+    include: { scores: { select: { param_key: true, rating: true, comments: true }, orderBy: { sort_order: 'asc' } } },
     orderBy: { seq_no: 'asc' },
   });
 
@@ -636,6 +833,37 @@ export async function getEvaluation(id, q = {}, userId = null) {
   const reminderStep = timeline.find((s) => s.key === 'reminders');
   const reminderCount = Math.max(row.reminderCount, reminderStep?.dates?.length || 0);
 
+  // M8 — the evaluation before this one, in full, for "Copy from evaluation N"
+  // when HR enters ratings in the app.
+  const previousEvaluation = prev
+    ? {
+      seqNo: prev.seq_no,
+      remarks: prev.remarks || null,
+      scores: prev.scores.map((s) => ({ key: s.param_key, rating: num(s.rating), comment: s.comments || null })),
+    }
+    : null;
+
+  // What HR may do to this evaluation from the page, so it offers only what
+  // will work — and, for Reopen, says why not when it will not.
+  const open = ['pending', 'email_sent', 'opened'].includes(row.status);
+  const [canDelegate, canRevise, canFollowUp, owner] = await Promise.all([
+    hasRecipientColumns(),
+    Promise.all([hasRevisions(), hasDraftColumns()]).then((both) => both.every(Boolean)),
+    hasFollowups(),
+    prisma.pea_employees.findUnique({
+      where: { id: BigInt(row.employeeId) },
+      select: { full_name: true, employment_status: true },
+    }),
+  ]);
+  // Archive (07-10-2026) — whether this Commando is archived (read-only).
+  const archived = await archiveRecord(row.employeeId);
+  const reopenBlocked = row.status === 'completed'
+    ? reopenBlocker(
+      { status: row.status, seq_no: row.seqNo, legacy_format: row.legacy?.format || null, scores: row.scores, employee: owner },
+      cycles.filter((c) => String(c.id) !== row.id)
+    )
+    : null;
+
   return {
     ...row,
     reminderCount,
@@ -643,6 +871,37 @@ export async function getEvaluation(id, q = {}, userId = null) {
     history,
     probation,
     nextEvaluation,
+    previousEvaluation,
+    // M6 — what was submitted before each time HR reopened it. P8 — everything
+    // HR has recorded doing about it, newest first.
+    revisions: await revisionsFor(row.id),
+    followUps: await followUpHistory(row.id),
+    followUpOutcomes: Object.entries(FOLLOW_UP_OUTCOMES).map(([value, label]) => ({ value, label })),
+    // Archive (07-10-2026) — an archived Commando's evaluations are a
+    // read-only record: no action is offered until they are restored.
+    archived: archived
+      ? { archivedAt: archived.archived_at, archivedBy: archived.archived_by, reason: archived.archive_reason }
+      : null,
+    actions: archived
+      ? { delegate: false, record: false, reopen: false, reopenBlocked: null, followUp: false }
+      : {
+        delegate: canDelegate && open,
+        // Needs the same columns as delegate: without `entered_by` an entry HR
+        // typed would be stored looking like the manager's own.
+        record: canDelegate && row.status !== 'completed' && !row.legacy,
+        reopen: canRevise && row.status === 'completed' && !reopenBlocked,
+        reopenBlocked: canRevise ? reopenBlocked : null,
+        followUp: canFollowUp && row.status === 'completed',
+      },
+    /* Archive (07-10-2026) — the actions before an archived record had none:
+    actions: {
+      delegate: canDelegate && open,
+      record: canDelegate && row.status !== 'completed' && !row.legacy,
+      reopen: canRevise && row.status === 'completed' && !reopenBlocked,
+      reopenBlocked: canRevise ? reopenBlocked : null,
+      followUp: canFollowUp && row.status === 'completed',
+    },
+    */
     questions: questions.map((p) => ({ key: p.param_key, label: p.param_label })),
     timeline,
     navigation: {
@@ -683,14 +942,18 @@ export async function getUnreadFeedback(userId, { days = FEEDBACK_WINDOW_DAYS } 
   const since = new Date(Date.now() - days * 86_400_000);
   const weekAgo = new Date(Date.now() - 7 * 86_400_000);
 
+  // P8 — what HR has already dealt with no longer asks to be read.
+  const attention = await openAttentionSql();
+
   const [candidates, [{ week }]] = await Promise.all([
     prisma.$queryRaw`
       SELECT c.id::text AS id
         FROM pea_evaluation_cycles c
         JOIN pea_employees e ON e.id = c.employee_id
        WHERE e.employment_status = 'active'
+         ${await notArchivedSql('e')}
          AND c.submitted_at >= ${since}
-         AND ${ATTENTION_SQL}
+         AND ${attention}
        ORDER BY c.submitted_at DESC`,
     prisma.$queryRaw`
       SELECT count(*)::int AS week FROM pea_evaluation_cycles

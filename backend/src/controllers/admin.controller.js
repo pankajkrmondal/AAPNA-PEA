@@ -8,18 +8,24 @@
  * than a repair tool — but HR still needs it for a manager who deleted the
  * email, or a link that expired.
  */
-import crypto from 'crypto';
+// M3 / M7 / M6 — the send logic moved to evaluationActions.service.js, and these
+// imports went with it:
+// import crypto from 'crypto';
+// import { queueEmail, shadowReport, isShadowMode } from '../services/notification.service.js';
+// import { leaverHoldApplies } from '../services/evaluation.service.js';
+// import { addDays, toDateString, todayIn, dateIn, formatDisplay } from '../utils/dateUtils.js';
 import prisma from '../config/database.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
 import AppError from '../utils/AppError.js';
 import { runSweep } from '../jobs/evaluationScheduler.js';
-import { queueEmail, shadowReport, isShadowMode } from '../services/notification.service.js';
+import { shadowReport, isShadowMode } from '../services/notification.service.js';
 import { verifyConnection } from '../services/graphMailer.service.js';
 import { verifyDirectoryAccess } from '../services/entraDirectory.service.js';
+import { directoryRules } from '../services/directory.service.js';
 import { findByOfficeEmail } from '../services/employee.service.js';
-import { leaverHoldApplies } from '../services/evaluation.service.js';
-import { addDays, toDateString, todayIn } from '../utils/dateUtils.js';
+import { sendNow } from '../services/evaluationActions.service.js';
+import { toDateString, todayIn } from '../utils/dateUtils.js';
 import config from '../config/index.js';
 
 /**
@@ -49,6 +55,10 @@ export const sweepNow = catchAsync(async (req, res) => {
  * Re-issues a fresh token so an expired or lost link is replaced rather than
  * resurrected; the old link stops working, which is the intended behaviour when
  * HR deliberately reissues.
+ *
+ * The work is in evaluationActions.service.js sendNow() → issueLink(), which a
+ * manager change, an acting manager and a reopened evaluation use as well, so
+ * there is one way of handing someone a form, not four.
  */
 export const sendEvaluationNow = catchAsync(async (req, res) => {
   const { office_email: officeEmail, seq_no: seqNo } = req.body || {};
@@ -58,82 +68,9 @@ export const sendEvaluationNow = catchAsync(async (req, res) => {
   }
 
   const employee = await findByOfficeEmail(officeEmail);
-  if (!employee) throw new AppError(`No employee found with office email ${officeEmail}`, 404);
+  if (!employee) throw new AppError(`No Commando found with office email ${officeEmail}`, 404);
 
-  if (employee.halt_process) {
-    throw new AppError(`Evaluations are on hold for ${employee.full_name}. Resume them first.`, 409);
-  }
-  if (employee.employment_status !== 'active') {
-    throw new AppError(`${employee.full_name} is marked as having left.`, 409);
-  }
-  if (await leaverHoldApplies(employee)) {
-    throw new AppError(
-      `Evaluations for ${employee.full_name} are on hold: Microsoft 365 shows the account ` +
-        'switched off and unlicensed. Confirm the exit, or mark them as still here, on the ' +
-        'New joiners screen first.',
-      409
-    );
-  }
-
-  const cycle = await prisma.pea_evaluation_cycles.findFirst({
-    where: { employee_id: employee.id, seq_no: Number(seqNo) },
-    include: { employee: true },
-  });
-  if (!cycle) throw new AppError(`${employee.full_name} has no evaluation ${seqNo}.`, 404);
-
-  if (cycle.status === 'completed') {
-    throw new AppError(
-      `Evaluation ${seqNo} for ${employee.full_name} was already submitted on ` +
-        `${toDateString(cycle.submitted_at)}. Re-sending would discard that response.`,
-      409
-    );
-  }
-
-  const validityRow = await prisma.pea_settings.findUnique({
-    where: { setting_key: 'token_validity_days' },
-  });
-  const validity = Number(validityRow?.setting_value) || 30;
-
-  // New token: the old link is invalidated so two live links can never produce
-  // two conflicting submissions for the same cycle.
-  const refreshed = await prisma.pea_evaluation_cycles.update({
-    where: { id: cycle.id },
-    data: {
-      token: crypto.randomUUID(),
-      token_expires_at: addDays(new Date(), validity),
-      status: 'email_sent',
-      sent_at: new Date(),
-      // Reset the chase clock — the manager is getting a fresh ask.
-      reminder_count: 0,
-      last_reminded_at: null,
-      modified_at: new Date(),
-    },
-    include: { employee: true },
-  });
-
-  const result = await queueEmail({ type: 'evaluation_link', cycle: refreshed });
-
-  // Nothing reached the manager — failed, or held by "Pause all email". Put the
-  // evaluation back exactly as it was (old link included), so it is not shown
-  // as "Awaiting response" and the sweep still picks it up once mail flows.
-  if (result.status === 'failed' || result.status === 'suppressed') {
-    await prisma.pea_evaluation_cycles.update({
-      where: { id: cycle.id },
-      data: {
-        token: cycle.token,
-        token_expires_at: cycle.token_expires_at,
-        status: cycle.status,
-        sent_at: cycle.sent_at,
-        reminder_count: cycle.reminder_count,
-        last_reminded_at: cycle.last_reminded_at,
-        modified_at: new Date(),
-      },
-    });
-  }
-
-  if (result.status === 'failed') {
-    throw new AppError(`Could not send: ${result.error}`, 502);
-  }
+  const result = await sendNow(employee, seqNo);
 
   return success(
     res,
@@ -149,6 +86,119 @@ export const sendEvaluationNow = catchAsync(async (req, res) => {
       : `Evaluation ${seqNo} sent to ${result.to.join(', ')}`
   );
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// M3 / M7 / M6 — replaced, kept for reference: sendEvaluationNow with the
+// checks, the token replacement and the roll-back written out here. The same
+// logic is now sendNow() and issueLink() in evaluationActions.service.js.
+// ─────────────────────────────────────────────────────────────────────────────
+// /**
+//  * POST /api/admin/send-evaluation
+//  * Body: { office_email, seq_no }  — replaces the Adhoc Flow.
+//  *
+//  * Re-issues a fresh token so an expired or lost link is replaced rather than
+//  * resurrected; the old link stops working, which is the intended behaviour when
+//  * HR deliberately reissues.
+//  */
+// export const sendEvaluationNow = catchAsync(async (req, res) => {
+//   const { office_email: officeEmail, seq_no: seqNo } = req.body || {};
+//
+//   if (!officeEmail || !seqNo) {
+//     throw new AppError('office_email and seq_no are required.', 400);
+//   }
+//
+//   const employee = await findByOfficeEmail(officeEmail);
+//   if (!employee) throw new AppError(`No Commando found with office email ${officeEmail}`, 404);
+//
+//   if (employee.halt_process) {
+//     throw new AppError(`Evaluations are on hold for ${employee.full_name}. Resume them first.`, 409);
+//   }
+//   if (employee.employment_status !== 'active') {
+//     throw new AppError(`${employee.full_name} is marked as having left.`, 409);
+//   }
+//   if (await leaverHoldApplies(employee)) {
+//     throw new AppError(
+//       `Evaluations for ${employee.full_name} are on hold: Microsoft 365 shows the account ` +
+//         'switched off and unlicensed. Confirm the exit, or mark them as still here, on the ' +
+//         'New joiners screen first.',
+//       409
+//     );
+//   }
+//
+//   const cycle = await prisma.pea_evaluation_cycles.findFirst({
+//     where: { employee_id: employee.id, seq_no: Number(seqNo) },
+//     include: { employee: true },
+//   });
+//   if (!cycle) throw new AppError(`${employee.full_name} has no evaluation ${seqNo}.`, 404);
+//
+//   if (cycle.status === 'completed') {
+//     throw new AppError(
+//       `Evaluation ${seqNo} for ${employee.full_name} was already submitted on ` +
+//         `${formatDisplay(dateIn(cycle.submitted_at, config.scheduler.timezone))}. Re-sending would discard that response.`,
+//       409
+//     );
+//   }
+//
+//   const validityRow = await prisma.pea_settings.findUnique({
+//     where: { setting_key: 'token_validity_days' },
+//   });
+//   const validity = Number(validityRow?.setting_value) || 30;
+//
+//   // New token: the old link is invalidated so two live links can never produce
+//   // two conflicting submissions for the same cycle.
+//   const refreshed = await prisma.pea_evaluation_cycles.update({
+//     where: { id: cycle.id },
+//     data: {
+//       token: crypto.randomUUID(),
+//       token_expires_at: addDays(new Date(), validity),
+//       status: 'email_sent',
+//       sent_at: new Date(),
+//       // Reset the chase clock — the manager is getting a fresh ask.
+//       reminder_count: 0,
+//       last_reminded_at: null,
+//       modified_at: new Date(),
+//     },
+//     include: { employee: true },
+//   });
+//
+//   const result = await queueEmail({ type: 'evaluation_link', cycle: refreshed });
+//
+//   // Nothing reached the manager — failed, or held by "Pause all email". Put the
+//   // evaluation back exactly as it was (old link included), so it is not shown
+//   // as "Awaiting response" and the sweep still picks it up once mail flows.
+//   if (result.status === 'failed' || result.status === 'suppressed') {
+//     await prisma.pea_evaluation_cycles.update({
+//       where: { id: cycle.id },
+//       data: {
+//         token: cycle.token,
+//         token_expires_at: cycle.token_expires_at,
+//         status: cycle.status,
+//         sent_at: cycle.sent_at,
+//         reminder_count: cycle.reminder_count,
+//         last_reminded_at: cycle.last_reminded_at,
+//         modified_at: new Date(),
+//       },
+//     });
+//   }
+//
+//   if (result.status === 'failed') {
+//     throw new AppError(`Could not send: ${result.error}`, 502);
+//   }
+//
+//   return success(
+//     res,
+//     {
+//       employee: employee.full_name,
+//       evaluation: Number(seqNo),
+//       status: result.status,
+//       sentTo: result.to,
+//       redirected: result.redirected,
+//     },
+//     result.status === 'suppressed'
+//       ? '"Pause all email" is on — the send was logged but no email left the system. The evaluation is unchanged; send it again once the pause is off.'
+//       : `Evaluation ${seqNo} sent to ${result.to.join(', ')}`
+//   );
+// });
 
 /**
  * GET /api/admin/shadow-report?days=7
@@ -178,6 +228,15 @@ export const diagnostics = catchAsync(async (_req, res) => {
   const today = todayIn(config.scheduler.timezone);
   const shadow = await isShadowMode();
 
+  // H1 — the Contractor and Leaders lists, where an admin has set them. A
+  // settings read that fails must not take the whole diagnostics call with it.
+  const directoryLists = await directoryRules()
+    .then((r) => [
+      { label: 'Contractor list', id: r.contractorGroupId },
+      { label: 'Leaders list', id: r.leadersGroupId },
+    ])
+    .catch(() => []);
+
   const [pendingDue, awaiting, graph, directory] = await Promise.all([
     prisma.pea_evaluation_cycles.count({
       where: {
@@ -192,7 +251,11 @@ export const diagnostics = catchAsync(async (_req, res) => {
     // different permissions (Mail.Send vs User.Read.All), so one can work while
     // the other does not. A silent directory failure shows up as an empty New
     // Joiner Inbox, which looks exactly like "nobody joined".
-    verifyDirectoryAccess(),
+    //
+    // H1 — when a Contractor or Leaders list is set, it also checks that PEA
+    // can read which lists an account is on, which is how the scan reads them.
+    // It was: verifyDirectoryAccess(),
+    verifyDirectoryAccess(directoryLists),
   ]);
 
   const blockers = [];

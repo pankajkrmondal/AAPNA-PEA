@@ -21,7 +21,7 @@
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
-import { addMonths, daysBetween, todayIn, toDateString, toUtcMidnight } from '../utils/dateUtils.js';
+import { addMonths, daysBetween, todayIn, toDateString, toUtcMidnight, formatDisplay } from '../utils/dateUtils.js';
 import { notifyStaff } from './inAppNotification.service.js';
 import { queueEmail } from './notification.service.js';
 
@@ -155,7 +155,7 @@ export async function runDeadlineAlerts({ dryRun = false } = {}) {
       type: 'confirmation_overdue',
       title: `Confirmation overdue — ${e.full_name}`,
       body:
-        `Deadline was ${e.deadline} (${e.extended ? 'extended probation' : '6 months from DOJ'}). ` +
+        `Deadline was ${formatDisplay(e.deadline)} (${e.extended ? 'extended probation' : '6 months from DOJ'}). ` +
         `${e.daysOverdue} day(s) past with no final decision recorded.`,
       link: `/employees/${e.id}`,
       severity: e.daysOverdue > 60 ? 'critical' : 'warning',
@@ -172,7 +172,8 @@ export async function runDeadlineAlerts({ dryRun = false } = {}) {
     // The subject comes from the Email Templates screen ({{overdue_count}}, {{today}}).
     const result = await queueEmail({
       type: 'deadline_alert',
-      context: { overdue, dueSoon, today },
+      // `today` is YYYY-MM-DD for the API; the email subject shows it to a person.
+      context: { overdue, dueSoon, today: formatDisplay(today) },
     });
     emailed = result.status !== 'failed';
   }

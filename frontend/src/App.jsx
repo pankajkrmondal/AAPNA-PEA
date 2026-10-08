@@ -1,6 +1,8 @@
 import { Fragment, useState } from 'react';
 import { Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom';
-import { Layout, Menu, Button, Tooltip, Dropdown, Tag, Result } from 'antd';
+// Top bar tidy-up — `Tag` was used only by the email warning, which is a pill of the bar's own now:
+// import { Layout, Menu, Button, Tooltip, Dropdown, Tag, Result } from 'antd';
+import { Layout, Menu, Button, Tooltip, Dropdown, Result } from 'antd';
 import {
   DashboardOutlined,
   ProfileOutlined,
@@ -18,6 +20,7 @@ import {
   KeyOutlined,
   MailOutlined,
   RightOutlined,
+  DownOutlined,
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api, { unwrap, TOKEN_KEY } from './api.js';
@@ -128,7 +131,7 @@ function Shell({ module, children }) {
   const selected = nav.map((n) => n.key)
     .filter((key) => key !== '/' && location.pathname.startsWith(key))
     .at(0) ?? '/';
-  const title = location.pathname.startsWith('/employees/') ? 'Employee' : (TITLES[location.pathname] ?? TITLES[selected]);
+  const title = location.pathname.startsWith('/employees/') ? 'Commando' : (TITLES[location.pathname] ?? TITLES[selected]);
 
   return (
     <CrumbProvider>
@@ -152,7 +155,7 @@ function Shell({ module, children }) {
           {!collapsed && (
             <div className="pea-brand-text">
               <span className="pea-brand-name">AAPNA</span>
-              <span className="pea-brand-sub">Evaluation Platform</span>
+              <span className="pea-brand-sub">Probation Period Evaluation Platform</span>
             </div>
           )}
         </div>
@@ -179,6 +182,13 @@ function Shell({ module, children }) {
 
           <div style={{ flex: 1 }} />
 
+          {/* Top bar tidy-up (01-10-2026) — the email warning is a pill in the
+              bar's own style, at the same height as everything beside it. It
+              was antd's gold Tag, which is smaller and sat on its own baseline:
+              <Tag icon={<SafetyCertificateOutlined />} color="gold" style={{ marginInlineEnd: 0 }}>
+                No email is being sent
+              </Tag>
+          */}
           {diag && !diag.willActuallySendEmail && (
             <Tooltip
               placement="bottom"
@@ -191,15 +201,21 @@ function Shell({ module, children }) {
                 </div>
               }
             >
-              <Tag icon={<SafetyCertificateOutlined />} color="gold" style={{ marginInlineEnd: 0 }}>
-                No email is being sent
-              </Tag>
+              <span className="pea-top-flag" tabIndex={0}>
+                <SafetyCertificateOutlined />
+                <span className="pea-top-flag-text">No email is being sent</span>
+              </span>
             </Tooltip>
           )}
 
-          <NotificationBell />
+          {/* The bell and the theme switch are one pair of quiet icon buttons;
+              a hairline separates them from who is signed in. */}
+          <div className="pea-top-tools">
+            <NotificationBell />
+            <ThemeToggle />
+          </div>
 
-          <ThemeToggle />
+          <span className="pea-top-sep" aria-hidden />
 
           {isAdminTier(user.role) && (
             <Button className="pea-top-btn" type="text" icon={<AdminPortalIcon />} onClick={() => navigate('/admin')}>
@@ -227,6 +243,9 @@ function Shell({ module, children }) {
               },
             }}
           >
+            {/* Top bar tidy-up (01-10-2026) — avatar first, then name and role,
+                then a caret that says the chip opens a menu. A button now, so
+                it can be reached and opened from the keyboard. It was:
             <div className="pea-user-chip" style={{ cursor: 'pointer' }}>
               <div>
                 <div className="pea-user-name">{user.first_name || user.username}</div>
@@ -234,6 +253,15 @@ function Shell({ module, children }) {
               </div>
               <div className="pea-avatar">{initialsOf(user)}</div>
             </div>
+            */}
+            <button type="button" className="pea-user-chip" aria-label="Account menu">
+              <span className="pea-avatar" aria-hidden>{initialsOf(user)}</span>
+              <span className="pea-user-text">
+                <span className="pea-user-name">{user.first_name || user.username}</span>
+                <span className="pea-user-role">{ROLE_LABEL[user.role] || user.role}</span>
+              </span>
+              <DownOutlined className="pea-user-caret" aria-hidden />
+            </button>
           </Dropdown>
         </Header>
 
@@ -293,10 +321,15 @@ export default function App() {
       <Route path="/employees/:id" element={<Protected module="employees"><EmployeeDetail /></Protected>} />
       <Route path="/new-joiners" element={<Protected module="new_joiners"><NewJoiners /></Protected>} />
       <Route path="/analytics" element={<Protected module="analytics"><Analytics /></Protected>} />
-      {/* The board — "What every manager said". The previous work list keeps
-          its grouping by manager and the email log at /evaluations/worklist. */}
+      {/* The board — "What every manager said". The email log sits beside it at
+          /evaluations/emails. */}
       <Route path="/evaluations" element={<Protected module="evaluations"><EvaluationBoard /></Protected>} />
+      {/* H4 (HR, 29-09-2026) — the work list is removed and the email log is the
+          whole page now. The route as it was:
       <Route path="/evaluations/worklist" element={<Protected module="evaluations"><Evaluations /></Protected>} />
+      */}
+      <Route path="/evaluations/emails" element={<Protected module="evaluations"><Evaluations /></Protected>} />
+      <Route path="/evaluations/worklist" element={<Navigate to="/evaluations/emails" replace />} />
       <Route path="/evaluations/:id" element={<Protected module="evaluations"><EvaluationProfile /></Protected>} />
       <Route path="/import" element={<Protected module="import_sheet"><ImportSheet /></Protected>} />
       <Route path="/manager-portal" element={<Protected module="manager_portal"><ManagerLinks /></Protected>} />

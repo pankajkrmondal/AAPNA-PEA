@@ -109,6 +109,50 @@ const STYLES = `
   .q h3 { margin: 0 0 12px; font-size: 16px; color: #1f2a17; font-weight: 600; }
   .q h3 .num { color: #5c8727; font-weight: 700; margin-right: 6px; }
 
+  /* U3 — each question's options are a <fieldset> named by a <legend>, which
+     looks exactly like the <h3> it replaced. */
+  .q fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+  .q legend { margin: 0 0 12px; padding: 0; font-size: 16px; color: #1f2a17; font-weight: 600; }
+  .q legend .num { color: #5c8727; font-weight: 700; margin-right: 6px; }
+
+  /* U2 — a question with no rating chosen. */
+  .q.invalid legend { color: #991b1b; }
+  .q.invalid .opts label { border-color: #f1a5a5; }
+  .q.invalid .opts { margin-bottom: 6px; }
+  .q.invalid fieldset > .field-err { margin: 0 0 12px; }
+
+  /* U1 — "4 of 7 answered", kept in view while the form scrolls. */
+  .progress {
+    position: sticky; top: 0; z-index: 5;
+    display: flex; align-items: center; gap: 14px;
+    background: #ffffff; border: 1px solid #e6ebdb; border-radius: 10px;
+    padding: 10px 16px; margin: 16px 0 0; font-size: 14px; color: #1f2a17;
+    box-shadow: 0 4px 12px -8px rgba(34, 52, 15, 0.35);
+  }
+  .progress strong { white-space: nowrap; }
+  .progress .bar { flex: 1; height: 6px; border-radius: 999px; background: #e6ebdb; overflow: hidden; }
+  .progress .bar span { display: block; height: 100%; background: #5c8727; transition: width 0.2s; }
+  .progress.done strong { color: #47691f; }
+
+  /* P10 — last time's rating and comment, closed until asked for. */
+  details.prev { margin: 0 0 12px; font-size: 13.5px; color: #47513f; }
+  details.prev summary { cursor: pointer; color: #47691f; font-weight: 600; }
+  details.prev p {
+    margin: 6px 0 0; padding: 8px 12px; background: #fafcf7;
+    border-left: 3px solid #d3e4b3; border-radius: 0 6px 6px 0; white-space: pre-wrap;
+  }
+  details.prev-all { margin: 0 0 6px; }
+
+  /* P11 — the draft button, the line beside it, and the "saved" banner. */
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+  .btn-secondary { background: #ffffff; color: #47691f; border: 1.5px solid #5c8727; box-shadow: none; }
+  .btn-secondary:hover { background: #f2f7e8; box-shadow: none; }
+  .draft-status { font-size: 13.5px; color: #6b7566; }
+  .saved {
+    background: #f2f7e8; border: 1px solid #d3e4b3; color: #22340f;
+    border-radius: 8px; padding: 12px 16px; margin: 0 0 16px; font-size: 14.5px;
+  }
+
   .opts { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
   .opts label {
     flex: 1 1 150px; display: flex; align-items: flex-start; gap: 8px;
@@ -301,9 +345,44 @@ function page(title, bodyHtml) {
 </head>
 <body>
 ${bodyHtml}
-<footer>AAPNA | HR Team &middot; Performance Evaluation</footer>
+<footer>AAPNA | HR Team &middot; Probation Period Evaluation Platform</footer>
 </body>
 </html>`;
+}
+
+/**
+ * The "Close this tab" button on the thank-you and status pages — B7.
+ *
+ * The inline handler this replaces never ran: helmet's default policy sets
+ * `script-src-attr 'none'`, so only a script carrying the request's nonce may
+ * run. And a browser refuses window.close() on a tab a script did not open —
+ * which is every tab opened from an email — so if the page is still here a
+ * moment later the hint says so, rather than leaving a button that looks dead.
+ *
+ * B7 — the markup before, kept for reference:
+ *   <div class="thanks-action">
+ *     <button type="button" onclick="window.close()" class="btn-close">Close This Window</button>
+ *     <p class="close-hint">You can safely close this browser tab.</p>
+ *   </div>
+ *
+ * @param {string} [nonce] - CSP nonce for the inline script
+ * @returns {string} HTML
+ */
+function closeAction(nonce = '') {
+  return `
+    <div class="thanks-action">
+      <button type="button" id="closeTab" class="btn-close">Close this tab</button>
+      <p class="close-hint" id="closeHint">You can safely close this browser tab.</p>
+    </div>
+    <script${nonce ? ` nonce="${esc(nonce)}"` : ''}>
+      document.getElementById('closeTab').addEventListener('click', function () {
+        window.close();
+        setTimeout(function () {
+          document.getElementById('closeHint').textContent =
+            'This tab could not be closed automatically. Please close it yourself.';
+        }, 300);
+      });
+    </script>`;
 }
 
 const COUNT_WORDS = ['none', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten'];
@@ -318,6 +397,8 @@ function anchorFor(field) {
   if (field === 'confirmation_status') return '#decision';
   if (field === 'confirmation_reason') return '#reason';
   if (field.startsWith('comments_')) return `#c_${field.slice('comments_'.length)}`;
+  // U2 — a missing rating links to its question, as a missing comment does.
+  if (field.startsWith('rating_')) return `#q_${field.slice('rating_'.length)}`;
   return '';
 }
 
@@ -342,13 +423,31 @@ function problemLine(p) {
  * @param {string} [opts.error] - validation message to show above the form
  * @param {object} [opts.submitted] - previously entered values, to refill on error
  * @param {string} [opts.nonce] - CSP nonce for the inline script
+ * @param {string} [opts.notice] - a plain confirmation to show above the form ("Draft saved …")
  * @returns {string} HTML
  */
-export function renderForm(data, { error = '', problems = [], submitted = {}, nonce = '' } = {}) {
+export function renderForm(data, { error = '', problems = [], submitted = {}, nonce = '', notice = '' } = {}) {
   const { employee, cycle, params, askConfirmation, token } = data;
   const ratings = submitted.ratings || {};
   const first = esc(employee.full_name.split(' ')[0]);
   const problemFor = (field) => problems.find((p) => p.field === field);
+  const previous = data.previous || null;
+
+  // U1 — a question is answered once it has both a rating and a comment. The
+  // server renders the starting count; the script below keeps it live.
+  const answered = params.filter((p) => {
+    const r = ratings[p.param_key] || {};
+    return r.rating && String(r.comments || '').trim();
+  }).length;
+  const answeredPct = params.length ? Math.round((answered / params.length) * 100) : 0;
+
+  // B8 — the form told every manager "<name> sees these, and so does HR", but
+  // the person only reads comments when HR has set the self-view to `full`.
+  // With the default (`averages`) they never do, so the form must not say so.
+  const whoReads = data.employeeSeesComments ? `${first} sees these, and so does HR.` : 'HR reads these.';
+  const whoNeedsIt = data.employeeSeesComments
+    ? `HR and ${first} both need to understand it.`
+    : 'HR needs to understand it.';
 
   // "Please fix 2 things before submitting — your answers are kept." Each item
   // links to the field it is about, so a long form is not a hunt.
@@ -365,6 +464,73 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
              <td style="text-align:center">${esc(r.percent)}</td></tr>`
   ).join('');
 
+  /** The word for a rating — "Satisfied" for 3. Averages take the nearest point. */
+  const ratingWord = (value) =>
+    RATING_ROWS.find((r) => r.value === Math.min(5, Math.max(1, Math.round(Number(value)))))?.label || '';
+
+  const questions = params
+    .map((p, i) => {
+      const key = esc(p.param_key);
+      const current = ratings[p.param_key] || {};
+      // U2 — a question left without a rating is marked and linked from the
+      // summary, as a missing comment already was.
+      const noRating = problemFor(`rating_${p.param_key}`);
+      const opts = RATING_ROWS.map(
+        (r) => `
+      <label>
+        <input type="radio" name="rating_${key}" value="${r.value}"
+               ${String(current.rating) === String(r.value) ? 'checked' : ''} required${noRating ? ' aria-invalid="true"' : ''}>
+        <span><span class="n">${r.value} — ${esc(r.label)}</span>
+              <span class="d">${esc(r.detail)}</span></span>
+      </label>`
+      ).join('');
+
+      // A comment is required on every question, whatever the rating, so every
+      // box wears the required frame. `required` stops an empty one before the
+      // round trip; the server is the gate either way.
+      const missing = problemFor(`comments_${p.param_key}`);
+
+      // P10 — what was said last time, so the manager rates progress rather
+      // than starting from a blank page. Closed until asked for.
+      const before = previous?.scores?.[p.param_key];
+      const lastTime = before && before.rating !== null
+        ? `
+      <details class="prev">
+        <summary>Last time (Evaluation ${esc(previous.seq_no)}): ${esc(before.rating)} — ${esc(ratingWord(before.rating))}</summary>
+        <p>${before.comments ? esc(before.comments) : '<em>No comment was written.</em>'}</p>
+      </details>`
+        : '';
+
+      // U3 — the five options are one group, named by the question, so a screen
+      // reader announces "Meeting Deadline, radio group" rather than five
+      // unrelated buttons. The <legend> takes the place of the <h3>.
+      return `
+    <div class="q${noRating ? ' invalid' : ''}" id="q_${key}">
+      <fieldset${noRating ? ` aria-describedby="e_rating_${key}"` : ''}>
+        <legend><span class="num">${i + 1}.</span>${esc(p.param_label)} <span class="req">*</span></legend>
+        <div class="opts">${opts}</div>
+        ${noRating ? `<p class="field-err" id="e_rating_${key}">⚠ Choose a rating for this question.</p>` : ''}
+      </fieldset>
+      ${lastTime}
+      <div class="cmt need">
+        <label class="fld" for="c_${key}">
+          Comment <span class="req">*</span>
+          <span class="must">required — one line is enough</span>
+        </label>
+        <textarea id="c_${key}" name="comments_${key}" required${missing ? ' class="invalid"' : ''}
+                  ${missing ? `aria-invalid="true" aria-describedby="e_comments_${key}"` : ''}
+                  placeholder="Why this rating? Specific examples help ${first} improve."
+        >${esc(current.comments || '')}</textarea>
+        ${missing ? `<p class="field-err" id="e_comments_${key}">⚠ Please explain this rating — ${whoNeedsIt}</p>` : ''}
+      </div>
+    </div>`;
+    })
+    .join('');
+
+  /* U2 / U3 / P10 — the question markup before, kept for reference: an <h3>
+     and five ungrouped radios, no link or mark for a missing rating, and
+     nothing from the previous evaluation.
+
   const questions = params
     .map((p, i) => {
       const current = ratings[p.param_key] || {};
@@ -378,9 +544,6 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
       </label>`
       ).join('');
 
-      // A comment is required on every question, whatever the rating, so every
-      // box wears the required frame. `required` stops an empty one before the
-      // round trip; the server is the gate either way.
       const missing = problemFor(`comments_${p.param_key}`);
 
       return `
@@ -395,11 +558,38 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
         <textarea id="c_${esc(p.param_key)}" name="comments_${esc(p.param_key)}" required${missing ? ' class="invalid"' : ''}
                   placeholder="Why this rating? Specific examples help ${first} improve."
         >${esc(current.comments || '')}</textarea>
-        ${missing ? `<p class="field-err">⚠ Please explain this rating — HR and ${first} both need to understand it.</p>` : ''}
+        ${missing ? `<p class="field-err">⚠ Please explain this rating — ${whoNeedsIt}</p>` : ''}
       </div>
     </div>`;
     })
     .join('');
+  */
+
+  // P10 — the evaluation before this one, in one line above the questions.
+  const previousBlock = previous
+    ? `
+      <details class="prev prev-all">
+        <summary>Previous evaluation — Evaluation ${esc(previous.seq_no)}${previous.submittedLabel ? `, submitted ${esc(previous.submittedLabel)}` : ''}${previous.average !== null ? `, average ${esc(previous.average.toFixed(2))} / 5` : ''}</summary>
+        <p>${previous.remarks ? `<strong>Overall remarks then:</strong> ${esc(previous.remarks)}` : '<em>No overall remarks were written.</em>'}
+Each question below shows what it was rated last time.</p>
+      </details>`
+    : '';
+
+  // P11 — where "Save draft" posts, and what the line beside the buttons says.
+  const draftUrl = data.draftEnabled ? `/api/evaluation/${esc(token)}/draft` : '';
+  const draftStatus = data.draft?.savedLabel ? `Draft saved ${esc(data.draft.savedLabel)}` : '';
+  const noticeBlock = notice ? `<div class="saved" role="status">${esc(notice)}</div>` : '';
+
+  /* P11 — replaced, kept for reference (here, so it is not sent to the browser).
+     The page script's submit handler before "Save draft" existed; it locked the
+     button on every submit, which would now also fire for a draft save:
+
+  form.addEventListener('submit', function () {
+    var b = document.getElementById('btn');
+    b.disabled = true;
+    b.textContent = 'Submitting…';
+  });
+  */
 
   const decisionMissing = problemFor('confirmation_status');
   const reasonProblem = problemFor('confirmation_reason');
@@ -408,17 +598,30 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
   // always shown, and its label says when it is required.
   const reasonHidden = !submitted.confirmation_status || submitted.confirmation_status === 'Confirmed';
 
+  // B2 / M2 — only the decisions still open to this person. A probation cannot
+  // run past 8 months, so "Extend" drops out once the two extension evaluations
+  // are used (and "2 months" once one is). The fallback to the full list is for
+  // a caller that has not been through getFormData(). It used to be the full
+  // list always: ${CONFIRMATION_ROWS.map(…)}.
+  const decisionRows = data.confirmationOptions?.length ? data.confirmationOptions : CONFIRMATION_ROWS;
+  const canExtend = decisionRows.some((o) => o.value.startsWith('Extend'));
+  const extendNote = !canExtend
+    ? ' The probation has reached its 8-month limit, so it can no longer be extended.'
+    : data.extensionsLeft === 1
+      ? ' It can be extended by one more month at most — a probation cannot run past 8 months.'
+      : '';
+
   const confirmationBlock = askConfirmation
     ? `
   <div class="card" id="decision">
     <h2 style="margin:0 0 6px;font-size:18px">Confirmation decision <span class="req">*</span></h2>
     <p class="hint" style="margin-bottom:14px">
       This is the final evaluation of ${esc(employee.full_name)}'s probation period,
-      so a decision is required.
+      so a decision is required.${extendNote}
     </p>
     <select name="confirmation_status" id="confirmation_status" required${decisionMissing ? ' class="invalid"' : ''}>
       <option value="">— Please choose —</option>
-      ${CONFIRMATION_ROWS.map(
+      ${decisionRows.map(
         (o) =>
           `<option value="${esc(o.value)}" ${
             submitted.confirmation_status === o.value ? 'selected' : ''
@@ -432,7 +635,7 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
         <span class="must">— required when you do not confirm or when you extend</span>
       </label>
       <textarea id="confirmation_reason" name="confirmation_reason" maxlength="${REASON_MAX}" style="min-height:90px"${reasonProblem ? ' class="invalid"' : ''}
-        placeholder="What would need to change for ${first} to be confirmed? HR sees this with your ratings, and it goes on the employee's record."
+        placeholder="What would need to change for ${first} to be confirmed? HR sees this with your ratings, and it goes on the Commando's record."
       >${esc(reasonText)}</textarea>
       <div style="display:flex;justify-content:space-between;gap:12px">
         <span>${reasonProblem ? `<p class="field-err">⚠ ${esc(reasonProblem.field === 'confirmation_reason' && /limit/.test(reasonProblem.text) ? reasonProblem.text : `Please give a reason for ${String(submitted.confirmation_status || '').startsWith('Extend') ? 'extending the probation' : 'this decision'}.`)}</p>` : ''}</span>
@@ -443,24 +646,25 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
     : '';
 
   return page(
-    `Performance Evaluation ${cycle.seq_no} — ${employee.full_name}`,
+    `Probation Evaluation ${cycle.seq_no} — ${employee.full_name}`,
     `
 <header>
   <div class="wrap">
     <div class="brand">
       <img src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png" width="180" alt="AAPNA Infotech">
     </div>
-    <h1>Performance Evaluation ${cycle.seq_no}${cycle.is_extension ? ' (extended period)' : ''}</h1>
-    <p>AAPNA Infotech &middot; Performance Evaluation</p>
+    <h1>Probation Evaluation ${cycle.seq_no}${cycle.is_extension ? ' (extended period)' : ''}</h1>
+    <p>AAPNA Infotech &middot; Probation Period Evaluation Platform</p>
   </div>
 </header>
 
 <div class="wrap">
   ${errorBlock}
+  ${noticeBlock}
 
   <div class="card">
     <dl class="subject">
-      <dt>Employee</dt><dd>${esc(employee.full_name)}</dd>
+      <dt>Commando</dt><dd>${esc(employee.full_name)}</dd>
       <dt>Office email</dt><dd>${esc(employee.office_email)}</dd>
       <dt>Date of joining</dt><dd>${esc(employee.dojLabel)}</dd>
       <dt>Category</dt><dd>${employee.is_experienced ? 'Experienced' : 'Fresher'}</dd>
@@ -476,13 +680,19 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
     </table>
   </div>
 
-  <form method="POST" action="/api/evaluation/${esc(token)}/submit" id="evalForm">
+  <form method="POST" action="/api/evaluation/${esc(token)}/submit" id="evalForm"${draftUrl ? ` data-draft="${draftUrl}"` : ''}>
+    <div class="progress${answered === params.length ? ' done' : ''}" id="progress" role="status" aria-live="polite">
+      <strong id="progressCount">${answered} of ${params.length} answered</strong>
+      <div class="bar" aria-hidden="true"><span id="progressBar" style="width:${answeredPct}%"></span></div>
+    </div>
+
     <div class="card">
       <h2 style="margin:0 0 8px;font-size:18px">Your assessment</h2>
       <p class="rule">
         Rate every parameter and say why. A comment is <strong>required on all ${countWord(params.length)}</strong>,
-        whatever the rating — one line is enough. ${first} sees these, and so does HR.
+        whatever the rating — one line is enough. ${whoReads}
       </p>
+      ${previousBlock}
       ${questions}
     </div>
 
@@ -496,8 +706,12 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
     </div>
 
     <div style="margin: 4px 0 28px">
-      <button type="submit" id="btn">Submit evaluation</button>
-      <p class="hint">This link can be submitted once. Please review before sending.</p>
+      <div class="actions">
+        <button type="submit" id="btn">Submit evaluation</button>
+        ${draftUrl ? `<button type="submit" id="draftBtn" class="btn-secondary" formaction="${draftUrl}" formnovalidate>Save draft</button>
+        <span class="draft-status" id="draftStatus" role="status" aria-live="polite">${draftStatus}</span>` : ''}
+      </div>
+      <p class="hint">This link can be submitted once. Please review before sending.${draftUrl ? ' A draft is kept against this link, so you can finish later or on another device.' : ''}</p>
     </div>
   </form>
 </div>
@@ -526,7 +740,80 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
     });
   }
 
-  form.addEventListener('submit', function () {
+  // U1 — "4 of 7 answered". A question counts once it has a rating and a comment.
+  var progress = document.getElementById('progress');
+  var progressCount = document.getElementById('progressCount');
+  var progressBar = document.getElementById('progressBar');
+  var questions = form.querySelectorAll('.q');
+  var paint = function () {
+    var n = 0;
+    for (var i = 0; i < questions.length; i += 1) {
+      var rated = questions[i].querySelector('input[type=radio]:checked');
+      var comment = questions[i].querySelector('textarea');
+      if (rated && comment && comment.value.trim()) n += 1;
+    }
+    progressCount.textContent = n + ' of ' + questions.length + ' answered';
+    progressBar.style.width = (questions.length ? Math.round((n / questions.length) * 100) : 0) + '%';
+    progress.classList.toggle('done', n === questions.length);
+  };
+  form.addEventListener('input', paint);
+  form.addEventListener('change', paint);
+  paint();
+
+  // P11 — the draft saves itself a few seconds after the last change, and when
+  // the tab is hidden. The "Save draft" button does the same without this.
+  var draftUrl = form.getAttribute('data-draft');
+  var draftStatus = document.getElementById('draftStatus');
+  var dirty = false;
+  var saving = false;
+  var timer = null;
+  var lastSaved = 0;
+  var two = function (n) { return (n < 10 ? '0' : '') + n; };
+  var saveDraft = function (leaving) {
+    if (!draftUrl || !dirty || saving || !window.fetch || !window.URLSearchParams) return;
+    dirty = false;
+    saving = true;
+    fetch(draftUrl, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json', 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams(new FormData(form)).toString(),
+      // Only when the tab is being left: it lets the save outlive the page, but
+      // browsers cap such a request at 64 KB, so it is not used for every save.
+      keepalive: leaving === true
+    }).then(function (res) {
+      if (!res.ok) throw new Error('not saved');
+      var now = new Date();
+      lastSaved = now.getTime();
+      draftStatus.textContent = 'Draft saved ' + two(now.getHours()) + ':' + two(now.getMinutes());
+    }).catch(function () {
+      dirty = true;
+      draftStatus.textContent = 'Draft not saved yet — it will try again';
+    }).then(function () { saving = false; });
+  };
+  if (draftUrl) {
+    var touch = function () {
+      dirty = true;
+      clearTimeout(timer);
+      // Not more often than every 15 seconds, however fast someone types.
+      var wait = Math.max(4000, 15000 - (Date.now() - lastSaved));
+      timer = setTimeout(function () { saveDraft(false); }, wait);
+    };
+    form.addEventListener('input', touch);
+    form.addEventListener('change', touch);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'hidden') saveDraft(true);
+    });
+  }
+
+  form.addEventListener('submit', function (ev) {
+    // "Save draft" posts the same form to a different address; only the real
+    // submit locks the button.
+    clearTimeout(timer);
+    dirty = false;
+    if (ev.submitter && ev.submitter.id === 'draftBtn') {
+      ev.submitter.textContent = 'Saving…';
+      return;
+    }
     var b = document.getElementById('btn');
     b.disabled = true;
     b.textContent = 'Submitting…';
@@ -539,9 +826,11 @@ export function renderForm(data, { error = '', problems = [], submitted = {}, no
 /**
  * Render the thank-you page.
  * @param {object} result - from evaluation.service.submit()
+ * @param {object} [opts]
+ * @param {string} [opts.nonce] - CSP nonce for the inline script
  * @returns {string} HTML
  */
-export function renderThanks(result) {
+export function renderThanks(result, { nonce = '' } = {}) {
   const extended = result.confirmation_status?.startsWith('Extend');
   const avgNum = Number(result.average) || 0;
   const pct = Math.round((avgNum / 5) * 100);
@@ -599,7 +888,7 @@ export function renderThanks(result) {
     <div class="brand">
       <img src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png" width="170" alt="AAPNA Infotech">
     </div>
-    <p class="header-tag">AAPNA Infotech &middot; Performance Evaluation System</p>
+    <p class="header-tag">AAPNA Infotech &middot; Probation Period Evaluation Platform</p>
   </div>
 </header>
 
@@ -619,7 +908,7 @@ export function renderThanks(result) {
         <div class="avatar">${esc(initials)}</div>
         <div class="employee-meta">
           <div class="emp-name">${esc(result.employee)}</div>
-          <div class="emp-cycle">Performance Evaluation Round ${esc(result.evaluation)}</div>
+          <div class="emp-cycle">Probation Evaluation Round ${esc(result.evaluation)}</div>
         </div>
         ${decisionBadge}
       </div>
@@ -638,10 +927,7 @@ export function renderThanks(result) {
 
     ${noticeBlock}
 
-    <div class="thanks-action">
-      <button type="button" onclick="window.close()" class="btn-close">Close This Window</button>
-      <p class="close-hint">You can safely close this browser tab.</p>
-    </div>
+    ${closeAction(nonce)}
   </div>
 </div>`
   );
@@ -651,9 +937,11 @@ export function renderThanks(result) {
  * Render an error page (expired link, already submitted, unknown token).
  * @param {string} message
  * @param {number} [status=400]
+ * @param {object} [opts]
+ * @param {string} [opts.nonce] - CSP nonce for the inline script
  * @returns {string} HTML
  */
-export function renderError(message, status = 400) {
+export function renderError(message, status = 400, { nonce = '' } = {}) {
   const isAlreadySubmitted = /already submitted/i.test(message || '');
   const isExpired = /expired/i.test(message || '');
   const isPaused = /paused/i.test(message || '');
@@ -709,7 +997,7 @@ export function renderError(message, status = 400) {
         <svg class="error-icon" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="10" y1="15" x2="10" y2="9"/><line x1="14" y1="15" x2="14" y2="9"/></svg>
       </div>`;
     title = 'Evaluation On Hold';
-    subtitle = 'Evaluations for this employee are currently paused.';
+    subtitle = 'Evaluations for this Commando are currently paused.';
     cardContentHtml = `
       <div class="notice-box" style="background:#e8effd;border:1px solid #bfdbfe;color:#1e3a8a">
         <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -743,7 +1031,7 @@ export function renderError(message, status = 400) {
     <div class="brand">
       <img src="https://www.aapnainfotech.com/wp-content/uploads/2021/09/aapna-gptw-black.png" width="170" alt="AAPNA Infotech">
     </div>
-    <p class="header-tag">AAPNA Infotech &middot; Performance Evaluation System</p>
+    <p class="header-tag">AAPNA Infotech &middot; Probation Period Evaluation Platform</p>
   </div>
 </header>
 
@@ -755,10 +1043,7 @@ export function renderError(message, status = 400) {
 
     ${cardContentHtml}
 
-    <div class="thanks-action">
-      <button type="button" onclick="window.close()" class="btn-close">Close This Window</button>
-      <p class="close-hint">You can safely close this browser tab.</p>
-    </div>
+    ${closeAction(nonce)}
   </div>
 </div>`
   );

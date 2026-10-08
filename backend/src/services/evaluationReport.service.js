@@ -99,7 +99,7 @@ export async function buildReport(employeeId) {
     },
   });
 
-  if (!employee) throw new AppError('Employee not found.', 404);
+  if (!employee) throw new AppError('Commando not found.', 404);
 
   // Reuses R-06's movement rules rather than recomputing them, so the report
   // and the screen cannot drift apart on what "growing" means.

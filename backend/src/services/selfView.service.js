@@ -29,7 +29,9 @@ import prisma from '../config/database.js';
 import logger from '../config/logger.js';
 import config from '../config/index.js';
 import AppError from '../utils/AppError.js';
-import { toDateString } from '../utils/dateUtils.js';
+import { toDateString, formatDisplay } from '../utils/dateUtils.js';
+// Archive (07-10-2026) — an archived Commando's own link stops, as a leaver's does.
+import { archiveRecord, assertNotArchived } from '../utils/archiveScope.js';
 
 export const LEVELS = Object.freeze(['off', 'schedule', 'averages', 'full']);
 const LINK_DAYS = 14;
@@ -79,7 +81,7 @@ export function shapeSelfView(employee, level) {
     evaluations: (employee.cycles || []).map((c) => ({
       number: c.seq_no,
       extension: c.is_extension,
-      period: c.period_from && c.period_to ? `${toDateString(c.period_from)} → ${toDateString(c.period_to)}` : null,
+      period: c.period_from && c.period_to ? `${formatDisplay(c.period_from)} → ${formatDisplay(c.period_to)}` : null,
       due: toDateString(c.due_date),
       status: STATUS[c.status] || c.status,
       ...(showAverages
@@ -108,14 +110,15 @@ export function shapeSelfView(employee, level) {
 export async function createSelfViewLink(employeeId, actor) {
   const level = await currentLevel();
   if (level === 'off') {
-    throw new AppError('Employee self-view is switched off. An admin can choose what employees see in Settings → Access.', 400);
+    throw new AppError('Commando self-view is switched off. An admin can choose what Commandos see in Settings → Access.', 400);
   }
 
   const employee = await prisma.pea_employees.findUnique({ where: { id: BigInt(employeeId) } });
-  if (!employee) throw new AppError('Employee not found', 404);
+  if (!employee) throw new AppError('Commando not found', 404);
   if (employee.employment_status !== 'active') {
     throw new AppError(`${employee.full_name} is marked as having left — no link can be issued.`, 409);
   }
+  await assertNotArchived(employee.id, employee.full_name); // Archive (07-10-2026)
 
   const token = jwt.sign({ sub: String(employee.id) }, signingKey(), {
     audience: AUDIENCE,
@@ -171,6 +174,7 @@ export async function getSelfView(token) {
   });
 
   if (!employee || employee.employment_status !== 'active') throw refused;
+  if (await archiveRecord(employee.id)) throw refused; // Archive (07-10-2026)
 
   return { ...shapeSelfView(employee, level), expiresAt: new Date(claims.exp * 1000) };
 }

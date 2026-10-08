@@ -43,6 +43,25 @@ function SettingRow({ s, canEdit, onSave, saving }) {
             style={{ width: 420, maxWidth: '100%' }}
           />
         );
+      // H1 (AD sync) — a list of domains and a Microsoft 365 group id are both
+      // longer than the default box.
+      case 'domain_list':
+        return <Input {...common} value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="aapnainfotech.com, mera.work" style={{ width: 420, maxWidth: '100%' }} />;
+      case 'guid':
+        return <Input {...common} value={draft} onChange={(e) => setDraft(e.target.value)} allowClear placeholder="Not set" style={{ width: 340, maxWidth: '100%' }} />;
+      // H1 (07-10-2026) — plain words, e.g. the designation words that suggest
+      // fresher or experienced. Blank switches the suggestion off.
+      case 'word_list':
+        return (
+          <Input.TextArea
+            {...common}
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            autoSize={{ minRows: 1, maxRows: 4 }}
+            placeholder="Not set — nothing is suggested"
+            style={{ width: 420, maxWidth: '100%' }}
+          />
+        );
       default:
         return <Input {...common} value={draft} onChange={(e) => setDraft(e.target.value)} style={{ width: 260, maxWidth: '100%' }} />;
     }

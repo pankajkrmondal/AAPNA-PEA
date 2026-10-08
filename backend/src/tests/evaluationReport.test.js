@@ -127,7 +127,8 @@ describe('R-05 — the email', () => {
     // The person who asked should be able to read the answer without opening
     // anything — that is what "within one click" means for the recipient too.
     const r = renderPreview('evaluation_report');
-    assert.match(r.subject, /Evaluation report/);
+    // H8 — the subject was "Evaluation report — …"; every email names the probation now.
+    assert.match(r.subject, /Probation evaluation report/);
     assert.ok(r.body.includes('Probation decision'), 'header table');
     assert.ok(r.body.includes('Settling in well'), 'per-evaluation remarks');
     assert.ok(r.body.includes('3.7'), 'the ratings themselves');

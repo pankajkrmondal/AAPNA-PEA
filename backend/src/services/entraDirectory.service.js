@@ -44,7 +44,15 @@ const USER_FIELDS = [
   'accountEnabled',
   'createdDateTime',
   'assignedLicenses',
+  // H1 (07-10-2026) — the designation, for SUGGESTING fresher or experienced in
+  // the New Joiner Inbox. Microsoft 365 holds neither the years of experience
+  // nor the date of joining, and will not; HR confirms both. A plain read,
+  // covered by User.Read.All like every other field here.
+  'jobTitle',
 ].join(',');
+
+/** Each account's manager, read with the account rather than after it — U8. */
+const MANAGER_EXPAND = 'manager($select=id,displayName,mail,userPrincipalName)';
 
 /**
  * One authenticated GET against Graph.
@@ -76,88 +84,245 @@ async function graphGet(url) {
 }
 
 /**
- * Follow @odata.nextLink until the collection is exhausted.
+ * Follow @odata.nextLink until the collection is exhausted, and say whether it
+ * was.
+ *
+ * `complete` is false when the page guard stopped the read with more still to
+ * come. H1 — a caller that decides who is contract staff from a list must know
+ * whether it has the whole list: half a Contractor list would let the other
+ * half through as joiners.
+ *
  * @param {string} firstUrl
  * @param {number} [maxPages=20] - a guard against an unbounded loop
- * @returns {Promise<object[]>}
+ * @returns {Promise<{items: object[], complete: boolean}>}
  */
-async function graphGetAll(firstUrl, maxPages = 20) {
-  const out = [];
+async function graphCollect(firstUrl, maxPages = 20) {
+  const items = [];
   let url = firstUrl;
   let pages = 0;
 
   while (url && pages < maxPages) {
     const page = await graphGet(url);
-    out.push(...(page.value || []));
+    items.push(...(page.value || []));
     url = page['@odata.nextLink'];
     pages += 1;
   }
 
   if (url) {
-    logger.warn(
-      `Entra listing stopped at ${maxPages} pages with more results available — ` +
-        'narrow the scan window rather than raising the page limit.'
-    );
+    logger.warn(`Entra listing stopped at ${maxPages} pages with more results available.`);
   }
 
-  return out;
+  return { items, complete: !url };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// H1 (AD sync, 01-10-2026) — replaced by graphCollect() above, kept for
+// reference. It returned the rows only, so a read cut short looked complete.
+// ─────────────────────────────────────────────────────────────────────────────
+// /**
+//  * Follow @odata.nextLink until the collection is exhausted.
+//  * @param {string} firstUrl
+//  * @param {number} [maxPages=20] - a guard against an unbounded loop
+//  * @returns {Promise<object[]>}
+//  */
+// async function graphGetAll(firstUrl, maxPages = 20) {
+//   const out = [];
+//   let url = firstUrl;
+//   let pages = 0;
+//
+//   while (url && pages < maxPages) {
+//     const page = await graphGet(url);
+//     out.push(...(page.value || []));
+//     url = page['@odata.nextLink'];
+//     pages += 1;
+//   }
+//
+//   if (url) {
+//     logger.warn(
+//       `Entra listing stopped at ${maxPages} pages with more results available — ` +
+//         'narrow the scan window rather than raising the page limit.'
+//     );
+//   }
+//
+//   return out;
+// }
 
 /** The email PEA identifies an account by. `mail` first; some accounts only have a UPN. */
 export const accountEmail = (u) =>
   String(u?.mail || u?.userPrincipalName || '').trim().toLowerCase() || null;
 
+/** Lower-cased, trimmed, without a leading "@". */
+const normDomain = (d) => String(d || '').trim().toLowerCase().replace(/^@/, '');
+
 /**
- * Every account on the given domain, enabled or not.
- *
- * Deliberately one unfiltered listing rather than a query per question. The
- * tenant has ~260 accounts — two pages — and the intake scan needs both halves
- * of it: enabled recent accounts are candidate joiners, and DISABLED accounts
- * are what leaver detection looks for. A server-side `accountEnabled eq true`
- * filter would hide exactly the rows the leaver pass exists to find, so the
- * filtering happens here where both passes can see everything.
- *
- * @param {string} domain - e.g. 'aapnainfotech.com'; empty means no filtering
- * @returns {Promise<object[]>}
+ * Is this address on one of the given domains?
+ * @param {string|null} email
+ * @param {string[]} domains - an empty list means "any domain"
+ * @returns {boolean}
  */
-export async function listAccounts(domain) {
-  const suffix = `@${String(domain || '').trim().toLowerCase()}`;
-  const users = await graphGetAll(`${GRAPH}/users?$select=${USER_FIELDS}&$top=999`);
-
-  if (suffix === '@') return users;
-
-  // Guests and resource accounts live on other domains and are not joiners.
-  return users.filter((u) => (accountEmail(u) || '').endsWith(suffix));
+export function onDomains(email, domains = []) {
+  const allowed = domains.map(normDomain).filter(Boolean);
+  if (!allowed.length) return true;
+  const domain = String(email || '').trim().toLowerCase().split('@').pop();
+  return !!email && allowed.includes(domain);
 }
 
 /**
- * The manager Entra holds for a user, or null.
+ * The manager that came with an account read by listDirectory(), or null.
  *
- * A 404 here is the normal case for roughly a quarter of new accounts, not an
+ * No manager is the normal case for roughly a quarter of new accounts, not an
  * error — plan §13.3. It is returned as null so the caller can leave the RM
  * blank for HR rather than inventing one.
  *
- * @param {string} userId - Entra objectId
- * @returns {Promise<{id: string, displayName: string, mail: string}|null>}
+ * @param {object} account - a Graph user read with $expand=manager
+ * @returns {{id: string, displayName: string|null, mail: string|null}|null}
  */
-export async function getManager(userId) {
-  try {
-    const m = await graphGet(
-      `/users/${encodeURIComponent(userId)}/manager?$select=id,displayName,mail,userPrincipalName`
-    );
-    return {
-      id: m.id,
-      displayName: m.displayName || null,
-      mail: (m.mail || m.userPrincipalName || '').toLowerCase() || null,
-    };
-  } catch (err) {
-    if (err.status === 404) return null;
-    // Any other failure is worth knowing about but must not sink the whole
-    // scan: one unreadable manager should cost one blank RM, not the run.
-    logger.warn(`Could not read the manager for Entra user ${userId}: ${err.message}`);
-    return null;
-  }
+export function managerOf(account) {
+  const m = account?.manager;
+  if (!m?.id) return null;
+  return {
+    id: m.id,
+    displayName: m.displayName || null,
+    mail: String(m.mail || m.userPrincipalName || '').trim().toLowerCase() || null,
+  };
 }
+
+/**
+ * Every account on the given domains, enabled or not, each with its manager.
+ *
+ * H1 / U8 — one read, the way the MRA Reconcile flow does it
+ * (`$expand=manager`), in place of a listing followed by one manager request
+ * per new account. Two things differ from the flow, both on purpose:
+ *
+ *   · no `accountEnabled eq true` filter. The flow only looks for people to
+ *     rate; PEA's leaver pass exists to find the DISABLED accounts, so a
+ *     server-side filter would hide exactly the rows it needs.
+ *   · several domains. The flow allows aapnainfotech.com, mera.work and
+ *     karyakeeper.com; which of them PEA follows is a setting.
+ *
+ * @param {string[]} domains - e.g. ['aapnainfotech.com']; empty means no filtering
+ * @returns {Promise<{accounts: object[], complete: boolean}>}
+ */
+export async function listDirectory(domains = []) {
+  const { items, complete } = await graphCollect(
+    `${GRAPH}/users?$select=${USER_FIELDS}&$expand=${MANAGER_EXPAND}&$top=999`
+  );
+
+  // Guests and resource accounts live on other domains and are not joiners.
+  return { accounts: items.filter((u) => onDomains(accountEmail(u), domains)), complete };
+}
+
+/**
+ * The ids of the groups and distribution lists one account belongs to — H1.
+ *
+ * This is how PEA finds out who is on the Contractor list and the Leaders
+ * list. The MRA Reconcile flow asks the other way round — "who are the members
+ * of this list?" (`/groups/{id}/members`) — and that call needs a group
+ * permission. The flow signs in as its own app registration, which has one.
+ * PEA signs in as a different registration (HR_RPA), which has User.Read.All
+ * and no group permission: measured on 01-10-2026, the flow's two list calls
+ * come back 403 when PEA makes them.
+ *
+ * Asking each ACCOUNT which lists it is on needs only User.Read.All — the
+ * permission PEA already holds and already uses to read accounts. Graph
+ * answers with each group's id and nothing else about it, and the id is all
+ * that is wanted. So PEA reaches the flow's answer with no new permission.
+ *
+ * Direct memberships only, as the flow's own call is.
+ *
+ * @param {string} userId - the account's Entra objectId
+ * @returns {Promise<{groupIds: string[], complete: boolean}>}
+ * @throws {Error} with `status`
+ */
+export async function listMemberOf(userId) {
+  const { items, complete } = await graphCollect(
+    `${GRAPH}/users/${encodeURIComponent(userId)}/memberOf?$select=id&$top=999`
+  );
+  return { groupIds: items.map((g) => g.id).filter(Boolean), complete };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// H1 (AD sync, 01-10-2026) — the flow's own call, not used, kept for
+// reference. It is the direct way to read a list, but PEA's app registration
+// has no permission for it (GroupMember.Read.All) and none is to be requested.
+// listMemberOf() above reaches the same answer with User.Read.All.
+// ─────────────────────────────────────────────────────────────────────────────
+// export async function listGroupMembers(groupId) {
+//   const { items, complete } = await graphCollect(
+//     `${GRAPH}/groups/${encodeURIComponent(groupId)}/members` +
+//       '?$select=id,mail,userPrincipalName,displayName&$top=999'
+//   );
+//
+//   return {
+//     members: items.map((m) => ({
+//       id: m.id,
+//       mail: String(m.mail || m.userPrincipalName || '').trim().toLowerCase() || null,
+//       displayName: m.displayName || null,
+//     })),
+//     complete,
+//   };
+// }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// H1 (AD sync, 01-10-2026) — replaced by listDirectory() above, kept for
+// reference. It read one domain and no managers.
+// ─────────────────────────────────────────────────────────────────────────────
+// /**
+//  * Every account on the given domain, enabled or not.
+//  *
+//  * Deliberately one unfiltered listing rather than a query per question. The
+//  * tenant has ~260 accounts — two pages — and the intake scan needs both halves
+//  * of it: enabled recent accounts are candidate joiners, and DISABLED accounts
+//  * are what leaver detection looks for. A server-side `accountEnabled eq true`
+//  * filter would hide exactly the rows the leaver pass exists to find, so the
+//  * filtering happens here where both passes can see everything.
+//  *
+//  * @param {string} domain - e.g. 'aapnainfotech.com'; empty means no filtering
+//  * @returns {Promise<object[]>}
+//  */
+// export async function listAccounts(domain) {
+//   const suffix = `@${String(domain || '').trim().toLowerCase()}`;
+//   const users = await graphGetAll(`${GRAPH}/users?$select=${USER_FIELDS}&$top=999`);
+//
+//   if (suffix === '@') return users;
+//
+//   // Guests and resource accounts live on other domains and are not joiners.
+//   return users.filter((u) => (accountEmail(u) || '').endsWith(suffix));
+// }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// U8 (AD sync, 01-10-2026) — replaced by managerOf() above, kept for
+// reference. The manager now comes with the account in listDirectory(), so
+// there is no request per person.
+// ─────────────────────────────────────────────────────────────────────────────
+// /**
+//  * The manager Entra holds for a user, or null.
+//  *
+//  * A 404 here is the normal case for roughly a quarter of new accounts, not an
+//  * error — plan §13.3. It is returned as null so the caller can leave the RM
+//  * blank for HR rather than inventing one.
+//  *
+//  * @param {string} userId - Entra objectId
+//  * @returns {Promise<{id: string, displayName: string, mail: string}|null>}
+//  */
+// export async function getManager(userId) {
+//   try {
+//     const m = await graphGet(
+//       `/users/${encodeURIComponent(userId)}/manager?$select=id,displayName,mail,userPrincipalName`
+//     );
+//     return {
+//       id: m.id,
+//       displayName: m.displayName || null,
+//       mail: (m.mail || m.userPrincipalName || '').toLowerCase() || null,
+//     };
+//   } catch (err) {
+//     if (err.status === 404) return null;
+//     // Any other failure is worth knowing about but must not sink the whole
+//     // scan: one unreadable manager should cost one blank RM, not the run.
+//     logger.warn(`Could not read the manager for Entra user ${userId}: ${err.message}`);
+//     return null;
+//   }
+// }
 
 /**
  * Look up one account by its email address.
@@ -184,28 +349,32 @@ export async function getAccountByEmail(email) {
   }
 }
 
-/**
- * Attach managers to a list of users, a few at a time.
- *
- * Serial would be slow and unlimited concurrency invites Graph throttling, so
- * this walks the list in small batches. The counts involved are tens of users,
- * not thousands.
- *
- * @param {object[]} users
- * @param {number} [concurrency=4]
- * @returns {Promise<Map<string, object|null>>} objectId → manager
- */
-export async function fetchManagers(users, concurrency = 4) {
-  const result = new Map();
-
-  for (let i = 0; i < users.length; i += concurrency) {
-    const batch = users.slice(i, i + concurrency);
-    const managers = await Promise.all(batch.map((u) => getManager(u.id)));
-    batch.forEach((u, n) => result.set(u.id, managers[n]));
-  }
-
-  return result;
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// U8 (AD sync, 01-10-2026) — no longer called, kept for reference. It asked
+// Graph for each new account's manager in turn; see listDirectory().
+// ─────────────────────────────────────────────────────────────────────────────
+// /**
+//  * Attach managers to a list of users, a few at a time.
+//  *
+//  * Serial would be slow and unlimited concurrency invites Graph throttling, so
+//  * this walks the list in small batches. The counts involved are tens of users,
+//  * not thousands.
+//  *
+//  * @param {object[]} users
+//  * @param {number} [concurrency=4]
+//  * @returns {Promise<Map<string, object|null>>} objectId → manager
+//  */
+// export async function fetchManagers(users, concurrency = 4) {
+//   const result = new Map();
+//
+//   for (let i = 0; i < users.length; i += concurrency) {
+//     const batch = users.slice(i, i + concurrency);
+//     const managers = await Promise.all(batch.map((u) => getManager(u.id)));
+//     batch.forEach((u, n) => result.set(u.id, managers[n]));
+//   }
+//
+//   return result;
+// }
 
 /**
  * Does this account look like someone who has left?
@@ -239,17 +408,67 @@ export function assessLeaver(account) {
  * Confirm directory access without reading anyone's record.
  * Surfaced by the admin diagnostics endpoint so a missing grant is discovered
  * deliberately rather than by an empty inbox nobody questions.
+ *
+ * H1 — when the Contractor or Leaders list is set, it also confirms PEA can
+ * read which lists an account is on, the way the scan does (listMemberOf).
+ * Both reads use User.Read.All. What this cannot confirm is that a list id is
+ * right: PEA may not look a group up by id, so a wrong id shows up as a list
+ * nobody is on, and the scan stops and says so.
+ *
+ * @param {Array<{label: string, id: string}>} [groups] - the lists PEA is set to read
  * @returns {Promise<{ok: boolean, detail: string}>}
  */
-export async function verifyDirectoryAccess() {
+export async function verifyDirectoryAccess(groups = []) {
   try {
     const page = await graphGet(`${GRAPH}/users?$select=id&$top=1`);
     const reachable = Array.isArray(page.value);
+    /* H1 — the answer before the group check, kept for reference:
     return {
       ok: reachable,
       detail: reachable
         ? 'Directory readable (User.Read.All is granted).'
         : 'Graph responded but returned no user collection.',
+    };
+    */
+    if (!reachable) return { ok: false, detail: 'Graph responded but returned no user collection.' };
+
+    /* H1 — the check that asked each list for its members, kept for reference.
+       PEA's app registration has no permission for that call.
+
+    for (const group of groups.filter((g) => g?.id)) {
+      try {
+        await graphGet(`${GRAPH}/groups/${encodeURIComponent(group.id)}/members?$select=id&$top=1`);
+      } catch (err) {
+        return {
+          ok: false,
+          detail:
+            err.status === 403
+              ? `Accounts are readable, but not the ${group.label} — the app registration is missing GroupMember.Read.All.`
+              : err.status === 404
+                ? `Accounts are readable, but the ${group.label} was not found — check its id in Settings → New joiners.`
+                : `Accounts are readable, but the ${group.label} could not be read: ${err.message}`,
+        };
+      }
+    }
+    */
+
+    const lists = groups.filter((g) => g?.id);
+    if (lists.length && page.value[0]?.id) {
+      try {
+        await graphGet(`${GRAPH}/users/${encodeURIComponent(page.value[0].id)}/memberOf?$select=id&$top=1`);
+      } catch (err) {
+        return {
+          ok: false,
+          detail: `Accounts are readable, but not which lists they are on (${lists.map((g) => g.label).join(' and ')}): ${err.message}`,
+        };
+      }
+    }
+
+    return {
+      ok: true,
+      detail: lists.length
+        ? 'Directory readable, including which lists an account is on (User.Read.All).'
+        : 'Directory readable (User.Read.All is granted).',
     };
   } catch (err) {
     return {

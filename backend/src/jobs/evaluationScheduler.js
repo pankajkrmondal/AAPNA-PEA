@@ -33,7 +33,10 @@ import config from '../config/index.js';
 import { queueEmail } from '../services/notification.service.js';
 import { notifyStaff } from '../services/inAppNotification.service.js';
 import { runDeadlineAlerts } from '../services/confirmationDeadline.service.js';
-import { todayIn, dateIn, toDateString, addDays } from '../utils/dateUtils.js';
+import { notifyJoinersWaiting } from '../services/joinerIntake.service.js';
+import { runAutoArchive } from '../services/archive.service.js';
+import { hasRecipientColumns } from '../utils/schemaCapabilities.js';
+import { todayIn, dateIn, toDateString, addDays, formatDisplay } from '../utils/dateUtils.js';
 
 let task = null;
 
@@ -147,13 +150,15 @@ export async function runEvaluationSweep({ dryRun = false } = {}) {
   logger.info(`[sweep] ${due.length} evaluation(s) due as at ${toDateString(today)}`);
 
   const validity = await numSetting('token_validity_days', 30);
+  const stampRecipient = await hasRecipientColumns();
   const rows = [];
   let sent = 0;
   let failed = 0;
   let suppressed = 0;
 
   for (const cycle of due) {
-    const label = `${cycle.employee.full_name} eval ${cycle.seq_no} (due ${toDateString(cycle.due_date)})`;
+    // Shown to HR in the sweep result and the bell, so it reads dd-MM-yyyy.
+    const label = `${cycle.employee.full_name} eval ${cycle.seq_no} (due ${formatDisplay(cycle.due_date)})`;
 
     if (dryRun) {
       rows.push({ cycle: label, to: cycle.employee.rm_email, action: 'would send' });
@@ -190,6 +195,18 @@ export async function runEvaluationSweep({ dryRun = false } = {}) {
           modified_at: new Date(),
         },
       });
+
+      // M3 / U13 — record who this link went to. Whoever holds the link is who
+      // answers, and the answer is credited to them even if the manager changes
+      // before it arrives. COALESCE: an evaluation HR reopened already names
+      // the person it went back to.
+      if (stampRecipient) {
+        await prisma.$executeRaw`
+          UPDATE pea_evaluation_cycles
+             SET sent_to_name = COALESCE(sent_to_name, ${cycle.employee.rm_name}),
+                 sent_to_email = COALESCE(sent_to_email, ${String(cycle.employee.rm_email || '').trim().toLowerCase()})
+           WHERE id = ${cycle.id}`;
+      }
 
       sent += 1;
       rows.push({ cycle: label, to: result.to.join(', '), action: result.status });
@@ -428,11 +445,36 @@ export async function startScheduler() {
         // it is exactly what the old system suffered from — so this is loud.
         logger.error(`⏰ DAILY SWEEP FAILED: ${err.message}`, { stack: err.stack });
       }
+
+      // H1 (07-10-2026) — the morning reminder to admins and HR while new
+      // joiners wait for review. Here, not in runSweep(), so "Send due emails
+      // now…" and its preview never send it; isolated, so it can never cost
+      // anyone an evaluation email.
+      try {
+        await notifyJoinersWaiting({ reason: 'daily' });
+      } catch (err) {
+        logger.error(`⏰ Joiner review reminder failed: ${err.message}`, { stack: err.stack });
+      }
+
+      // Archive (07-10-2026) — the morning after a probation is decided or
+      // someone leaves, they move to the archive. After the sweep, so nothing
+      // due today is missed; isolated, so it can never cost an evaluation email.
+      try {
+        await runAutoArchive();
+      } catch (err) {
+        logger.error(`⏰ Auto-archive failed: ${err.message}`, { stack: err.stack });
+      }
     },
     { timezone }
   );
 
   logger.info(`⏰ Scheduler started — "${expression}" (${timezone})`);
+
+  // Archive (07-10-2026) — say in the log how many the next morning pass would
+  // archive, so the first run after the DDL is no surprise. Archives nobody.
+  runAutoArchive({ dryRun: true }).catch((err) => {
+    logger.warn(`[archive] start-up dry run failed: ${err.message}`);
+  });
 }
 
 /**

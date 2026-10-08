@@ -12,7 +12,7 @@
 export const MODULES = Object.freeze([
   { key: 'dashboard', label: 'Dashboard' },
   { key: 'evaluations', label: 'Evaluations' },
-  { key: 'employees', label: 'Employees' },
+  { key: 'employees', label: 'Commandos' },
   { key: 'new_joiners', label: 'New joiners' },
   { key: 'analytics', label: 'Trends' },
   { key: 'import_sheet', label: 'Upload sheet' },

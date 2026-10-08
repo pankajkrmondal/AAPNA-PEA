@@ -98,9 +98,21 @@ export function avatarTone(name) {
   return AVATAR_TONES[h % AVATAR_TONES.length];
 }
 
+/**
+ * "22-09-2026" — the board's date. A plain YYYY-MM-DD is never shifted by
+ * timezone.
+ *
+ * H6 / U4 (HR, 29-09-2026): one format everywhere, so the compact "22-Sep" is
+ * gone — "22-09" with no year reads like a range. This is formatDate() under
+ * the name the board already calls.
+ */
+export function shortDate(value) {
+  return formatDate(value);
+}
+
+/* H6 / U4 — the compact form before, kept for reference.
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-/** "22-Sep" — the board's compact date. A plain YYYY-MM-DD is never shifted by timezone. */
 export function shortDate(value) {
   if (!value) return '—';
   const plain = typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
@@ -108,8 +120,9 @@ export function shortDate(value) {
   if (Number.isNaN(d.getTime())) return '—';
   return `${String(d.getDate()).padStart(2, '0')}-${MONTHS[d.getMonth()]}`;
 }
+*/
 
-/** "22-Sep · 10:05" — for the status timeline, where the hour matters. */
+/** "22-09-2026 · 10:05" — for the status timeline, where the hour matters. */
 export function shortDateTime(value) {
   if (!value) return '—';
   const d = new Date(value);
@@ -136,9 +149,21 @@ export function evaluationLine(r, { cohort = true } = {}) {
   return parts.join(' · ');
 }
 
-/** "Submitted 22-Sep-2026 by Kavita Rao · 12 days after sending · 2 reminders" */
+/** Who answered a submitted evaluation — U13. The name kept with the submission, not today's manager. */
+export const answeredName = (r) => r.answeredBy || r.rmName || r.submittedBy || 'the manager';
+
+/** Who has the form now — M3 / M7. The person the link was issued to. */
+export const holderName = (r) => r.withName || r.rmName || 'the manager';
+
+/** "acting manager" when HR sent this one to someone else, otherwise "reporting manager". */
+export const holderRole = (r) => (r.delegated ? 'acting manager' : 'reporting manager');
+
+/** "Submitted 22-09-2026 by Kavita Rao · 12 days after sending · 2 reminders" */
 export function submittedLine(r) {
-  const parts = [`Submitted ${formatDate(r.submittedAt)} by ${r.rmName || r.submittedBy || 'the manager'}`];
+  // U13 — by whoever actually answered. It was `r.rmName || r.submittedBy`,
+  // the CURRENT manager first, whoever had answered.
+  const parts = [`Submitted ${formatDate(r.submittedAt)} by ${answeredName(r)}`];
+  if (r.enteredBy) parts.push('entered by HR');
   if (r.daysAfterSending !== null && r.daysAfterSending !== undefined) {
     parts.push(r.daysAfterSending === 0 ? 'same day as sending' : `${daysLabel(r.daysAfterSending)} after sending`);
   }

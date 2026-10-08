@@ -10,7 +10,7 @@ function Brand({ onDark = false }) {
       <div className="pea-brand-mark">PEA</div>
       <div className="pea-brand-text">
         <span className="pea-brand-name">AAPNA</span>
-        <span className="pea-brand-sub">Evaluation Platform</span>
+        <span className="pea-brand-sub">Probation Period Evaluation Platform</span>
       </div>
     </div>
   );

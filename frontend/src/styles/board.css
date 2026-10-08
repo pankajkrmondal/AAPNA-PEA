@@ -557,6 +557,72 @@ div.pea-card, section.pea-card, li.pea-card, article.pea-card {
 .pea-legend { display: flex; flex-wrap: wrap; align-items: center; font-size: 12.5px; color: var(--pea-text-muted); }
 .pea-legend > span:first-child { margin-right: 2px; }
 
+/* ── Board tidy-up (01-10-2026) ──────────────────────────────────────────
+   The top of the board read as five loose rows: a heading, a wide box with
+   one number in a corner of it, chips, filters, and a key with the view
+   switch stuck on the end. It is three now — heading with the average beside
+   it, one toolbar, the key. These rules follow the ones above and override
+   them; the earlier rules are left as they were, for reference. */
+
+.pea-board-hero { align-items: flex-end; margin-bottom: 0; }
+
+/* One figure, sized to what it says — at every width, so the narrower layouts
+   below do not stretch it back into a band. */
+.pea-board-hero .pea-figures--single { display: block; flex: none; width: auto; }
+.pea-figure--avg { min-height: 0; padding: 14px 22px 15px 18px; gap: 6px; }
+.pea-figure .pea-figure-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  color: var(--pea-text-muted);
+}
+.pea-figure-line { display: flex; align-items: baseline; gap: 7px; }
+.pea-figure--avg strong { font-size: 34px; letter-spacing: -.02em; }
+.pea-figure--avg em { font-style: normal; font-size: 14px; font-weight: 500; color: var(--pea-text-muted); }
+.pea-figure--avg .pea-figure-trend { align-self: center; margin: 0 0 0 16px; }
+
+/* Filters over chips, as one surface with a hairline between. */
+.pea-board-toolbar {
+  display: flex;
+  flex-direction: column;
+  background: var(--pea-surface);
+  border: 1px solid var(--pea-border);
+  border-radius: 14px;
+  box-shadow: var(--pea-shadow);
+}
+.pea-board-toolbar .pea-filters { padding: 12px 14px; }
+.pea-board-toolbar .pea-filter-search { flex: 1 1 240px; width: auto; max-width: 340px; }
+.pea-board-toolbar .pea-chips {
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--pea-border);
+  background: var(--pea-surface-2);
+  border-radius: 0 0 13px 13px;
+}
+.pea-board-toolbar .pea-chip { height: 32px; padding: 0 12px; font-size: 13px; border-color: var(--pea-border); }
+.pea-board-toolbar .pea-chip:hover { border-color: var(--pea-green-500); }
+.pea-board-toolbar .pea-chip.is-active { border-color: var(--pea-text); }
+:root[data-theme='dark'] .pea-board-toolbar .pea-chip.is-active { border-color: var(--pea-green-700); }
+/* "Needs attention" cuts across the statuses, so it stands apart at the end. */
+.pea-board-toolbar .pea-chip--attention {
+  margin-left: auto;
+  border-color: color-mix(in srgb, var(--pea-crit) 35%, transparent);
+}
+.pea-board-toolbar .pea-chip--attention.is-active { border-color: var(--pea-crit); }
+
+.pea-legend-row { padding: 0 4px; margin-top: -2px; }
+.pea-legend-count { font-size: 12.5px; color: var(--pea-text-muted); font-variant-numeric: tabular-nums; }
+
+/* A date is one thing; "22-09-" over "2026" in the table was not. */
+.pea-board-table .pea-cell-date { white-space: nowrap; }
+
+@media (max-width: 720px) {
+  /* On a phone the filters stack, so the spacer that pushes the view switch
+     to the right has nothing to push against. */
+  .pea-board-toolbar .pea-filters .pea-grow { display: none; }
+  .pea-board-toolbar .pea-filter-search { flex-basis: 100%; max-width: none; }
+}
+
 .pea-banner {
   display: flex;
   align-items: center;
@@ -1049,8 +1115,12 @@ button.pea-tile:hover { border-color: var(--pea-green-200); box-shadow: var(--pe
      chip push the whole page sideways. */
   .pea-header { gap: 8px !important; padding: 0 10px !important; overflow: hidden; }
   .pea-crumbs > :not(:last-child) { display: none; }
+  /* Top bar tidy-up (01-10-2026) — the warning is no longer an antd Tag and
+     the chip's first child is the avatar now, so these two no longer apply.
+     Their replacements are in app.css, in the mobile block.
   .pea-header .ant-tag { max-width: 34px; overflow: hidden; white-space: nowrap; padding-inline: 6px; }
   .pea-header .pea-user-chip > div:first-child { display: none; }
+  */
   .pea-profile-pills { flex-direction: row; align-items: center; }
   /* The status timeline stacks on a phone. */
   .pea-steps { grid-auto-flow: row; gap: 18px; }

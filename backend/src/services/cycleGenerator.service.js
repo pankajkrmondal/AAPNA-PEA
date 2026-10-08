@@ -10,11 +10,37 @@
  * Each evaluation covers the period since the previous one, which is what the
  * email tells the manager they are rating.
  *
- * Extensions are NOT generated up front — they only exist once a manager
- * actually chooses "Extend" on the final cycle:
+ * Extensions are NOT generated up front — they only exist once someone
+ * actually chooses "Extend" on the final evaluation (the manager on the form,
+ * or HR with "Record decision"):
  *
- *   Extend for 1 month   → one extra evaluation at DOJ + 210 days
- *   Extend for 2 months  → extras at DOJ + 210 and DOJ + 240 days
+ *   Extend for 1 month   → one more evaluation, 30 days after the last one
+ *   Extend for 2 months  → two more, 30 and 60 days after the last one
+ *
+ * ── The extension rule (HR, review points B1 / B2 / M2, 01-10-2026) ─────────
+ *
+ *   · Nobody's probation runs past 8 months. That is at most TWO extension
+ *     evaluations per person, ever:
+ *
+ *       Fresher      6 evaluations + a 7th and an 8th
+ *       Experienced  3 evaluations + a 4th and a 5th
+ *
+ *   · An extension evaluation covers the 30 days after the previous
+ *     evaluation's period ended. It is dated from there — not from a fixed
+ *     number of days after joining. Dating from joining is what made a second
+ *     extension land on day 210 again: already past, mailed the next morning,
+ *     and covering a month that had been rated once already (B1).
+ *
+ *   · What the final evaluation may offer follows from what is left:
+ *
+ *       extension evaluations already scheduled    the decision offers
+ *       0                                          Confirm · Not confirm · Extend 1 · Extend 2
+ *       1                                          Confirm · Not confirm · Extend 1
+ *       2                                          Confirm · Not confirm
+ *
+ *     Asking for more than is left is refused, loudly. Before, anything past
+ *     evaluation 8 was dropped in silence, which left someone "Extended" with
+ *     no evaluation scheduled and a manager told a link was on its way (B2).
  *
  * ── Why this is generated into a table rather than computed on the fly ──────
  *
@@ -30,6 +56,7 @@
  */
 import prisma from '../config/database.js';
 import logger from '../config/logger.js';
+import AppError from '../utils/AppError.js';
 import { addDays, shiftOffWeekend, toUtcMidnight, toDateString } from '../utils/dateUtils.js';
 
 /** Cadence per employee type. Mirrors pea_settings, kept here as the fallback. */
@@ -38,11 +65,52 @@ export const CADENCE = Object.freeze({
   experienced: { intervalDays: 60, cycles: 3 },
 });
 
-/** Extension offsets in days from DOJ, as used by the original flow. */
+/* B1 / M2 — replaced, kept for reference. Extensions were fixed offsets from
+   the joining date, as the original flow had them:
+
 export const EXTENSION_DAYS = Object.freeze({
   'Extend for 1 month': [210],
   'Extend for 2 months': [210, 240],
 });
+*/
+
+/** How many extension evaluations each "Extend" decision adds. */
+export const EXTENSION_MONTHS = Object.freeze({
+  'Extend for 1 month': 1,
+  'Extend for 2 months': 2,
+});
+
+/** An extension evaluation covers this many days, on either track. */
+export const EXTENSION_INTERVAL_DAYS = 30;
+
+/** No probation runs past 8 months: two extension evaluations at most. */
+export const MAX_EXTENSION_CYCLES = 2;
+
+/**
+ * How many extension evaluations this person may still be given.
+ * @param {Array<{is_extension: boolean}>} cycles - every cycle the employee has
+ * @returns {number} 0, 1 or 2
+ */
+export function extensionsLeft(cycles = []) {
+  const used = cycles.filter((c) => c.is_extension).length;
+  return Math.max(0, MAX_EXTENSION_CYCLES - used);
+}
+
+/**
+ * The decisions the final evaluation may offer, given what is left. Used by the
+ * manager's form, by "Record decision" in the app, and by both when they
+ * validate what comes back — so the three can never disagree.
+ *
+ * @param {number} left - from extensionsLeft()
+ * @returns {string[]} confirmation_status values, in the order they are shown
+ */
+export function allowedDecisions(left) {
+  return [
+    'Confirmed',
+    'Not Confirmed',
+    ...Object.keys(EXTENSION_MONTHS).filter((status) => EXTENSION_MONTHS[status] <= left),
+  ];
+}
 
 /**
  * Build the base evaluation schedule for an employee.
@@ -81,11 +149,42 @@ export function buildSchedule({ doj, is_experienced }) {
 /**
  * Build the extra cycles for an extension decision.
  *
- * @param {{ doj: Date|string }} employee
+ * Pure — it does not know or check how many extensions are left. That is
+ * generateExtensionCycles()'s job; this only works out the dates.
+ *
+ * Anchored on the period END of the last evaluation, not its due date: the due
+ * date may have been moved off a weekend, and carrying that shift forward would
+ * make every later period drift by a day or two.
+ *
+ * @param {{seq_no: number, period_to?: Date|string|null, due_date?: Date|string}} lastCycle
+ *   the employee's highest-numbered evaluation
  * @param {string} confirmationStatus - 'Extend for 1 month' | 'Extend for 2 months'
- * @param {number} lastSeqNo - highest seq_no already used
  * @returns {Array<object>} same shape as buildSchedule(), or [] if not an extension
  */
+export function buildExtensionSchedule(lastCycle, confirmationStatus) {
+  const count = EXTENSION_MONTHS[confirmationStatus];
+  if (!count) return [];
+
+  const anchor = toUtcMidnight(lastCycle?.period_to || lastCycle?.due_date);
+  if (!anchor) throw new Error('Cannot date an extension: the last evaluation has no period end');
+
+  return Array.from({ length: count }, (_, i) => {
+    const periodTo = addDays(anchor, EXTENSION_INTERVAL_DAYS * (i + 1));
+    return {
+      seq_no: lastCycle.seq_no + i + 1,
+      due_date: shiftOffWeekend(periodTo),
+      // Each one picks up where the one before stopped: after a fresher's
+      // evaluation 6 that is month 6→7, then 7→8.
+      period_from: addDays(anchor, EXTENSION_INTERVAL_DAYS * i),
+      period_to: periodTo,
+      is_extension: true,
+    };
+  });
+}
+
+/* B1 / M2 — replaced, kept for reference. Dated every extension from the
+   joining date, so a second extension repeated day 210:
+
 export function buildExtensionSchedule({ doj }, confirmationStatus, lastSeqNo) {
   const offsets = EXTENSION_DAYS[confirmationStatus];
   if (!offsets) return [];
@@ -106,6 +205,7 @@ export function buildExtensionSchedule({ doj }, confirmationStatus, lastSeqNo) {
     };
   });
 }
+*/
 
 /**
  * Create the base cycles for an employee in the database.
@@ -138,24 +238,52 @@ export async function generateCycles(employeeId, employee, tx = prisma) {
 }
 
 /**
- * Create extension cycles after a manager chooses "Extend …".
+ * Create extension cycles after someone chooses "Extend …".
  *
- * Called from the evaluation submit path (Day 3), not from the importer:
- * an extension is a decision, not a property of the joining date.
+ * Called from the evaluation submit path and from HR's "Record decision", not
+ * from the importer: an extension is a decision, not a property of the joining
+ * date.
+ *
+ * Refuses, rather than quietly creating fewer, when the decision asks for more
+ * extension evaluations than this person has left. Both callers offer only what
+ * is allowed, so reaching the refusal means a stale form or a hand-made request.
  *
  * @param {bigint|number} employeeId
  * @param {string} confirmationStatus
  * @param {object} [tx]
  * @returns {Promise<number>} cycles created
+ * @throws {AppError} 409 when the 8-month limit would be passed
  */
 export async function generateExtensionCycles(employeeId, confirmationStatus, tx = prisma) {
-  const employee = await tx.pea_employees.findUnique({ where: { id: employeeId } });
-  if (!employee) throw new Error(`Employee ${employeeId} not found`);
+  const wanted = EXTENSION_MONTHS[confirmationStatus] || 0;
+  if (!wanted) return 0;
 
   const existing = await tx.pea_evaluation_cycles.findMany({
     where: { employee_id: employeeId },
-    select: { seq_no: true },
+    select: { seq_no: true, is_extension: true, period_to: true, due_date: true },
+    orderBy: { seq_no: 'asc' },
   });
+  if (existing.length === 0) throw new Error(`Employee ${employeeId} has no evaluations to extend from`);
+
+  const left = extensionsLeft(existing);
+  if (wanted > left) {
+    throw new AppError(
+      left === 0
+        ? 'This probation has already been extended to the 8-month limit, so it can only be confirmed or not confirmed.'
+        : 'Only one more month of extension is available — a probation cannot run past 8 months.',
+      409
+    );
+  }
+
+  const extras = buildExtensionSchedule(existing.at(-1), confirmationStatus);
+
+  /* B2 / M2 — replaced, kept for reference. The old code dated the extras from
+     the joining date and then dropped, without a word, any that already existed
+     or fell past evaluation 8:
+
+  const employee = await tx.pea_employees.findUnique({ where: { id: employeeId } });
+  if (!employee) throw new Error(`Employee ${employeeId} not found`);
+
   const lastSeq = existing.length ? Math.max(...existing.map((c) => c.seq_no)) : 0;
   const taken = new Set(existing.map((c) => c.seq_no));
 
@@ -164,6 +292,7 @@ export async function generateExtensionCycles(employeeId, confirmationStatus, tx
   );
 
   if (extras.length === 0) return 0;
+  */
 
   await tx.pea_evaluation_cycles.createMany({
     data: extras.map((c) => ({ ...c, employee_id: employeeId })),

@@ -114,18 +114,36 @@ describe('joiner suggestions carry their provenance', () => {
     assignedLicenses: [{ skuId: 'x' }],
   };
 
+  // H1 (07-10-2026) — the suggestion is the day AFTER the account was created.
+  // Before, it was the creation date itself:
+  //   assert.equal(toDateString(s.suggested_doj), '2026-09-01');
+  //   assert.equal(s.doj_source, 'account_created', …);
   test('the DOJ is offered as a proxy and labelled as one', () => {
     const s = buildSuggestion(account, null, null);
 
-    assert.equal(toDateString(s.suggested_doj), '2026-09-01');
+    assert.equal(toDateString(s.suggested_doj), '2026-09-02');
     assert.equal(
       s.doj_source,
-      'account_created',
-      'employeeHireDate is 0% populated, so the account date is all there is — ' +
-        'and the UI must be able to say so'
+      'created_next_day',
+      'Microsoft 365 will never hold the date of joining, so the day after the account was ' +
+        'created is all there is — and the UI must be able to say so'
     );
   });
 
+  test('the day after is counted in India time, not UTC', () => {
+    // 20:30 UTC on 28-09 is 02:00 on 29-09 in India, so the suggestion is 30-09.
+    const s = buildSuggestion({ ...account, createdDateTime: '2026-09-28T20:30:00Z' }, null, null);
+    assert.equal(toDateString(s.suggested_doj), '2026-09-30');
+  });
+
+  test('the designation is kept with the suggestion, for the inbox to suggest a track from', () => {
+    const s = buildSuggestion({ ...account, jobTitle: 'Associate Software Engineer' }, null, null);
+    assert.equal(s.raw_graph.jobTitle, 'Associate Software Engineer');
+  });
+
+  // H1 (07-10-2026) — still true of the stored suggestion. The track is now
+  // SUGGESTED from the job title when the inbox is read (serialiseCandidate),
+  // never stored, so a change to the word lists shows at once.
   test('fresher vs experienced is never suggested — employeeType is 0% populated', () => {
     const s = buildSuggestion(account, null, null);
     assert.ok(!('is_experienced' in s));

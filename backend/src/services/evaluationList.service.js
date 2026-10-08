@@ -29,7 +29,10 @@ import logger from '../config/logger.js';
 import AppError from '../utils/AppError.js';
 import { queueEmail } from './notification.service.js';
 import { leaverHoldApplies } from './evaluation.service.js';
-import { todayIn, addDays, toDateString, daysBetween } from '../utils/dateUtils.js';
+// H4 — toDateString and daysBetween were used only by the removed work list:
+// import { todayIn, addDays, toDateString, daysBetween } from '../utils/dateUtils.js';
+import { todayIn, addDays } from '../utils/dateUtils.js';
+import { notArchivedSql } from '../utils/archiveScope.js';
 
 /** Statuses meaning the link is out and nobody has responded. */
 const AWAITING = ['email_sent', 'opened'];
@@ -40,55 +43,63 @@ const SOON_DAYS = 14;
 /** The database CHECK on reminder_count. See remindNow() for why it matters. */
 const MAX_REMINDER_COUNT = 2;
 
-/**
- * Only evaluations for people PEA would actually chase. A left, held or
- * already-decided employee's rows are noise on a work list.
- */
-const listableEmployee = {
-  employment_status: 'active',
-};
+// ─────────────────────────────────────────────────────────────────────────────
+// H4 (HR, 29-09-2026) — the work list screen is removed, so the code that fed
+// it is commented out here and further down, not deleted: listableEmployee,
+// scopes(), listEvaluations() and shape(). What stays in use: getCounts() (the
+// Overview figures), remindNow() (the board's "Remind now") and listEmails()
+// (the Email log). To restore the list, uncomment these four, the two imports
+// noted at the top, and GET /api/evaluations in evaluationList.routes.js.
+// ─────────────────────────────────────────────────────────────────────────────
+// /**
+//  * Only evaluations for people PEA would actually chase. A left, held or
+//  * already-decided employee's rows are noise on a work list.
+//  */
+// const listableEmployee = {
+//   employment_status: 'active',
+// };
 
-/**
- * The tab definitions: one place, used for both the counts and the rows.
- * @param {Date} today
- * @returns {Record<string, {label: string, where: object}>}
- */
-function scopes(today) {
-  const soon = addDays(today, SOON_DAYS);
-
-  return {
-    waiting: {
-      label: 'Waiting for manager',
-      where: { status: { in: AWAITING } },
-    },
-    not_sent: {
-      label: 'Not sent yet',
-      where: { status: 'pending', due_date: { lte: today } },
-    },
-    due_soon: {
-      label: `Due in ${SOON_DAYS} days`,
-      where: { status: 'pending', due_date: { gt: today, lte: soon } },
-    },
-    decisions: {
-      label: 'Decisions due',
-      // The cycle carrying the confirm/extend question, still unanswered.
-      where: {
-        status: { in: [...AWAITING, 'pending'] },
-        due_date: { lte: soon },
-        employee: { confirmation_status: null },
-        is_final: true,
-      },
-    },
-    submitted: {
-      label: 'Submitted',
-      where: { status: 'completed' },
-    },
-    all: {
-      label: 'All',
-      where: {},
-    },
-  };
-}
+// /**
+//  * The tab definitions: one place, used for both the counts and the rows.
+//  * @param {Date} today
+//  * @returns {Record<string, {label: string, where: object}>}
+//  */
+// function scopes(today) {
+//   const soon = addDays(today, SOON_DAYS);
+//
+//   return {
+//     waiting: {
+//       label: 'Waiting for manager',
+//       where: { status: { in: AWAITING } },
+//     },
+//     not_sent: {
+//       label: 'Not sent yet',
+//       where: { status: 'pending', due_date: { lte: today } },
+//     },
+//     due_soon: {
+//       label: `Due in ${SOON_DAYS} days`,
+//       where: { status: 'pending', due_date: { gt: today, lte: soon } },
+//     },
+//     decisions: {
+//       label: 'Decisions due',
+//       // The cycle carrying the confirm/extend question, still unanswered.
+//       where: {
+//         status: { in: [...AWAITING, 'pending'] },
+//         due_date: { lte: soon },
+//         employee: { confirmation_status: null },
+//         is_final: true,
+//       },
+//     },
+//     submitted: {
+//       label: 'Submitted',
+//       where: { status: 'completed' },
+//     },
+//     all: {
+//       label: 'All',
+//       where: {},
+//     },
+//   };
+// }
 
 /**
  * Is this the cycle on which the confirmation decision is asked?
@@ -123,153 +134,155 @@ export async function getCounts() {
       count(*)::int                                                                 AS all
       FROM pea_evaluation_cycles c
       JOIN pea_employees e ON e.id = c.employee_id
-     WHERE e.employment_status = 'active'`;
+     WHERE e.employment_status = 'active'
+       ${await notArchivedSql('e')}`;
+  // Archive (07-10-2026) — the line above leaves archived Commandos out.
 
   return row;
 }
 
-/**
- * One page of evaluations.
- *
- * @param {object} q
- * @param {string} [q.scope='all'] - a key of scopes()
- * @param {string} [q.search] - employee name or office email
- * @param {string} [q.rm] - reporting manager email
- * @param {'fresher'|'experienced'} [q.cohort]
- * @param {string} [q.dueFrom] @param {string} [q.dueTo] - YYYY-MM-DD
- * @param {number} [q.page=1] @param {number} [q.limit=50]
- * @returns {Promise<{rows: object[], total: number, page: number, limit: number, counts: object}>}
- */
-export async function listEvaluations(q = {}) {
-  const today = todayIn(config.scheduler.timezone);
-  const table = scopes(today);
-  const scope = table[q.scope] ? q.scope : 'all';
+// /**
+//  * One page of evaluations.
+//  *
+//  * @param {object} q
+//  * @param {string} [q.scope='all'] - a key of scopes()
+//  * @param {string} [q.search] - employee name or office email
+//  * @param {string} [q.rm] - reporting manager email
+//  * @param {'fresher'|'experienced'} [q.cohort]
+//  * @param {string} [q.dueFrom] @param {string} [q.dueTo] - YYYY-MM-DD
+//  * @param {number} [q.page=1] @param {number} [q.limit=50]
+//  * @returns {Promise<{rows: object[], total: number, page: number, limit: number, counts: object}>}
+//  */
+// export async function listEvaluations(q = {}) {
+//   const today = todayIn(config.scheduler.timezone);
+//   const table = scopes(today);
+//   const scope = table[q.scope] ? q.scope : 'all';
+//
+//   const page = Math.max(1, parseInt(q.page, 10) || 1);
+//   const limit = Math.min(200, Math.max(1, parseInt(q.limit, 10) || 50));
+//
+//   const where = {
+//     ...table[scope].where,
+//     employee: { ...listableEmployee, ...(table[scope].where.employee || {}) },
+//   };
+//
+//   // `is_final` is not a column — it is the marker the decisions scope uses.
+//   // Translated here into the one thing Prisma can express, and finished off
+//   // with a post-filter below.
+//   const decisionsOnly = where.is_final === true;
+//   delete where.is_final;
+//
+//   const search = String(q.search || '').trim();
+//   if (search) {
+//     where.employee.OR = [
+//       { full_name: { contains: search, mode: 'insensitive' } },
+//       { office_email: { contains: search, mode: 'insensitive' } },
+//     ];
+//   }
+//
+//   const rm = String(q.rm || '').trim().toLowerCase();
+//   if (rm) where.employee.rm_email = { equals: rm, mode: 'insensitive' };
+//
+//   if (q.cohort === 'fresher') where.employee.is_experienced = false;
+//   if (q.cohort === 'experienced') where.employee.is_experienced = true;
+//
+//   if (q.dueFrom || q.dueTo) {
+//     where.due_date = {
+//       ...(where.due_date || {}),
+//       ...(q.dueFrom ? { gte: new Date(q.dueFrom) } : {}),
+//       ...(q.dueTo ? { lte: new Date(q.dueTo) } : {}),
+//     };
+//   }
+//
+//   // The decisions scope needs "highest seq_no for this employee", which Prisma
+//   // cannot express. Resolve those ids first and constrain by them.
+//   if (decisionsOnly) {
+//     const finals = await prisma.$queryRaw`
+//       SELECT c.id::text AS id
+//         FROM pea_evaluation_cycles c
+//        WHERE ${FINAL_CYCLE_SQL}`;
+//     where.id = { in: finals.map((f) => BigInt(f.id)) };
+//   }
+//
+//   const [rows, total, counts] = await Promise.all([
+//     prisma.pea_evaluation_cycles.findMany({
+//       where,
+//       include: {
+//         employee: {
+//           select: {
+//             id: true, full_name: true, office_email: true, is_experienced: true,
+//             rm_name: true, rm_email: true, pl_email: true, confirmation_status: true,
+//           },
+//         },
+//       },
+//       orderBy: [{ due_date: 'asc' }, { employee_id: 'asc' }],
+//       skip: (page - 1) * limit,
+//       take: limit,
+//     }),
+//     prisma.pea_evaluation_cycles.count({ where }),
+//     getCounts(),
+//   ]);
+//
+//   return {
+//     rows: rows.map((c) => shape(c, today)),
+//     total,
+//     page,
+//     limit,
+//     counts,
+//     scope,
+//     scopes: Object.entries(table).map(([key, s]) => ({ key, label: s.label })),
+//   };
+// }
 
-  const page = Math.max(1, parseInt(q.page, 10) || 1);
-  const limit = Math.min(200, Math.max(1, parseInt(q.limit, 10) || 50));
-
-  const where = {
-    ...table[scope].where,
-    employee: { ...listableEmployee, ...(table[scope].where.employee || {}) },
-  };
-
-  // `is_final` is not a column — it is the marker the decisions scope uses.
-  // Translated here into the one thing Prisma can express, and finished off
-  // with a post-filter below.
-  const decisionsOnly = where.is_final === true;
-  delete where.is_final;
-
-  const search = String(q.search || '').trim();
-  if (search) {
-    where.employee.OR = [
-      { full_name: { contains: search, mode: 'insensitive' } },
-      { office_email: { contains: search, mode: 'insensitive' } },
-    ];
-  }
-
-  const rm = String(q.rm || '').trim().toLowerCase();
-  if (rm) where.employee.rm_email = { equals: rm, mode: 'insensitive' };
-
-  if (q.cohort === 'fresher') where.employee.is_experienced = false;
-  if (q.cohort === 'experienced') where.employee.is_experienced = true;
-
-  if (q.dueFrom || q.dueTo) {
-    where.due_date = {
-      ...(where.due_date || {}),
-      ...(q.dueFrom ? { gte: new Date(q.dueFrom) } : {}),
-      ...(q.dueTo ? { lte: new Date(q.dueTo) } : {}),
-    };
-  }
-
-  // The decisions scope needs "highest seq_no for this employee", which Prisma
-  // cannot express. Resolve those ids first and constrain by them.
-  if (decisionsOnly) {
-    const finals = await prisma.$queryRaw`
-      SELECT c.id::text AS id
-        FROM pea_evaluation_cycles c
-       WHERE ${FINAL_CYCLE_SQL}`;
-    where.id = { in: finals.map((f) => BigInt(f.id)) };
-  }
-
-  const [rows, total, counts] = await Promise.all([
-    prisma.pea_evaluation_cycles.findMany({
-      where,
-      include: {
-        employee: {
-          select: {
-            id: true, full_name: true, office_email: true, is_experienced: true,
-            rm_name: true, rm_email: true, pl_email: true, confirmation_status: true,
-          },
-        },
-      },
-      orderBy: [{ due_date: 'asc' }, { employee_id: 'asc' }],
-      skip: (page - 1) * limit,
-      take: limit,
-    }),
-    prisma.pea_evaluation_cycles.count({ where }),
-    getCounts(),
-  ]);
-
-  return {
-    rows: rows.map((c) => shape(c, today)),
-    total,
-    page,
-    limit,
-    counts,
-    scope,
-    scopes: Object.entries(table).map(([key, s]) => ({ key, label: s.label })),
-  };
-}
-
-/**
- * One row as the screen needs it, with the derived facts the table shows.
- * @param {object} c - cycle with `employee` included
- * @param {Date} today
- */
-function shape(c, today) {
-  const e = c.employee;
-  const overdueUnsent = c.status === 'pending' && c.due_date <= today;
-
-  return {
-    id: String(c.id),
-    employeeId: String(e.id),
-    employeeName: e.full_name,
-    employeeEmail: e.office_email,
-    cohort: e.is_experienced ? 'experienced' : 'fresher',
-    rmName: e.rm_name,
-    rmEmail: e.rm_email,
-    plEmail: e.pl_email,
-    confirmationStatus: e.confirmation_status,
-
-    seqNo: c.seq_no,
-    isExtension: c.is_extension,
-    periodFrom: toDateString(c.period_from),
-    periodTo: toDateString(c.period_to),
-    dueDate: toDateString(c.due_date),
-    sentAt: c.sent_at,
-    submittedAt: c.submitted_at,
-    avgRating: c.avg_rating === null ? null : Number(c.avg_rating),
-    reminderCount: c.reminder_count,
-    legacy: !!c.legacy_format,
-
-    // The screen shows "Not sent yet" in red for this case; the raw status is
-    // still sent so the client is never guessing.
-    status: c.status,
-    derivedStatus: overdueUnsent ? 'not_sent' : c.status,
-
-    // How long someone has been waiting — the column HR sorts by in practice.
-    waitingDays:
-      c.status === 'pending' && overdueUnsent
-        ? daysBetween(c.due_date, today)
-        : AWAITING.includes(c.status) && c.sent_at
-          ? daysBetween(c.sent_at, today)
-          : null,
-
-    // Whether a link exists that a manager could still open.
-    linkLive: AWAITING.includes(c.status) && c.token_expires_at > new Date(),
-    token: AWAITING.includes(c.status) ? c.token : null,
-  };
-}
+// /**
+//  * One row as the screen needs it, with the derived facts the table shows.
+//  * @param {object} c - cycle with `employee` included
+//  * @param {Date} today
+//  */
+// function shape(c, today) {
+//   const e = c.employee;
+//   const overdueUnsent = c.status === 'pending' && c.due_date <= today;
+//
+//   return {
+//     id: String(c.id),
+//     employeeId: String(e.id),
+//     employeeName: e.full_name,
+//     employeeEmail: e.office_email,
+//     cohort: e.is_experienced ? 'experienced' : 'fresher',
+//     rmName: e.rm_name,
+//     rmEmail: e.rm_email,
+//     plEmail: e.pl_email,
+//     confirmationStatus: e.confirmation_status,
+//
+//     seqNo: c.seq_no,
+//     isExtension: c.is_extension,
+//     periodFrom: toDateString(c.period_from),
+//     periodTo: toDateString(c.period_to),
+//     dueDate: toDateString(c.due_date),
+//     sentAt: c.sent_at,
+//     submittedAt: c.submitted_at,
+//     avgRating: c.avg_rating === null ? null : Number(c.avg_rating),
+//     reminderCount: c.reminder_count,
+//     legacy: !!c.legacy_format,
+//
+//     // The screen shows "Not sent yet" in red for this case; the raw status is
+//     // still sent so the client is never guessing.
+//     status: c.status,
+//     derivedStatus: overdueUnsent ? 'not_sent' : c.status,
+//
+//     // How long someone has been waiting — the column HR sorts by in practice.
+//     waitingDays:
+//       c.status === 'pending' && overdueUnsent
+//         ? daysBetween(c.due_date, today)
+//         : AWAITING.includes(c.status) && c.sent_at
+//           ? daysBetween(c.sent_at, today)
+//           : null,
+//
+//     // Whether a link exists that a manager could still open.
+//     linkLive: AWAITING.includes(c.status) && c.token_expires_at > new Date(),
+//     token: AWAITING.includes(c.status) ? c.token : null,
+//   };
+// }
 
 /**
  * Send an extra reminder for one or more evaluations, now.

@@ -11,8 +11,13 @@ import assert from 'node:assert/strict';
 import {
   buildSchedule,
   buildExtensionSchedule,
+  extensionsLeft,
+  allowedDecisions,
   CADENCE,
+  EXTENSION_INTERVAL_DAYS,
+  MAX_EXTENSION_CYCLES,
 } from '../services/cycleGenerator.service.js';
+import { probationSummary } from '../services/employee.service.js';
 import {
   toDateString,
   shiftOffWeekend,
@@ -110,36 +115,152 @@ describe('experienced cadence', () => {
   });
 });
 
-describe('extensions', () => {
-  const employee = { doj: '2026-01-05' };
+describe('extensions — dated from the previous evaluation, two at most (B1, B2, M2)', () => {
+  const doj = utcDate(2026, 1, 5);
+  const fresher = buildSchedule({ doj: '2026-01-05', is_experienced: false });
+  const experienced = buildSchedule({ doj: '2026-01-05', is_experienced: true });
+  const last = (cycles) => cycles.at(-1);
 
-  test('"Extend for 1 month" adds one cycle at day 210', () => {
-    const extra = buildExtensionSchedule(employee, 'Extend for 1 month', 6);
+  test('"Extend for 1 month" after a fresher\'s evaluation 6 adds a 7th covering month 6 to 7', () => {
+    const extra = buildExtensionSchedule(last(fresher), 'Extend for 1 month');
     assert.equal(extra.length, 1);
     assert.equal(extra[0].seq_no, 7);
-    assert.equal(daysBetween(utcDate(2026, 1, 5), extra[0].period_to), 210);
+    assert.equal(daysBetween(doj, extra[0].period_from), 180);
+    assert.equal(daysBetween(doj, extra[0].period_to), 210);
     assert.ok(extra[0].is_extension);
   });
 
-  test('"Extend for 2 months" adds cycles at days 210 and 240', () => {
-    const extra = buildExtensionSchedule(employee, 'Extend for 2 months', 6);
-    assert.equal(extra.length, 2);
+  test('"Extend for 2 months" adds a 7th and an 8th, ending at 8 months', () => {
+    const extra = buildExtensionSchedule(last(fresher), 'Extend for 2 months');
     assert.deepEqual(extra.map((c) => c.seq_no), [7, 8]);
-    assert.equal(daysBetween(utcDate(2026, 1, 5), extra[1].period_to), 240);
+    assert.equal(daysBetween(doj, extra[0].period_to), 210);
+    assert.equal(daysBetween(doj, extra[1].period_from), 210);
+    assert.equal(daysBetween(doj, extra[1].period_to), 240);
+  });
+
+  test('B1 — a second extension covers the NEXT month, not day 210 again', () => {
+    // Extend 1 month at evaluation 6, then extend 1 month again at evaluation 7.
+    // Dated from joining, the second one landed on day 210 a second time:
+    // already past, mailed the next morning, and rating a month rated already.
+    const [seventh] = buildExtensionSchedule(last(fresher), 'Extend for 1 month');
+    const [eighth] = buildExtensionSchedule(seventh, 'Extend for 1 month');
+    assert.equal(eighth.seq_no, 8);
+    assert.equal(daysBetween(doj, eighth.period_from), 210);
+    assert.equal(daysBetween(doj, eighth.period_to), 240);
+  });
+
+  test('experienced: 3 evaluations, then a 4th and a 5th — the same 8 months', () => {
+    const extra = buildExtensionSchedule(last(experienced), 'Extend for 2 months');
+    assert.deepEqual(extra.map((c) => c.seq_no), [4, 5]);
+    assert.equal(daysBetween(doj, extra[0].period_to), 210);
+    assert.equal(daysBetween(doj, extra[1].period_to), 240);
+  });
+
+  test('an extension is a 30-day period on both tracks', () => {
+    for (const base of [fresher, experienced]) {
+      const [extra] = buildExtensionSchedule(last(base), 'Extend for 1 month');
+      assert.equal(daysBetween(extra.period_from, extra.period_to), EXTENSION_INTERVAL_DAYS);
+    }
+  });
+
+  test('a weekend moves the due date, never the period — so the next one does not drift', () => {
+    // 2026-01-05 + 210 days is Monday 3 Aug; + 240 is Wednesday 2 Sep. Use a
+    // last evaluation whose period ends on a Friday so the extension's own end
+    // (30 days on) falls on a Sunday.
+    const friday = { seq_no: 6, period_to: utcDate(2026, 7, 3), due_date: utcDate(2026, 7, 3) };
+    const [first] = buildExtensionSchedule(friday, 'Extend for 1 month');
+    assert.equal(toDateString(first.period_to), '2026-08-02'); // a Sunday
+    assert.equal(toDateString(first.due_date), '2026-08-03'); // sent on the Monday
+    const [second] = buildExtensionSchedule(first, 'Extend for 1 month');
+    assert.equal(toDateString(second.period_from), '2026-08-02'); // from the period end, not the due date
+    assert.equal(toDateString(second.period_to), '2026-09-01');
   });
 
   test('a non-extension status produces nothing', () => {
-    assert.equal(buildExtensionSchedule(employee, 'Confirmed', 6).length, 0);
-    assert.equal(buildExtensionSchedule(employee, null, 6).length, 0);
+    assert.equal(buildExtensionSchedule(last(fresher), 'Confirmed').length, 0);
+    assert.equal(buildExtensionSchedule(last(fresher), null).length, 0);
   });
 
-  test('extension applies the same way regardless of fresher/experienced', () => {
-    // The PPT is explicit: on extension both tracks move to a 30-day gap.
-    const a = buildExtensionSchedule({ doj: '2026-01-05' }, 'Extend for 2 months', 6);
-    const b = buildExtensionSchedule({ doj: '2026-01-05' }, 'Extend for 2 months', 3);
-    assert.equal(toDateString(a[0].period_to), toDateString(b[0].period_to));
+  test('no probation runs past 8 months: two extension evaluations at most', () => {
+    assert.equal(MAX_EXTENSION_CYCLES, 2);
+    assert.equal(extensionsLeft(fresher), 2);
+    const one = [...fresher, ...buildExtensionSchedule(last(fresher), 'Extend for 1 month')];
+    assert.equal(extensionsLeft(one), 1);
+    const two = [...one, ...buildExtensionSchedule(last(one), 'Extend for 1 month')];
+    assert.equal(extensionsLeft(two), 0);
+    assert.equal(extensionsLeft([...fresher, ...buildExtensionSchedule(last(fresher), 'Extend for 2 months')]), 0);
+  });
+
+  test('B2 — what the final evaluation offers follows from what is left', () => {
+    assert.deepEqual(allowedDecisions(2), ['Confirmed', 'Not Confirmed', 'Extend for 1 month', 'Extend for 2 months']);
+    // After one extension: one more month, but "2 months" is gone.
+    assert.deepEqual(allowedDecisions(1), ['Confirmed', 'Not Confirmed', 'Extend for 1 month']);
+    // At the 8th (or an experienced person's 5th): no "Extend" at all.
+    assert.deepEqual(allowedDecisions(0), ['Confirmed', 'Not Confirmed']);
   });
 });
+
+describe('where a probation stands (U11)', () => {
+  const today = utcDate(2026, 7, 10);
+  const fresher = buildSchedule({ doj: '2026-01-05', is_experienced: false });
+  const active = { confirmation_status: null, employment_status: 'active' };
+
+  test('it ends when the last evaluation\'s period ends', () => {
+    assert.equal(probationSummary(active, fresher, utcDate(2026, 3, 1)).endsOn, '2026-07-04');
+  });
+
+  test('an extension moves the end, and uses up what may be offered next', () => {
+    const extended = [...fresher, ...buildExtensionSchedule(fresher.at(-1), 'Extend for 1 month')];
+    const s = probationSummary({ ...active, confirmation_status: 'Extend for 1 month' }, extended, today);
+    assert.equal(s.endsOn, '2026-08-03');
+    assert.equal(s.extensionsUsed, 1);
+    assert.deepEqual(s.decisionOptions, ['Confirmed', 'Not Confirmed', 'Extend for 1 month']);
+  });
+
+  test('past the end with no final decision counts the days', () => {
+    assert.equal(probationSummary(active, fresher, today).daysPastEnd, 6);
+  });
+
+  test('a final decision, or having left, is never "past the end"', () => {
+    assert.equal(probationSummary({ ...active, confirmation_status: 'Confirmed' }, fresher, today).daysPastEnd, 0);
+    assert.equal(probationSummary({ ...active, employment_status: 'left' }, fresher, today).daysPastEnd, 0);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// B1 / M2 — replaced, kept for reference: the tests for extensions dated from
+// the joining date (day 210 and day 240, whatever had gone before).
+// ─────────────────────────────────────────────────────────────────────────────
+// describe('extensions', () => {
+//   const employee = { doj: '2026-01-05' };
+//
+//   test('"Extend for 1 month" adds one cycle at day 210', () => {
+//     const extra = buildExtensionSchedule(employee, 'Extend for 1 month', 6);
+//     assert.equal(extra.length, 1);
+//     assert.equal(extra[0].seq_no, 7);
+//     assert.equal(daysBetween(utcDate(2026, 1, 5), extra[0].period_to), 210);
+//     assert.ok(extra[0].is_extension);
+//   });
+//
+//   test('"Extend for 2 months" adds cycles at days 210 and 240', () => {
+//     const extra = buildExtensionSchedule(employee, 'Extend for 2 months', 6);
+//     assert.equal(extra.length, 2);
+//     assert.deepEqual(extra.map((c) => c.seq_no), [7, 8]);
+//     assert.equal(daysBetween(utcDate(2026, 1, 5), extra[1].period_to), 240);
+//   });
+//
+//   test('a non-extension status produces nothing', () => {
+//     assert.equal(buildExtensionSchedule(employee, 'Confirmed', 6).length, 0);
+//     assert.equal(buildExtensionSchedule(employee, null, 6).length, 0);
+//   });
+//
+//   test('extension applies the same way regardless of fresher/experienced', () => {
+//     // The PPT is explicit: on extension both tracks move to a 30-day gap.
+//     const a = buildExtensionSchedule({ doj: '2026-01-05' }, 'Extend for 2 months', 6);
+//     const b = buildExtensionSchedule({ doj: '2026-01-05' }, 'Extend for 2 months', 3);
+//     assert.equal(toDateString(a[0].period_to), toDateString(b[0].period_to));
+//   });
+// });
 
 describe('weekend handling', () => {
   test('Saturday moves to Monday', () => {

@@ -272,6 +272,12 @@ body {
   color: var(--pea-text-faint);
 }
 
+/* H7 — "Probation Period Evaluation Platform" is wider than the sidebar's one
+   line, so in the sidebar (and only there) it wraps onto two. */
+.pea-brand .pea-brand-sub {
+  white-space: normal;
+}
+
 .pea-nav {
   padding: 14px 12px;
   border-inline-end: none !important;
@@ -366,6 +372,152 @@ body {
   font-weight: 700;
   color: #fff;
   background: linear-gradient(145deg, var(--pea-green-500), var(--pea-green-700));
+}
+
+/* ── Top bar tidy-up (01-10-2026) ────────────────────────────────────────
+   The bar had grown piece by piece and looked it: a gold tag, two bare icons,
+   a square button and a round chip, each a different height on a different
+   baseline. These rules come after the ones above and override them; the
+   earlier rules are left as they were, for reference.
+
+   The one real defect was the line height. antd's Header sets
+   `line-height: 64px` and everything inside inherited it, so a 28px avatar
+   held a 64px line of text — the initials fell out of the circle — and the
+   menu button's icon sat below its own centre. */
+.pea-header {
+  line-height: 1.35;
+  gap: 10px;
+}
+
+/* The name on two tidy lines in sentence case. In tracked capitals it was
+   three cramped rows beside the mark. */
+.pea-brand {
+  gap: 12px;
+}
+.pea-brand-mark {
+  width: 38px;
+  height: 38px;
+}
+.pea-brand .pea-brand-name {
+  font-size: 15.5px;
+  letter-spacing: .01em;
+  line-height: 1.2;
+}
+.pea-brand .pea-brand-sub {
+  margin-top: 1px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.25;
+  text-transform: none;
+  text-wrap: balance;
+  color: var(--pea-text-muted);
+}
+
+/* Every control in the bar is 36px tall with the same corner. */
+.pea-header .pea-icon-btn,
+.pea-header .theme-toggle {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+}
+.pea-header .pea-top-btn.ant-btn {
+  height: 36px;
+  padding: 0 13px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+/* "No email is being sent" — a warning, in the app's own warning colours. */
+.pea-top-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--pea-warn) 30%, transparent);
+  background: var(--pea-warn-soft);
+  color: var(--pea-warn);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+}
+.pea-top-flag:focus-visible {
+  outline: 2px solid var(--pea-warn);
+  outline-offset: 2px;
+}
+
+.pea-top-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+/* The unread count sits on the bell's shoulder, not out beside the button.
+   antd places it from the button's corner with an inline offset; the button is
+   36px and the bell 16px, so the corner is a long way from the bell. */
+.pea-top-tools .ant-badge .ant-badge-count {
+  right: 9px !important;
+  margin-top: 9px !important;
+  box-shadow: 0 0 0 2px var(--pea-surface);
+}
+
+.pea-top-sep {
+  flex: none;
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--pea-border-strong);
+}
+
+/* Who is signed in: avatar, name over role, and a caret for the menu. */
+.pea-user-chip {
+  flex: none;
+  height: 40px;
+  padding: 0 11px 0 5px;
+  gap: 9px;
+  font: inherit;
+  cursor: pointer;
+  transition: border-color .15s ease, background .15s ease;
+}
+.pea-user-chip:hover,
+.pea-user-chip.ant-dropdown-open {
+  border-color: var(--pea-green-500);
+  background: var(--pea-green-50);
+}
+.pea-user-chip:focus-visible {
+  outline: 2px solid var(--pea-green-500);
+  outline-offset: 2px;
+}
+.pea-user-text {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+}
+.pea-user-name {
+  line-height: 1.15;
+  white-space: nowrap;
+}
+.pea-user-role {
+  font-size: 10px;
+  letter-spacing: .08em;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+.pea-user-caret {
+  font-size: 10px;
+  color: var(--pea-text-faint);
+}
+.pea-avatar {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  font-size: 11.5px;
+  line-height: 1;
+  letter-spacing: .02em;
 }
 
 .pea-content {
@@ -2480,6 +2632,10 @@ html.theme-transition *::after {
   .pea-hero { padding: 20px; }
   .pea-user-role, .pea-user-name { display: none; }
   .pea-user-chip { padding: 0 5px; border: none; }
+  /* Top bar tidy-up — on a phone the chip is the avatar alone, the warning is
+     its icon alone, and the hairline between the groups goes. */
+  .pea-user-text, .pea-user-caret, .pea-top-sep, .pea-top-flag-text { display: none; }
+  .pea-top-flag { padding: 0 8px; }
 
   .pea-hide-sm { display: none; }
   .pea-top-btn.ant-btn { padding: 0 9px; }
@@ -2502,3 +2658,54 @@ html.theme-transition *::after {
 .pea-trend-average-row > td:first-child {
   border-top: 1px solid var(--pea-border-strong);
 }
+
+/* ── People picker (U8) ──────────────────────────────────────────────────
+   A suggestion is a name over its address, because two people can share a
+   name and the address is what the evaluation is sent to. */
+.pea-person-option {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+  padding: 2px 0;
+}
+
+/* ── HR notes on a Commando (L7) ─────────────────────────────────────────
+   Read like the change history beside them: the note, then who and when. */
+.pea-note {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--pea-border);
+}
+.pea-note:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.pea-note-body {
+  margin: 0 0 4px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.pea-note-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--pea-text-muted);
+}
+/* Notes are for HR. A printed Commando page is something that gets handed to
+   other people, so the card stays off paper. */
+@media print {
+  .pea-notes-card { display: none !important; }
+}
+
+/* Clean table (07-10-2026) — the New Joiner Inbox keeps every cell on one
+   line. A name or address too long for its column ends in "…" (the whole of
+   it is in the tooltip) instead of breaking letter by letter. */
+.pea-joiner-person { display: flex; flex-direction: column; align-items: stretch; min-width: 0; text-align: left; }
+.pea-joiner-person-name,
+.pea-joiner-person-sub { display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pea-joiner-person-name { font-weight: 600; color: var(--pea-text); }
+.pea-joiner-person-sub { font-size: 12px; color: var(--pea-text-muted); }
+.pea-suggested { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.pea-suggested-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pea-suggested .pea-status-pill { flex: none; }

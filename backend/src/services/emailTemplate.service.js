@@ -45,15 +45,21 @@ export function usedPlaceholders(text) {
 
 /** What each placeholder is, for the editor. `block` = HTML built by the code. */
 export const PLACEHOLDERS = Object.freeze({
-  employee_name: { label: 'Employee name' },
-  first_name: { label: 'Employee first name' },
-  employee_email: { label: 'Employee office email' },
+  employee_name: { label: 'Commando name' },
+  first_name: { label: 'Commando first name' },
+  employee_email: { label: 'Commando office email' },
   joining_date: { label: 'Date of joining' },
   manager_name: { label: 'Reporting manager name' },
   manager_email: { label: 'Reporting manager email' },
   project_leader_email: { label: 'Project leader email' },
   evaluation_number: { label: 'Evaluation number (1, 2, 3 …)' },
   evaluation_period: { label: 'Period being evaluated' },
+  // H8 — where the person is in their probation.
+  evaluation_of_total: { label: 'Evaluation number out of the total — "2 of 6"' },
+  evaluation_total: { label: 'How many evaluations the probation has (6, 3, or more once extended)' },
+  probation_start: { label: 'Probation start — the date of joining' },
+  probation_end: { label: 'Probation end date (moves when the probation is extended)' },
+  probation_line: { label: '"Probation period: 01-07-2026 to 28-12-2026 · evaluation 2 of 6" line', block: true },
   due_date: { label: 'Evaluation due date' },
   sent_date: { label: 'Date the evaluation was sent' },
   reminder_number: { label: 'Reminder number (1 or 2)' },
@@ -64,9 +70,10 @@ export const PLACEHOLDERS = Object.freeze({
   decision: { label: 'Confirmation decision (Confirmed, Extend for 1 month …)' },
   submitted_by: { label: 'Who submitted the evaluation' },
   remarks: { label: 'Manager’s overall remarks' },
-  evaluation_summary_table: { label: 'Table: employee, evaluation, period, average, decision', block: true },
+  evaluation_summary_table: { label: 'Table: Commando, evaluation, period, average, decision', block: true },
   remarks_block: { label: '"Overall remarks" paragraph — only when there are remarks', block: true },
-  reason: { label: 'Manager’s reason for the decision' },
+  reason: { label: 'Manager’s reason for the decision — or, on a reopened evaluation, HR’s reason for reopening' },
+  reopened_by: { label: 'Who reopened the evaluation' },
   decision_sentence: { label: '"It was the final evaluation … the decision is …" — only on a final evaluation', block: true },
   reason_block: { label: '"Reason for this decision" box — only when a reason was given', block: true },
   ratings_comments_table: { label: 'Table: every question with its rating and the manager’s comment', block: true },
@@ -80,7 +87,7 @@ export const PLACEHOLDERS = Object.freeze({
   correct_value: { label: 'Correct value' },
   reported_by: { label: 'Who reported it' },
   note: { label: 'Note for IT' },
-  it_details_table: { label: 'Table: employee, account, field, current and correct value', block: true },
+  it_details_table: { label: 'Table: Commando, account, field, current and correct value', block: true },
   note_block: { label: '"Note" paragraph — only when a note was written', block: true },
   portal_link: { label: 'Manager portal link, as plain text' },
   portal_button: { label: 'Green "Open my team" button with the link', block: true },
@@ -100,7 +107,13 @@ export const PLACEHOLDERS = Object.freeze({
 
   // R-05 — shared evaluation report.
   shared_by: { label: 'Who shared the report' },
-  report_header_table: { label: 'Table: employee, manager, joined, type, decision, progress', block: true },
+  // H1 (07-10-2026) — new joiners waiting for review.
+  joiner_count: { label: 'How many new joiners are waiting for review' },
+  new_count: { label: 'How many of them this scan found' },
+  joiner_table: { label: 'Table: each joiner waiting, the suggested joining date and track, and what is still needed', block: true },
+  inbox_link: { label: 'Link to the New joiners screen (plain)' },
+  inbox_button: { label: 'Button: open New joiners', block: true },
+  report_header_table: { label: 'Table: Commando, manager, joined, type, decision, progress', block: true },
   report_history_table: { label: 'Table of every submitted evaluation with its average and remarks', block: true },
 });
 
@@ -109,6 +122,42 @@ export const CATEGORY_LABELS = Object.freeze({
   hr: 'To HR',
   it: 'To IT',
 });
+
+/**
+ * The placeholders every email about one person's probation may use — H8.
+ * HR (29-09-2026): the manager emails said "performance evaluation" and never
+ * mentioned probation or where the person is in it.
+ */
+const PROBATION_PLACEHOLDERS = ['evaluation_of_total', 'evaluation_total', 'probation_start', 'probation_end', 'probation_line'];
+
+/* H8 — the default wording before, kept for reference. Only the lines that
+   changed are listed; everything else in each body is as it was.
+
+   evaluation_link
+     subject  Performance Evaluation {{evaluation_number}} - {{employee_name}}
+     body     <p>As per the performance evaluation process at AAPNA, we request you to evaluate the
+              performance of <strong>{{employee_name}}</strong> (email id: {{employee_email}}) who
+              joined us on <strong>{{joining_date}}</strong>.</p>
+   reminder
+     subject  Reminder {{reminder_number}} - Performance Evaluation {{evaluation_number}} - {{employee_name}}
+     body     <p>This is a gentle reminder that the performance evaluation for
+              <strong>{{employee_name}}</strong> covering <strong>{{evaluation_period}}</strong> is
+              still awaiting your response.</p>
+   manager_portal
+     subject  Your team’s performance evaluations
+     body     <p>You can now see every performance evaluation for the people who report to you in
+              one place — …</p>
+   acknowledgement
+     subject  Performance Evaluation {{evaluation_number}} submitted - {{employee_name}}
+     body     <p><strong>{{manager_name}}</strong> has submitted performance evaluation
+              {{evaluation_number}} for <strong>{{employee_name}}</strong>.{{decision_sentence}}</p>
+   evaluation_report
+     subject  Evaluation report — {{employee_name}}
+     body     <p>Here is the evaluation record for <strong>{{employee_name}}</strong> so far,
+              shared by {{shared_by}}.</p>
+
+   None of the five had {{probation_line}}; extend_alert did not either.
+*/
 
 /** The built-in templates, in the order the screen lists them. */
 const TEMPLATES = Object.freeze({
@@ -120,12 +169,14 @@ const TEMPLATES = Object.freeze({
     placeholders: [
       'employee_name', 'first_name', 'employee_email', 'joining_date', 'manager_name', 'project_leader_email',
       'evaluation_number', 'evaluation_period', 'due_date', 'form_link', 'form_button', 'rating_table',
+      ...PROBATION_PLACEHOLDERS,
     ],
     requiredAny: [['form_button', 'form_link']],
-    subject: 'Performance Evaluation {{evaluation_number}} - {{employee_name}}',
+    subject: 'Probation Evaluation {{evaluation_of_total}} - {{employee_name}}',
     body: `<p>Hello {{manager_name}},</p>
 <p>Greetings!</p>
-<p>As per the performance evaluation process at AAPNA, we request you to evaluate the performance of <strong>{{employee_name}}</strong> (email id: {{employee_email}}) who joined us on <strong>{{joining_date}}</strong>.</p>
+<p>As per the probation evaluation process at AAPNA, we request you to evaluate the performance of <strong>{{employee_name}}</strong> (email id: {{employee_email}}), who joined us on <strong>{{joining_date}}</strong> and is in the probation period.</p>
+{{probation_line}}
 <p>Evaluation will be done on the parameters shared in the form for <strong>{{evaluation_period}}</strong>.</p>
 {{form_button}}
 <p><strong>Please note:</strong></p>
@@ -146,14 +197,38 @@ const TEMPLATES = Object.freeze({
     placeholders: [
       'employee_name', 'first_name', 'manager_name', 'evaluation_number', 'evaluation_period', 'sent_date',
       'reminder_number', 'form_link', 'form_button', 'rating_table',
+      ...PROBATION_PLACEHOLDERS,
     ],
     requiredAny: [['form_button', 'form_link']],
-    subject: 'Reminder {{reminder_number}} - Performance Evaluation {{evaluation_number}} - {{employee_name}}',
+    subject: 'Reminder {{reminder_number}} - Probation Evaluation {{evaluation_of_total}} - {{employee_name}}',
     body: `<p>Hello {{manager_name}},</p>
-<p>This is a gentle reminder that the performance evaluation for <strong>{{employee_name}}</strong> covering <strong>{{evaluation_period}}</strong> is still awaiting your response.</p>
+<p>This is a gentle reminder that the probation evaluation for <strong>{{employee_name}}</strong> covering <strong>{{evaluation_period}}</strong> is still awaiting your response.</p>
+{{probation_line}}
 <p>It was sent on {{sent_date}}.</p>
 {{form_button}}
 <p>If you have already responded, please ignore this message.</p>`,
+  },
+
+  // M6 — a submitted evaluation handed back to be corrected.
+  evaluation_reopened: {
+    name: 'Evaluation reopened',
+    category: 'manager',
+    recipient: 'Whoever submitted it · CC project leader and the CC list',
+    description: 'Sent when HR reopens a submitted evaluation so that it can be corrected.',
+    placeholders: [
+      'employee_name', 'first_name', 'manager_name', 'evaluation_number', 'evaluation_period',
+      'reason', 'reason_block', 'reopened_by', 'form_link', 'form_button',
+      ...PROBATION_PLACEHOLDERS,
+    ],
+    requiredAny: [['form_button', 'form_link']],
+    subject: 'Reopened - Probation Evaluation {{evaluation_of_total}} - {{employee_name}}',
+    body: `<p>Hello {{manager_name}},</p>
+<p>HR has reopened the probation evaluation you submitted for <strong>{{employee_name}}</strong>, covering <strong>{{evaluation_period}}</strong>, so that it can be corrected.</p>
+{{probation_line}}
+{{reason_block}}
+<p>Your earlier answers are already filled in. Please change what needs changing and submit it again.</p>
+{{form_button}}
+<p>The link you used before no longer works; this one replaces it.</p>`,
   },
 
   manager_portal: {
@@ -163,9 +238,9 @@ const TEMPLATES = Object.freeze({
     description: 'Sent when HR issues a manager their "my team" link.',
     placeholders: ['manager_name', 'portal_link', 'portal_button', 'expires_date'],
     requiredAny: [['portal_button', 'portal_link']],
-    subject: 'Your team’s performance evaluations',
+    subject: 'Your team’s probation evaluations',
     body: `<p>Hello {{manager_name}},</p>
-<p>You can now see every performance evaluation for the people who report to you in one place — what is due, what is waiting for you, and what you have already submitted.</p>
+<p>You can now see every probation evaluation for the people who report to you in one place — what is due, what is waiting for you, and what you have already submitted.</p>
 {{portal_button}}
 <p>No login is needed. The link is personal to you and expires on {{expires_date}}.</p>`,
   },
@@ -179,14 +254,16 @@ const TEMPLATES = Object.freeze({
       'employee_name', 'first_name', 'employee_email', 'manager_name', 'evaluation_number', 'evaluation_period',
       'average_rating', 'decision', 'submitted_by', 'remarks', 'reason', 'evaluation_summary_table', 'remarks_block',
       'decision_sentence', 'reason_block', 'ratings_comments_table', 'next_evaluation_line', 'open_in_pea_button', 'pea_link',
+      ...PROBATION_PLACEHOLDERS,
     ],
     requiredAny: [],
-    subject: 'Performance Evaluation {{evaluation_number}} submitted - {{employee_name}}',
+    subject: 'Probation Evaluation {{evaluation_of_total}} submitted - {{employee_name}}',
     // Everything the manager said, in the email itself — the 23-Sep redesign.
     // HR used to open PEA to find out WHY; the reason, the overall comment and
     // every question comment are now here, with a button to the evaluation.
     body: `<p>Hello,</p>
-<p><strong>{{manager_name}}</strong> has submitted performance evaluation {{evaluation_number}} for <strong>{{employee_name}}</strong>.{{decision_sentence}}</p>
+<p><strong>{{manager_name}}</strong> has submitted probation evaluation {{evaluation_number}} for <strong>{{employee_name}}</strong>.{{decision_sentence}}</p>
+{{probation_line}}
 {{evaluation_summary_table}}
 {{reason_block}}
 {{remarks_block}}
@@ -203,11 +280,13 @@ const TEMPLATES = Object.freeze({
     placeholders: [
       'employee_name', 'first_name', 'manager_name', 'evaluation_number', 'decision', 'submitted_by', 'extension_summary',
       'reason', 'reason_block', 'open_in_pea_button', 'pea_link',
+      ...PROBATION_PLACEHOLDERS,
     ],
     requiredAny: [],
     subject: 'Alert - Probation extended for {{employee_name}}',
     body: `<p>Hello,</p>
 <p>The probation period for <strong>{{employee_name}}</strong> has been extended — <strong>{{decision}}</strong> — by {{submitted_by}}.</p>
+{{probation_line}}
 {{reason_block}}
 <p>{{extension_summary}}</p>
 {{open_in_pea_button}}`,
@@ -232,16 +311,18 @@ const TEMPLATES = Object.freeze({
     category: 'hr',
     recipient: 'Whoever HR sends it to · CC as chosen',
     description:
-      'Sent when HR shares one person\'s evaluation record from the employee page. Subhajit, ' +
+      'Sent when HR shares one person\'s evaluation record from the Commando page. Subhajit, ' +
       '15 Sep: a senior leader asks for a resource\'s current status and HR answers "within one click".',
     placeholders: [
       'employee_name', 'manager_name', 'joining_date', 'decision', 'shared_by', 'note',
       'report_header_table', 'report_history_table', 'note_block', 'today',
+      'probation_start', 'probation_end', 'probation_line',
     ],
     requiredAny: [['report_history_table', 'report_header_table']],
-    subject: 'Evaluation report — {{employee_name}}',
+    subject: 'Probation evaluation report — {{employee_name}}',
     body: `<p>Hello,</p>
-<p>Here is the evaluation record for <strong>{{employee_name}}</strong> so far, shared by {{shared_by}}.</p>
+<p>Here is the probation evaluation record for <strong>{{employee_name}}</strong> so far, shared by {{shared_by}}.</p>
+{{probation_line}}
 {{note_block}}
 {{report_header_table}}
 {{report_history_table}}
@@ -269,6 +350,28 @@ const TEMPLATES = Object.freeze({
 <p>This alert is sent once per problem. It will not repeat every night for the same record.</p>`,
   },
 
+  // H1 (07-10-2026) — Microsoft 365 holds neither the date of joining nor the
+  // years of experience, so every new joiner waits for HR to confirm both.
+  // This says so: when a scan finds someone, and each day while anyone waits.
+  joiners_waiting: {
+    name: 'New joiners waiting for review',
+    category: 'hr',
+    recipient: 'Admin and HR users in PEA',
+    description:
+      'Sent when the Microsoft 365 check finds new joiners, and once a day while anyone is still ' +
+      'waiting in the New Joiner Inbox. Goes to every active Super Admin and Admin, and to every HR ' +
+      'user who can open New joiners.',
+    placeholders: ['today', 'joiner_count', 'new_count', 'headline', 'joiner_table', 'inbox_link', 'inbox_button'],
+    requiredAny: [['inbox_button', 'inbox_link']],
+    subject: '{{joiner_count}} new joiner(s) waiting for review — {{today}}',
+    body: `<p>Hello,</p>
+<p>{{headline}}</p>
+<p>Microsoft 365 does not hold the date of joining or the years of experience, so each joiner needs a person to confirm them before any evaluation is scheduled. PEA has suggested both — the joining date from when the account was created, and fresher or experienced from the designation — please check them.</p>
+{{joiner_table}}
+{{inbox_button}}
+<p>This reminder is sent once a day while anyone is still waiting.</p>`,
+  },
+
   it_report: {
     name: 'Report to IT',
     category: 'it',
@@ -281,7 +384,7 @@ const TEMPLATES = Object.freeze({
     requiredAny: [['it_details_table', 'correct_value']],
     subject: 'Directory correction requested — {{employee_name}}',
     body: `<p>Hello IT team,</p>
-<p>HR has found a value in Microsoft Entra that appears to be wrong, and has corrected it locally in the Performance Evaluation system. Please update the directory so other systems pick up the correct value as well.</p>
+<p>HR has found a value in Microsoft Entra that appears to be wrong, and has corrected it locally in the Probation Period Evaluation Platform. Please update the directory so other systems pick up the correct value as well.</p>
 {{it_details_table}}
 {{note_block}}
 <p>Once the directory is updated, HR can unlock the field in PEA and it will follow Entra again.</p>`,
@@ -318,6 +421,16 @@ function buildBlocks(v) {
     form_button: button(v.form_link, 'Open evaluation form'),
     portal_button: button(v.portal_link, 'Open my team'),
 
+    // H8 — where the person is in their probation. Blank when the email is not
+    // about one person, or the dates are not known, rather than half a line.
+    probation_line: v.probation_start && v.probation_end
+      ? `<p style="margin:0 0 14px 0;color:${BRAND.muted}"><strong style="color:${BRAND.text}">Probation period:</strong> `
+        + `${esc(v.probation_start)} to ${esc(v.probation_end)}`
+        + (v.evaluation_of_total ? ` &middot; evaluation ${esc(v.evaluation_of_total)}` : '')
+        + (v._isExtension ? ' (extended period)' : '')
+        + '</p>'
+      : '',
+
     rating_table: table(
       `<tr><th style="${TH}">Rating</th><th style="${TH};text-align:center">Score</th><th style="${TH};text-align:center">%age</th></tr>`
         + RATING_SCALE.map(
@@ -328,7 +441,7 @@ function buildBlocks(v) {
     ),
 
     evaluation_summary_table: table(pairs([
-      ['Employee', esc(v.employee_name)],
+      ['Commando', esc(v.employee_name)],
       ['Evaluation', `${esc(v.evaluation_number)}${v._isFinal ? ' (final)' : ''}`],
       ['Period', esc(v.evaluation_period)],
       ['Average rating', `<strong>${esc(v.average_rating || '—')} / 5</strong>${v._averageLabel ? ` — ${esc(v._averageLabel)}` : ''}`],
@@ -343,7 +456,8 @@ function buildBlocks(v) {
 
     reason_block: v.reason
       ? `<div style="border:2px dashed ${BRAND.accent};border-radius:8px;padding:10px 12px;margin:10px 0 16px 0">`
-        + '<p style="margin:0 0 8px 0"><strong>Reason for this decision:</strong></p>'
+        // M6 — the same box carries HR's reason on a reopened evaluation.
+        + `<p style="margin:0 0 8px 0"><strong>${v._reopened ? 'Reason for reopening' : 'Reason for this decision'}:</strong></p>`
         + `<div style="border-left:4px solid ${BRAND.accent};background:#f5f8ee;padding:10px 14px;color:${BRAND.text}">${multiline(v.reason)}</div></div>`
       : '',
 
@@ -376,7 +490,7 @@ function buildBlocks(v) {
       : '',
 
     it_details_table: table(pairs([
-      ['Employee', esc(v.employee_name)],
+      ['Commando', esc(v.employee_name)],
       ['Account', esc(v.account_email)],
       ['Field', esc(v.field_label)],
       ['Microsoft 365 currently holds', v.entra_value ? esc(v.entra_value) : '<em>(blank)</em>'],
@@ -388,9 +502,10 @@ function buildBlocks(v) {
 
     overdue_table: overdue.length
       ? table(
-        `<tr><th style="${TH}">Employee</th><th style="${TH}">Joined</th><th style="${TH}">Deadline</th><th style="${TH};text-align:center">Days overdue</th><th style="${TH}">Manager</th></tr>`
+        `<tr><th style="${TH}">Commando</th><th style="${TH}">Joined</th><th style="${TH}">Deadline</th><th style="${TH};text-align:center">Days overdue</th><th style="${TH}">Manager</th></tr>`
           + overdue.map(
-            (e) => `<tr><td style="${TD}">${esc(e.full_name)}</td><td style="${TD}">${esc(e.doj)}</td><td style="${TD}">${esc(e.deadline)}</td>`
+            // The rows carry YYYY-MM-DD (confirmationDeadline.service.js); a person reads dd-MM-yyyy.
+            (e) => `<tr><td style="${TD}">${esc(e.full_name)}</td><td style="${TD}">${esc(formatDisplay(e.doj))}</td><td style="${TD}">${esc(formatDisplay(e.deadline))}</td>`
               + `<td style="${TD};text-align:center"><strong>${esc(e.daysOverdue)}</strong></td><td style="${TD}">${esc(e.rm_name)}</td></tr>`
           ).join('')
       )
@@ -417,10 +532,37 @@ function buildBlocks(v) {
         + `or upload the sheet with their details. Everything else carries on as normal.</p>`
       : '',
 
+    // ── H1 (07-10-2026): new joiners waiting for review ──────────────────
+    inbox_button: button(v.inbox_link, 'Open New joiners'),
+
+    joiner_table: (v._joiners || []).length
+      ? table(
+        `<tr><th style="${TH}">Joiner</th><th style="${TH}">Joining date (suggested)</th>`
+          + `<th style="${TH}">Manager · project leader</th><th style="${TH}">Fresher or experienced</th>`
+          + `<th style="${TH}">Still to do</th></tr>`
+          + v._joiners.map((j) => {
+            const missing = `<em style="color:#c11f1f">missing</em>`;
+            const track = j.isExperienced === null || j.isExperienced === undefined
+              ? `<em style="color:${BRAND.muted}">not known — choose</em>`
+              : `<strong>${j.isExperienced ? 'Experienced' : 'Fresher'}?</strong>`
+                + (j.jobTitle ? `<br><span style="font-size:12px;color:${BRAND.muted}">from “${esc(j.jobTitle)}”</span>` : '');
+            const waited = j.waitingDays > 0 ? ` · waiting ${esc(j.waitingDays)} day${j.waitingDays === 1 ? '' : 's'}` : '';
+            return `<tr><td style="${TD}"><strong>${esc(j.name || j.email)}</strong>${j.isNew ? ` <span style="font-size:11px;color:${BRAND.accent};font-weight:700">NEW</span>` : ''}`
+              + `<br><span style="font-size:12px;color:${BRAND.muted}">${esc(j.email || '')}${waited}</span></td>`
+              + `<td style="${TD};white-space:nowrap">${j.suggestedDoj ? `<strong>${esc(j.suggestedDoj)}?</strong>` : missing}`
+              + `${j.accountCreated ? `<br><span style="font-size:12px;color:${BRAND.muted}">account created ${esc(j.accountCreated)}</span>` : ''}</td>`
+              + `<td style="${TD}">${j.manager ? esc(j.manager) : missing}<br>`
+              + `<span style="font-size:12px;color:${BRAND.muted}">${j.projectLeader ? esc(j.projectLeader) : 'project leader missing'}</span></td>`
+              + `<td style="${TD}">${track}</td>`
+              + `<td style="${TD}">${(j.todo || []).map((t) => esc(t)).join('<br>')}</td></tr>`;
+          }).join('')
+      )
+      : '',
+
     // ── R-05: the shared evaluation report ───────────────────────────────
     report_header_table: v._report
       ? table(pairs([
-        ['Employee', esc(v._report.employee.name)],
+        ['Commando', esc(v._report.employee.name)],
         ['Reporting manager', esc(v._report.employee.rmName || '—')],
         ['Joined', esc(v.joining_date || '—')],
         ['Type', esc(v._report.employee.cohort)],
@@ -491,12 +633,28 @@ export function buildVars(cycle, context = {}) {
   const extensions = Number(context.extensionCycles || 0);
   const name = e.full_name || context.employeeName || '';
 
+  // H8 — the probation as scheduled: it starts on the joining date, ends when
+  // the last evaluation's period ends, and has `total` evaluations. queueEmail()
+  // works these out once per send; without them the number stands alone.
+  const probation = context.probation || {};
+  const total = probation.total ? String(probation.total) : '';
+  const number = c.seq_no ?? '';
+
   return {
+    evaluation_total: total,
+    evaluation_of_total: number === '' ? '' : total ? `${number} of ${total}` : String(number),
+    probation_start: date(probation.start || e.doj),
+    probation_end: date(probation.end),
+    _isExtension: !!c.is_extension,
     employee_name: name,
     first_name: String(name).split(' ')[0],
     employee_email: e.office_email || '',
     joining_date: date(e.doj),
-    manager_name: e.rm_name || context.rmName || '',
+    // M3 / M7 / U13 — the person the email is about: whoever answered (the
+    // "submitted" email), else whoever holds the link (the request and the
+    // reminder, which greet them by name), else the reporting manager. It was
+    // always the reporting manager: e.rm_name || context.rmName || ''.
+    manager_name: context.submittedByName || context.sentTo?.name || e.rm_name || context.rmName || '',
     manager_email: e.rm_email || context.rmEmail || '',
     project_leader_email: e.pl_email || '',
     evaluation_number: c.seq_no ?? '',
@@ -528,6 +686,8 @@ export function buildVars(cycle, context = {}) {
     entra_value: context.azureValue || '',
     correct_value: context.correctValue || '',
     reported_by: context.reportedBy || '',
+    reopened_by: context.reopenedBy || '',
+    _reopened: !!context.reopenedBy,
     note: context.note || '',
     portal_link: context.portalUrl || '',
     expires_date: context.expiresLabel || '',
@@ -542,6 +702,11 @@ export function buildVars(cycle, context = {}) {
     _scan: context.scan || null,
     shared_by: context.sharedBy || '',
     _report: context.report || null,
+    // H1 (07-10-2026) — new joiners waiting for review.
+    joiner_count: context.joiners ? String(context.joiners.length) : '',
+    new_count: context.newCount === undefined ? '' : String(context.newCount),
+    inbox_link: context.joiners ? `${base}/new-joiners` : '',
+    _joiners: context.joiners || [],
   };
 }
 
@@ -550,14 +715,18 @@ const SAMPLE_VARS = Object.freeze({
   employee_name: 'Priya Sharma',
   first_name: 'Priya',
   employee_email: 'psharma@aapnainfotech.com',
-  joining_date: '01-Jul-2026',
+  joining_date: '01-07-2026',
   manager_name: 'Chhavi Verma',
   manager_email: 'cverma@aapnainfotech.com',
   project_leader_email: 'aroy@aapnainfotech.com',
   evaluation_number: '2',
-  evaluation_period: '31-Jul-2026 to 30-Aug-2026',
-  due_date: '31-Aug-2026',
-  sent_date: '31-Aug-2026',
+  evaluation_total: '6',
+  evaluation_of_total: '2 of 6',
+  probation_start: '01-07-2026',
+  probation_end: '28-12-2026',
+  evaluation_period: '31-07-2026 to 30-08-2026',
+  due_date: '31-08-2026',
+  sent_date: '31-08-2026',
   reminder_number: '1',
   form_link: 'https://pea-staging.aapnainfotech.com/api/evaluation/00000000-0000-0000-0000-000000000000',
   average_rating: '3.71',
@@ -585,12 +754,13 @@ const SAMPLE_VARS = Object.freeze({
   entra_value: 'Priya S',
   correct_value: 'Priya Sharma',
   reported_by: 'pankaj',
+  reopened_by: 'subhajit',
   note: 'Surname missing in Microsoft 365.',
   portal_link: 'https://pea-staging.aapnainfotech.com/manager/00000000-0000-0000-0000-000000000000',
-  expires_date: '13-Oct-2026',
+  expires_date: '13-10-2026',
   overdue_count: '1',
   due_soon_count: '0',
-  today: '13-Sep-2026',
+  today: '13-09-2026',
   _overdue: [{ full_name: 'Pooja Goel', doj: '2022-09-20', deadline: '2023-03-20', daysOverdue: 1272, rm_name: 'Aroy' }],
   _dueSoon: [],
   problem_count: '2',
@@ -610,6 +780,26 @@ const SAMPLE_VARS = Object.freeze({
     },
   ],
   _scan: { accountsFetched: 260, employeesChecked: 48, candidatesNew: 3, leaversFlagged: 1 },
+  // H1 (07-10-2026) — new joiners waiting for review.
+  joiner_count: '2',
+  new_count: '1',
+  inbox_link: 'https://pea-staging.aapnainfotech.com/new-joiners',
+  _joiners: [
+    {
+      name: 'Rohan Mehta', email: 'rmehta@aapnainfotech.com', isNew: true, waitingDays: 0,
+      accountCreated: '05-10-2026', suggestedDoj: '06-10-2026',
+      manager: 'Chhavi Verma', projectLeader: 'aroy@aapnainfotech.com',
+      isExperienced: true, jobTitle: 'Associate Software Engineer',
+      todo: ['Confirm fresher or experienced', 'Confirm the joining date'],
+    },
+    {
+      name: 'Sneha Iyer', email: 'siyer@aapnainfotech.com', isNew: false, waitingDays: 3,
+      accountCreated: '02-10-2026', suggestedDoj: '03-10-2026',
+      manager: 'Chhavi Verma', projectLeader: null,
+      isExperienced: null, jobTitle: 'Software Engineer',
+      todo: ['Choose fresher or experienced', 'Confirm the joining date', 'Add the project leader'],
+    },
+  ],
   shared_by: 'subhajit',
   _report: {
     employee: {
@@ -689,9 +879,17 @@ export async function render(key, vars) {
 export function renderPreview(key, draft = {}) {
   const def = TEMPLATES[key];
   if (!def) throw new AppError(`Unknown email template "${key}"`, 404);
-  const out = compile({ subject: draft.subject || def.subject, body: draft.body || def.body }, SAMPLE_VARS);
+  // H1 (07-10-2026) — `headline` is shared with the Microsoft 365 alert, whose
+  // sample would read wrongly here. It was: compile(…, SAMPLE_VARS)
+  const sample = PREVIEW_OVERRIDES[key] ? { ...SAMPLE_VARS, ...PREVIEW_OVERRIDES[key] } : SAMPLE_VARS;
+  const out = compile({ subject: draft.subject || def.subject, body: draft.body || def.body }, sample);
   return { subject: out.subject, body: out.body };
 }
+
+/** Sample values that differ for one template — H1 (07-10-2026). */
+const PREVIEW_OVERRIDES = Object.freeze({
+  joiners_waiting: { headline: 'Microsoft 365 found 1 new joiner. 1 more is still waiting.' },
+});
 
 /**
  * Check an edited subject and body before it is saved. Pure.

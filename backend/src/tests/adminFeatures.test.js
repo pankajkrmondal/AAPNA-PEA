@@ -45,8 +45,11 @@ describe('settings validation', () => {
   });
 
   test('domains lose a leading @ and must look like a domain', () => {
-    assert.equal(normaliseValue(def('azure_email_domain'), '@AapnaInfotech.com'), 'aapnainfotech.com');
-    assert.throws(() => normaliseValue(def('azure_email_domain'), 'aapnainfotech'), /domain/);
+    // 02-10-2026 — one domain became a list under its own key, azure_email_domains.
+    // assert.equal(normaliseValue(def('azure_email_domain'), '@AapnaInfotech.com'), 'aapnainfotech.com');
+    // assert.throws(() => normaliseValue(def('azure_email_domain'), 'aapnainfotech'), /domain/);
+    assert.equal(normaliseValue(def('azure_email_domains'), '@AapnaInfotech.com'), 'aapnainfotech.com');
+    assert.throws(() => normaliseValue(def('azure_email_domains'), 'aapnainfotech'), /domain/);
   });
 
   test('employee self-view is a fixed set of levels, defaulting to averages (HR, 13 Sep)', () => {

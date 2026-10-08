@@ -18,10 +18,12 @@
 import { useEffect } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { App, Button, Popconfirm, Tooltip } from 'antd';
+import { Alert, App, Button, Popconfirm, Tooltip } from 'antd';
 import {
   ArrowLeftOutlined, BellOutlined, CalendarOutlined, CheckOutlined, ClockCircleOutlined, CopyOutlined,
-  EyeOutlined, ExportOutlined, FlagOutlined, LeftOutlined, MessageOutlined, PrinterOutlined, RightOutlined,
+  // P8 — FlagOutlined was used by the attention card, which is now in
+  // components/EvaluationActions.jsx.
+  EyeOutlined, ExportOutlined, LeftOutlined, MessageOutlined, PrinterOutlined, RightOutlined,
   SendOutlined,
 } from '@ant-design/icons';
 import api, { unwrap } from '../api.js';
@@ -29,11 +31,16 @@ import StatusPill from '../components/StatusPill.jsx';
 import { Avatar, BucketPill, Delta, LoadProblem, RatingChip } from '../components/board/BoardParts.jsx';
 import {
   avg, bucketMeta, decisionTone, formatDate, ratingTone, ratingWord, shortDate, shortDateTime, daysLabel,
-  missingComments,
+  missingComments, answeredName, holderName, holderRole,
 } from '../evaluationDisplay.js';
+// M3 / U13 (review of 01-10-2026) — every `answeredName(e)` and `holderName(e)`
+// on this page was `e.rmName`, `holderRole(e)` was the fixed text "reporting
+// manager", and `e.withEmail || e.rmEmail` was `e.rmEmail`: today's reporting
+// manager, whoever had actually answered or held the link.
 import { formatDateTime } from '../formatDate.js';
 import { getUser } from '../auth.js';
 import { useCrumbs } from '../crumbs.jsx';
+import { AttentionCard, EarlierVersions, OpenEvaluationActions, ReopenAction } from '../components/EvaluationActions.jsx';
 
 /** What the navigation says the reader is walking. */
 const WALK_LABEL = {
@@ -133,15 +140,16 @@ function Sparkline({ history }) {
   );
 }
 
-/** Five dots filled to the rating, in its tone. */
-function Dots({ value }) {
-  const n = value == null ? 0 : Math.round(Number(value));
-  return (
-    <span className={`pea-dots pea-ink-${ratingTone(value)}`} aria-hidden>
-      {[1, 2, 3, 4, 5].map((i) => <i key={i} className={i <= n ? 'on' : ''} />)}
-    </span>
-  );
-}
+// H5 (HR, 29-09-2026) — only the removed "All seven ratings" panel used this.
+// /** Five dots filled to the rating, in its tone. */
+// function Dots({ value }) {
+//   const n = value == null ? 0 : Math.round(Number(value));
+//   return (
+//     <span className={`pea-dots pea-ink-${ratingTone(value)}`} aria-hidden>
+//       {[1, 2, 3, 4, 5].map((i) => <i key={i} className={i <= n ? 'on' : ''} />)}
+//     </span>
+//   );
+// }
 
 /** "↓ 1 since E5" — only where something moved. Unchanged says nothing. */
 function QuestionDelta({ delta, since }) {
@@ -149,32 +157,37 @@ function QuestionDelta({ delta, since }) {
   return <Delta value={delta} suffix={` since E${since}`} />;
 }
 
-/** Scroll to a question card without touching the URL. */
-function jumpTo(ev, key) {
-  ev.preventDefault();
-  document.getElementById(`q-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-/** The rail's "All seven ratings": the shape of the evaluation at a glance. Each row jumps to its question. */
-function RatingsPanel({ scores }) {
-  const count = scores.length === 7 ? 'seven' : scores.length;
-  return (
-    <section className="pea-card pea-card-pad pea-rail-panel pea-no-print">
-      <div className="pea-kicker">All {count} ratings</div>
-      <ul className="pea-rail-list">
-        {scores.map((s) => (
-          <li key={s.key}>
-            <a href={`#q-${s.key}`} onClick={(ev) => jumpTo(ev, s.key)} className="pea-rail-rating">
-              <span className="pea-rail-label" title={s.label}>{s.short}</span>
-              <Dots value={s.rating} />
-              <RatingChip value={s.rating} />
-            </a>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-}
+// ─────────────────────────────────────────────────────────────────────────────
+// H5 (HR, 29-09-2026) — removed from the screen, kept for reference: the rail's
+// "All seven ratings" panel and the jump-to-question helper it used. The same
+// ratings still show against each question on the right of the page.
+// ─────────────────────────────────────────────────────────────────────────────
+// /** Scroll to a question card without touching the URL. */
+// function jumpTo(ev, key) {
+//   ev.preventDefault();
+//   document.getElementById(`q-${key}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+// }
+//
+// /** The rail's "All seven ratings": the shape of the evaluation at a glance. Each row jumps to its question. */
+// function RatingsPanel({ scores }) {
+//   const count = scores.length === 7 ? 'seven' : scores.length;
+//   return (
+//     <section className="pea-card pea-card-pad pea-rail-panel pea-no-print">
+//       <div className="pea-kicker">All {count} ratings</div>
+//       <ul className="pea-rail-list">
+//         {scores.map((s) => (
+//           <li key={s.key}>
+//             <a href={`#q-${s.key}`} onClick={(ev) => jumpTo(ev, s.key)} className="pea-rail-rating">
+//               <span className="pea-rail-label" title={s.label}>{s.short}</span>
+//               <Dots value={s.rating} />
+//               <RatingChip value={s.rating} />
+//             </a>
+//           </li>
+//         ))}
+//       </ul>
+//     </section>
+//   );
+// }
 
 /** The rail's "This probation": E1 … En, the current one marked, each one click away. */
 function ProbationPanel({ e, walk }) {
@@ -241,7 +254,7 @@ function PrintRecord({ e, me }) {
       <header className="pr-head">
         <div className="pr-brand">
           <span className="pr-mark">PEA</span>
-          <div><strong>AAPNA</strong><span>Performance evaluation</span></div>
+          <div><strong>AAPNA</strong><span>Probation Period Evaluation Platform</span></div>
         </div>
         <div className="pr-conf"><strong>Evaluation record</strong><span>Confidential</span></div>
       </header>
@@ -255,7 +268,7 @@ function PrintRecord({ e, me }) {
 
       <div className="pr-facts">
         <div><span>Status</span>{submitted ? `Submitted ${formatDate(e.submittedAt)} · ${shortDateTime(e.submittedAt).split(' · ')[1]}` : bucketMeta(e.bucket).pill}</div>
-        <div><span>Submitted by</span>{submitted ? `${e.rmName} (reporting manager)` : `With ${e.rmName} (reporting manager)`}</div>
+        <div><span>Submitted by</span>{submitted ? `${answeredName(e)}${e.enteredBy ? ` — entered by HR (${e.enteredBy})` : ''}` : `With ${holderName(e)} (${holderRole(e)})`}</div>
         <div><span>Response</span>{response}</div>
         <div>
           <span>Average rating</span>
@@ -283,7 +296,7 @@ function PrintRecord({ e, me }) {
         {legacy
           ? <p className="pr-pre">{e.legacy.raw || 'No text was recorded.'}</p>
           : !submitted
-            ? <p><em>No comments yet — {e.rmName} has not submitted this evaluation.</em></p>
+            ? <p><em>No comments yet — {holderName(e)} has not submitted this evaluation.</em></p>
             : e.remarks
               ? <p className="pr-pre">{e.remarks}</p>
               : <p><em>No overall comment — only the question comments below.</em></p>}
@@ -318,7 +331,7 @@ function PrintRecord({ e, me }) {
       )}
 
       <footer className="pr-foot">
-        Printed from PEA by {who} ({role}) on {printedAt()} · Confidential — performance information about a named employee.
+        Printed from PEA by {who} ({role}) on {printedAt()} · Confidential — performance information about a named Commando.
       </footer>
     </article>
   );
@@ -430,13 +443,15 @@ export default function EvaluationProfile() {
         <Link to={back} className="pea-back"><ArrowLeftOutlined /> Back to evaluations</Link>
         <div className="pea-page-actions">
           <Button type="text" icon={<PrinterOutlined />} onClick={() => window.print()}>Print</Button>
+          {/* M6 — hand a submitted evaluation back to be corrected. */}
+          <ReopenAction e={e} onDone={refresh} />
           <Tooltip title="A link to this page for someone on the HR team (sign-in required).">
             <Button type="text" icon={<CopyOutlined />} onClick={() => copy(`${window.location.origin}/evaluations/${e.id}`, 'Link')}>
               Copy link
             </Button>
           </Tooltip>
           <Link to={`/employees/${e.employeeId}`}>
-            <Button type="text" icon={<ExportOutlined />}>Employee page</Button>
+            <Button type="text" icon={<ExportOutlined />}>Commando page</Button>
           </Link>
         </div>
         <div className="pea-walk">
@@ -464,6 +479,18 @@ export default function EvaluationProfile() {
       </div>
 
       {/* ── Who, which evaluation, and where it is ─────────────────────── */}
+      {/* Archive (07-10-2026) — an archived Commando's evaluations are a
+          read-only record; every action below is switched off by the API. */}
+      {e.archived && (
+        <Alert
+          type="info"
+          showIcon
+          className="pea-no-print"
+          style={{ marginBottom: 16 }}
+          message={`${e.employeeName} is archived — this evaluation is read-only.`}
+          description={<>Restore them from <Link to={`/employees/${e.employeeId}`}>their page</Link> to make changes.</>}
+        />
+      )}
       <section className="pea-card pea-profile-hero">
         <div className="pea-profile-id">
           <Avatar name={e.employeeName} size="xl" />
@@ -528,19 +555,25 @@ export default function EvaluationProfile() {
             </section>
           )}
 
+          {/* P8 — why it was flagged, and what HR did about it. Once an outcome
+              is recorded it stops "needing attention" but the card stays, so
+              the page still says why it was flagged and how it was dealt with. */}
+          <AttentionCard e={e} onDone={refresh} />
+          {/* P8 — the card before there was anywhere to record an outcome:
           {e.attention && (
             <section className="pea-card pea-card-pad pea-attention-card pea-no-print">
               <div className="pea-kicker pea-ink-warn"><FlagOutlined /> Needs attention</div>
               <ul>{e.attentionReasons.map((r) => <li key={r}>{r}</li>)}</ul>
             </section>
           )}
+          */}
 
           {!submitted && (
             <section className="pea-card pea-card-pad pea-nothing-card pea-no-print">
               <div className="pea-kicker"><ClockCircleOutlined /> Nothing back yet</div>
               {e.bucket === 'waiting' || e.bucket === 'opened' ? (
                 <>
-                  <p>The form is with <strong>{e.rmName}</strong>.</p>
+                  <p>The form is with <strong>{holderName(e)}</strong>{e.delegated ? <> (acting manager, in place of {e.rmName})</> : null}.</p>
                   <ul className="pea-dotlist">
                     <li>Sent {shortDateTime(e.sentAt)}</li>
                     {e.reminderCount > 0 && (
@@ -558,7 +591,7 @@ export default function EvaluationProfile() {
                     <div className="pea-side-actions">
                       <Popconfirm
                         title="Send an extra reminder?"
-                        description={<div style={{ maxWidth: 280 }}>Emails {e.rmEmail} again with the link they already have.</div>}
+                        description={<div style={{ maxWidth: 280 }}>Emails {e.withEmail || e.rmEmail} again with the link they already have.</div>}
                         okText="Send"
                         onConfirm={() => remind.mutate()}
                       >
@@ -596,10 +629,14 @@ export default function EvaluationProfile() {
                   )}
                 </>
               )}
+              {/* M7 / B5 — send it to an acting manager, or enter the ratings by hand. */}
+              <OpenEvaluationActions e={e} onDone={refresh} />
             </section>
           )}
 
+          {/* H5 (HR, 29-09-2026) — "All seven ratings" removed from the rail:
           {submitted && !legacy && e.scores.length > 0 && <RatingsPanel scores={e.scores} />}
+          */}
           <ProbationPanel e={e} walk={walk} />
         </aside>
 
@@ -617,15 +654,15 @@ export default function EvaluationProfile() {
               </>
             ) : !submitted ? (
               <p className="pea-ev-nocomment">
-                <MessageOutlined /> <em>No comments yet. {e.rmName} has not submitted this evaluation.</em>
+                <MessageOutlined /> <em>No comments yet. {holderName(e)} has not submitted this evaluation.</em>
               </p>
             ) : e.remarks ? (
               <figure className="pea-quote pea-quote--big">
                 <span className="pea-quote-mark" aria-hidden>“</span>
                 <blockquote>{e.remarks}</blockquote>
                 <figcaption>
-                  <Avatar name={e.rmName} size="sm" />
-                  <span><strong>{e.rmName}</strong><br /><span className="pea-muted">Reporting manager · {formatDateTime(e.submittedAt)}</span></span>
+                  <Avatar name={answeredName(e)} size="sm" />
+                  <span><strong>{answeredName(e)}</strong><br /><span className="pea-muted">{e.enteredBy ? `Entered by HR (${e.enteredBy})` : e.delegated ? 'Acting manager' : 'Reporting manager'} · {formatDateTime(e.submittedAt)}</span></span>
                 </figcaption>
               </figure>
             ) : (
@@ -641,7 +678,7 @@ export default function EvaluationProfile() {
                 Question by question
                 {submitted ? (
                   <span className="pea-muted pea-qhead-by">
-                    answered by <Avatar name={e.rmName} size="xs" /> {e.rmName}
+                    answered by <Avatar name={answeredName(e)} size="xs" /> {answeredName(e)}{e.enteredBy ? ' · entered by HR' : ''}
                     {qheadNote && <> · {qheadNote}</>}
                   </span>
                 ) : (
@@ -692,6 +729,9 @@ export default function EvaluationProfile() {
               )}
             </>
           )}
+
+          {/* M6 — what was submitted before each time HR reopened it. */}
+          <EarlierVersions revisions={e.revisions} />
         </main>
       </div>
 

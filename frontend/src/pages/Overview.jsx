@@ -223,7 +223,7 @@ export default function Overview() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `Performance Evaluation - ${formatDate(new Date())}.xlsx`;
+    a.download = `Probation Evaluation - ${formatDate(new Date())}.xlsx`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -292,7 +292,15 @@ export default function Overview() {
             <div className="pea-tile">
               <strong>{emp.inProbation}</strong>
               <span>In probation</span>
-              <small>{emp.confirmed} confirmed · {emp.extended} extended</small>
+              {/* Archive (07-10-2026) — the confirmed are archived the morning
+                  after, so "N confirmed" would read 0 almost always. It was:
+              <small>{emp.confirmed} confirmed · {emp.extended} extended</small> */}
+              <small>
+                {emp.extended} extended
+                {emp.archived != null && (
+                  <> · <Link to="/employees?state=archived">{emp.archived} archived</Link></>
+                )}
+              </small>
             </div>
             <button type="button" className="pea-tile" onClick={() => openBoard('waiting')}>
               <strong>{counts?.waiting ?? ev.awaitingResponse}</strong>
