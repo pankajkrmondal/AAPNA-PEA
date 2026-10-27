@@ -17,8 +17,9 @@
  */
 import prisma from '../config/database.js';
 import config from '../config/index.js';
-import { todayIn, dateIn, toDateString, addDays } from '../utils/dateUtils.js';
+import { todayIn, dateIn, toDateString, addDays, addMonths } from '../utils/dateUtils.js';
 import { findDeadlineBreaches } from './confirmationDeadline.service.js';
+import { DUE_AHEAD_MONTHS } from './evaluationList.service.js';
 import { archivedIds, notInIds } from '../utils/archiveScope.js';
 
 /**
@@ -28,6 +29,9 @@ import { archivedIds, notInIds } from '../utils/archiveScope.js';
 export async function getDashboard() {
   const today = todayIn(config.scheduler.timezone);
   const soon = addDays(today, 14);
+  // Walkthrough (27-10-2026) Q-1 — the "Due" tile looks two months ahead,
+  // as /evaluations/counts does. The upcoming list below keeps 14 days.
+  const ahead = addMonths(today, DUE_AHEAD_MONTHS);
 
   const activeEmployee = { halt_process: false, employment_status: 'active' };
 
@@ -86,8 +90,9 @@ export async function getDashboard() {
     prisma.pea_evaluation_cycles.count({
       where: { status: { in: ['email_sent', 'opened'] }, employee: activeEmployee },
     }),
+    // Q-1 — was due_date: { gt: today, lte: soon }.
     prisma.pea_evaluation_cycles.count({
-      where: { status: 'pending', due_date: { gt: today, lte: soon }, employee: activeEmployee },
+      where: { status: 'pending', due_date: { gt: today, lte: ahead }, employee: activeEmployee },
     }),
     prisma.pea_evaluation_cycles.count({ where: { status: 'completed', ...notArchivedCycle } }),
     // "Submitted of those DUE", not of every cycle ever scheduled.
@@ -172,7 +177,12 @@ export async function getDashboard() {
       completed: completedCycles,
       overdue,
       awaitingResponse: awaiting,
-      dueInNext14Days: dueSoon,
+      // Q-1 — two months ahead now, so the name changed. It was: dueInNext14Days: dueSoon,
+      dueAhead: dueSoon,
+      dueAheadMonths: DUE_AHEAD_MONTHS,
+      // The last day counted — the tile passes it to the board as `to`, so the
+      // list it opens is cut at exactly the same day.
+      dueAheadUntil: toDateString(ahead),
       averageRating: ratingAgg._avg.avg_rating ? Number(ratingAgg._avg.avg_rating) : null,
     },
 

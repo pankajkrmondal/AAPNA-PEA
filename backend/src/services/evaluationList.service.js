@@ -31,7 +31,7 @@ import { queueEmail } from './notification.service.js';
 import { leaverHoldApplies } from './evaluation.service.js';
 // H4 — toDateString and daysBetween were used only by the removed work list:
 // import { todayIn, addDays, toDateString, daysBetween } from '../utils/dateUtils.js';
-import { todayIn, addDays } from '../utils/dateUtils.js';
+import { todayIn, addDays, addMonths } from '../utils/dateUtils.js';
 import { notArchivedSql } from '../utils/archiveScope.js';
 
 /** Statuses meaning the link is out and nobody has responded. */
@@ -39,6 +39,13 @@ const AWAITING = ['email_sent', 'opened'];
 
 /** How far ahead "coming up" looks. Matches the Dashboard. */
 const SOON_DAYS = 14;
+
+/**
+ * Walkthrough (27-10-2026) W-03 / Q-1 — how far ahead the Dashboard's "Due"
+ * tile looks: two calendar months (Raginee: "how many are due in coming 2
+ * months"). It was SOON_DAYS. The decisions count keeps SOON_DAYS.
+ */
+export const DUE_AHEAD_MONTHS = 2;
 
 /** The database CHECK on reminder_count. See remindNow() for why it matters. */
 const MAX_REMINDER_COUNT = 2;
@@ -119,13 +126,15 @@ const FINAL_CYCLE_SQL = Prisma.sql`
 export async function getCounts() {
   const today = todayIn(config.scheduler.timezone);
   const soon = addDays(today, SOON_DAYS);
+  // W-03 / Q-1 — `due_soon` looks two months ahead; it used ${soon}.
+  const ahead = addMonths(today, DUE_AHEAD_MONTHS);
 
   const [row] = await prisma.$queryRaw`
     SELECT
       count(*) FILTER (WHERE c.status IN ('email_sent','opened'))::int              AS waiting,
       count(*) FILTER (WHERE c.status = 'pending' AND c.due_date <= ${today})::int  AS not_sent,
       count(*) FILTER (WHERE c.status = 'pending'
-                         AND c.due_date > ${today} AND c.due_date <= ${soon})::int  AS due_soon,
+                         AND c.due_date > ${today} AND c.due_date <= ${ahead})::int AS due_soon,
       count(*) FILTER (WHERE c.status IN ('email_sent','opened','pending')
                          AND c.due_date <= ${soon}
                          AND e.confirmation_status IS NULL

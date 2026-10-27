@@ -69,8 +69,11 @@ export const SHORT_LABELS = Object.freeze({
 /** The chips, in the order the design shows them. `attention` is the last. */
 export const BUCKETS = Object.freeze(['submitted', 'waiting', 'opened', 'scheduled', 'not_sent', 'closed']);
 
-/** Everything a caller may filter by. `in_progress` and `recent` back the section "Show all" links. */
-const STATUS_FILTERS = new Set(['all', ...BUCKETS, 'attention', 'in_progress', 'recent']);
+/**
+ * Everything a caller may filter by. `in_progress` and `recent` back the section "Show all" links;
+ * `with_manager` (waiting + opened) backs the Dashboard's "Waiting for manager" tile — W-03.
+ */
+const STATUS_FILTERS = new Set(['all', ...BUCKETS, 'attention', 'in_progress', 'recent', 'with_manager']);
 
 const IN_PROGRESS = ['waiting', 'opened', 'not_sent', 'scheduled'];
 
@@ -167,6 +170,9 @@ function statusSql(status) {
     case 'attention': return Prisma.sql`b.attention`;
     case 'recent': return Prisma.sql`b.bucket = 'submitted' AND NOT b.attention`;
     case 'in_progress': return Prisma.sql`b.bucket IN ('waiting','opened','not_sent','scheduled')`;
+    // Walkthrough (27-10-2026) W-03 — the Dashboard's "Waiting for manager"
+    // tile counts both (evaluationList.service.js getCounts `waiting`).
+    case 'with_manager': return Prisma.sql`b.bucket IN ('waiting','opened')`;
     case 'all': return Prisma.sql`TRUE`;
     default: return Prisma.sql`b.bucket = ${status}`;
   }
@@ -283,6 +289,7 @@ async function summarise(q, today) {
            count(*) FILTER (WHERE attention)::int                    AS attention,
            count(*) FILTER (WHERE bucket = 'submitted' AND NOT attention)::int AS recent,
            count(*) FILTER (WHERE bucket IN ('waiting','opened','not_sent','scheduled'))::int AS in_progress,
+           count(*) FILTER (WHERE bucket IN ('waiting','opened'))::int AS with_manager,
            round(avg(avg_rating) FILTER (WHERE bucket = 'submitted'), 2)::float AS average
       FROM b`;
 
@@ -298,6 +305,7 @@ async function summarise(q, today) {
       attention: row.attention,
       recent: row.recent,
       in_progress: row.in_progress,
+      with_manager: row.with_manager, // W-03 (27-10-2026)
     },
     stats: {
       // H3 (HR, 29-09-2026) — the board no longer shows these three figures;

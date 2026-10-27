@@ -31,12 +31,12 @@ export const MODULES = [
   { key: 'employees', path: '/employees', label: 'Commandos', emoji: '👥', desc: 'Search, update and manage Commando probation records' },
   { key: 'new_joiners', path: '/new-joiners', label: 'New joiners', emoji: '🆕', desc: 'Review joiners and leavers found in Microsoft 365, and add anyone by hand' },
   { key: 'manager_portal', path: '/manager-portal', label: 'Link generation', emoji: '🔗', desc: 'Create evaluation, team and Commando links to share' },
-  // Upload sheet sits directly after Link generation: it is a task HR performs,
-  // not a setting they adjust, and buried in a Settings tab it was the one
-  // screen people had to be told where to find.
-  { key: 'import_sheet', path: '/import', label: 'Upload sheet', emoji: '📤', desc: 'Load the master Excel workbook, or add anyone the Microsoft 365 check could not pick up' },
-  { key: 'email_templates', path: '/email-templates', label: 'Email templates', emoji: '✉️', desc: 'The subject and wording of every email PEA sends' },
-  { key: 'settings', path: '/settings', label: 'Settings', emoji: '⚙️', desc: 'Email recipients, scheduling and access' },
+  // Walkthrough (27-10-2026) W-12 — Raginee: "Can we add upload sheet and
+  // email templates into settings part?" Both are Settings tabs now (see
+  // NESTED_MODULES). They sat here, after Link generation:
+  // { key: 'import_sheet', path: '/import', label: 'Upload sheet', emoji: '📤', desc: 'Load the master Excel workbook, or add anyone the Microsoft 365 check could not pick up' },
+  // { key: 'email_templates', path: '/email-templates', label: 'Email templates', emoji: '✉️', desc: 'The subject and wording of every email PEA sends' },
+  { key: 'settings', path: '/settings', label: 'Settings', emoji: '⚙️', desc: 'Email recipients, scheduling, the upload sheet and email templates' },
 ];
 
 /**
@@ -50,10 +50,28 @@ export const MODULES = [
  * MODULES with their own sidebar entry, for the same reason: each is a screen
  * HR works in rather than a value they adjust, and burying one in a settings
  * tab made it hard to find.
+ *
+ * Walkthrough (27-10-2026) W-12 — and back inside Settings again, as tabs, at
+ * the HR lead's request. Each keeps its own access switch: the tab shows only
+ * for a user whose switch is on, and Settings appears in the sidebar for
+ * anyone with any one of the three.
  */
 export const NESTED_MODULES = [
   { key: 'analytics', path: '/analytics', label: 'Trends', within: 'Dashboard' },
+  { key: 'import_sheet', path: '/import', label: 'Upload sheet', within: 'Settings', tab: 'upload-sheet' },
+  { key: 'email_templates', path: '/email-templates', label: 'Email templates', within: 'Settings', tab: 'email-templates' },
 ];
+
+/** W-12 — the access switches that each open part of the Settings screen. */
+export const SETTINGS_MODULES = ['settings', 'import_sheet', 'email_templates'];
+
+/**
+ * W-12 — what opens a sidebar entry: its own switch, or for Settings any of
+ * the three behind its tabs.
+ * @param {string} key - a MODULES key
+ * @returns {string|string[]}
+ */
+export const gateOf = (key) => (key === 'settings' ? SETTINGS_MODULES : key);
 
 /** @returns {object} the signed-in user as last stored, or {} */
 export function getUser() {
@@ -74,12 +92,16 @@ export function setUser(user) {
  */
 export function canUse(user, moduleKey) {
   if (isAdminTier(user?.role)) return true;
+  // W-12 — a list means "any of these": Settings opens for anyone who may use
+  // one of its tabs.
+  if (Array.isArray(moduleKey)) return moduleKey.some((k) => canUse(user, k));
   return !Array.isArray(user?.modules) || user.modules.includes(moduleKey);
 }
 
 /** Where a user lands: the first module they can open. */
 export function homePath(user) {
-  return MODULES.find((m) => canUse(user, m.key))?.path ?? '/no-access';
+  // W-12 — was canUse(user, m.key).
+  return MODULES.find((m) => canUse(user, gateOf(m.key)))?.path ?? '/no-access';
 }
 
 export const initialsOf = (user) =>

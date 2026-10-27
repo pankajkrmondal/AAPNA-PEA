@@ -52,15 +52,31 @@ export function decisionTone(decision) {
 /**
  * The status chips, in the design's order. `tone` feeds StatusPill; the chip
  * dot uses the same ink.
+ *
+ * Walkthrough (27-10-2026) W-05 — `hint` is what the status means, shown on
+ * hover over the chip and the pill. Raginee: "what does 'Open' mean?" The
+ * definitions are evaluationBoard.service.js bucketSql().
  */
 export const BUCKETS = [
-  { key: 'submitted', label: 'Submitted', pill: 'Submitted', tone: 'ok' },
-  { key: 'waiting', label: 'Waiting', pill: 'Waiting for manager', tone: 'warn' },
-  { key: 'opened', label: 'Opened', pill: 'Opened by manager', tone: 'info' },
-  { key: 'scheduled', label: 'Scheduled', pill: 'Scheduled', tone: 'info' },
-  { key: 'not_sent', label: 'Not sent', pill: 'Not sent yet', tone: 'crit' },
-  { key: 'closed', label: 'Closed', pill: 'Closed', tone: 'mute' },
+  { key: 'submitted', label: 'Submitted', pill: 'Submitted', tone: 'ok',
+    hint: 'The reporting manager has submitted this evaluation. Their ratings and comments can be read.' },
+  { key: 'waiting', label: 'Waiting', pill: 'Waiting for manager', tone: 'warn',
+    hint: 'The evaluation link has been emailed to the reporting manager, who has not opened it yet. Reminders go out automatically.' },
+  { key: 'opened', label: 'Opened', pill: 'Opened by manager', tone: 'info',
+    hint: 'The reporting manager has opened the evaluation link but has not submitted it yet.' },
+  { key: 'scheduled', label: 'Scheduled', pill: 'Scheduled', tone: 'info',
+    hint: 'Not due yet. PEA emails the reporting manager automatically on the due date.' },
+  { key: 'not_sent', label: 'Not sent', pill: 'Not sent yet', tone: 'crit',
+    hint: 'The due date has passed but the email has not gone to the reporting manager yet. Open it to see why.' },
+  { key: 'closed', label: 'Closed', pill: 'Closed', tone: 'mute',
+    hint: 'No longer needed, so it will not be sent — for example the probation was decided before it fell due.' },
 ];
+
+/** W-05 — the two chips that are not a status of their own. */
+export const CHIP_HINTS = {
+  all: 'Every evaluation that matches the filters above.',
+  attention: 'Submitted evaluations to read closely: the manager did not confirm or extended the probation, the average is below 2.5, or a question was rated 2 or lower.',
+};
 
 export const bucketMeta = (key) => BUCKETS.find((b) => b.key === key) || { key, label: key, pill: key, tone: 'mute' };
 

@@ -1,12 +1,16 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card, Tabs, Switch, InputNumber, Input, Select, Button, Space, Typography, Alert, App, Table, Spin,
 } from 'antd';
 import { SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import api, { unwrap, USER_KEY } from '../api.js';
-import { isAdminTier } from '../auth.js';
+import { canUse, isAdminTier } from '../auth.js';
 import StatusPill from '../components/StatusPill.jsx';
+// Walkthrough (27-10-2026) W-12 — both are tabs of this screen again.
+import ImportSheet from './ImportSheet.jsx';
+import EmailTemplates from './EmailTemplates.jsx';
 
 /** One editable setting. Saves on its own, so a bad value never blocks the rest. */
 function SettingRow({ s, canEdit, onSave, saving }) {
@@ -103,8 +107,19 @@ export default function Settings() {
   const qc = useQueryClient();
   const user = JSON.parse(localStorage.getItem(USER_KEY) || '{}');
   const canEdit = isAdminTier(user.role);
+  // W-12 — each part of this screen keeps its own access switch. The screen
+  // opens for any one of them; only the parts switched on are shown.
+  const canSettings = canUse(user, 'settings');
+  const canImport = canUse(user, 'import_sheet');
+  const canTemplates = canUse(user, 'email_templates');
+  // The open tab lives in the URL, so /import and /email-templates land on theirs.
+  const [params, setParams] = useSearchParams();
 
-  const settings = useQuery({ queryKey: ['settings'], queryFn: () => api.get('/settings').then(unwrap) });
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: () => api.get('/settings').then(unwrap),
+    enabled: canSettings,
+  });
 
   const save = useMutation({
     mutationFn: ({ key, value }) => api.put(`/settings/${key}`, { value }).then((r) => r.data),
@@ -117,21 +132,36 @@ export default function Settings() {
     onError: (err) => { message.error(err.friendlyMessage); },
   });
 
-  if (settings.isLoading) return <Spin size="large" style={{ display: 'block', marginTop: 80 }} />;
-  if (settings.error) return <Alert type="error" message="Could not load settings" description={settings.error.friendlyMessage} />;
+  if (canSettings && settings.isLoading) return <Spin size="large" style={{ display: 'block', marginTop: 80 }} />;
+  if (canSettings && settings.error) return <Alert type="error" message="Could not load settings" description={settings.error.friendlyMessage} />;
 
-  const data = settings.data;
+  const data = settings.data || { groups: [] };
+
+  // W-12 — the tabs this user may open, in order: the settings groups, then
+  // Upload sheet and Email templates, then (super admin only) Not in effect.
+  const tabKeys = [
+    ...(canSettings ? data.groups.map((g) => g.name) : []),
+    ...(canImport ? ['upload-sheet'] : []),
+    ...(canTemplates ? ['email-templates'] : []),
+    ...(data.notInEffect ? ['not-in-effect'] : []),
+  ];
+  const activeTab = tabKeys.includes(params.get('tab')) ? params.get('tab') : tabKeys[0];
 
   return (
     <>
+      {/* Walkthrough (27-10-2026) W-13 — Subhajit: the subtitle "Everything the
+          Power Automate flows hardcoded — changeable without a deployment" is
+          the build team's language, not HR's. Removed. */}
       <div className="pea-page-head">
         <div>
           <h2>Settings</h2>
-          <p>Everything the Power Automate flows hardcoded — changeable without a deployment</p>
+          <p>Who is emailed and when, the rules for new joiners, the upload sheet and the email templates — change any of them here, at any time</p>
         </div>
-        <Space wrap>
-          <Button icon={<ReloadOutlined />} onClick={() => settings.refetch()}>Refresh</Button>
-        </Space>
+        {canSettings && (
+          <Space wrap>
+            <Button icon={<ReloadOutlined />} onClick={() => settings.refetch()}>Refresh</Button>
+          </Space>
+        )}
       </div>
 
       {/* The environment banner that used to sit here is gone. Which
@@ -141,12 +171,15 @@ export default function Settings() {
           "no real email is going out", is already in the header chip on every
           screen, with the reasons behind it. */}
 
-      {!canEdit && (
+      {!canEdit && canSettings && (
         <Alert type="warning" showIcon style={{ borderRadius: 'var(--pea-radius)' }} message="Read-only — only an admin can change settings" />
       )}
 
       <Card className="pea-card" size="small">
         <Tabs
+          activeKey={activeTab}
+          onChange={(key) => setParams({ tab: key }, { replace: true })}
+          destroyOnHidden
           items={[
             ...data.groups.map((g) => ({
               key: g.name,
@@ -161,13 +194,12 @@ export default function Settings() {
                 />
               )),
             })),
-            // Upload sheet is NOT a tab here any more: it has its own sidebar
-            // entry, below Link generation. It is a task HR performs, not a
-            // setting they adjust, and it was the one thing in this screen
-            // people had to be told where to find. Its access switch is
-            // unchanged, so who may open it is exactly as before.
-            //
-            // Email templates left for the same reason, earlier.
+            // Walkthrough (27-10-2026) W-12 — Upload sheet and Email templates
+            // are tabs here again, at Raginee's request. Before, they had their
+            // own sidebar entries ("a task HR performs, not a setting they
+            // adjust"). Each tab still follows its own access switch.
+            ...(canImport ? [{ key: 'upload-sheet', label: 'Upload sheet', children: <ImportSheet embedded /> }] : []),
+            ...(canTemplates ? [{ key: 'email-templates', label: 'Email templates', children: <EmailTemplates embedded /> }] : []),
             //
             // "Not in effect" is a list of database rows that nothing reads.
             // It exists so a maintainer does not change one in pgAdmin

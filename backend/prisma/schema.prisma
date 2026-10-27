@@ -9,21 +9,22 @@ datasource db {
 
 /// This model contains an expression index which requires additional setup for migrations. Visit https://pris.ly/d/expression-indexes for more info.
 model pea_users {
-  id                 Int                      @id @default(autoincrement())
-  username           String                   @db.VarChar(100)
-  email              String                   @db.VarChar(255)
-  password_hash      String
-  first_name         String?                  @db.VarChar(100)
-  last_name          String?                  @db.VarChar(100)
-  role               String                   @default("hr") @db.VarChar(50)
-  is_active          Boolean                  @default(true)
-  azure_object_id    String?                  @db.VarChar(100)
-  last_login_at      DateTime?                @db.Timestamptz(6)
-  created_at         DateTime                 @default(now()) @db.Timestamptz(6)
-  modified_at        DateTime                 @default(now()) @db.Timestamptz(6)
-  module_permissions pea_module_permissions[]
-  notifications      pea_notifications[]
-  sessions           pea_sessions[]
+  id                   Int                      @id @default(autoincrement())
+  username             String                   @db.VarChar(100)
+  email                String                   @db.VarChar(255)
+  password_hash        String
+  first_name           String?                  @db.VarChar(100)
+  last_name            String?                  @db.VarChar(100)
+  role                 String                   @default("hr") @db.VarChar(50)
+  is_active            Boolean                  @default(true)
+  azure_object_id      String?                  @db.VarChar(100)
+  last_login_at        DateTime?                @db.Timestamptz(6)
+  created_at           DateTime                 @default(now()) @db.Timestamptz(6)
+  modified_at          DateTime                 @default(now()) @db.Timestamptz(6)
+  pea_evaluation_reads pea_evaluation_reads[]
+  module_permissions   pea_module_permissions[]
+  notifications        pea_notifications[]
+  sessions             pea_sessions[]
 
   @@map("pea_users")
 }
@@ -84,8 +85,18 @@ model pea_employees {
   leaver_dismissed_at   DateTime?               @db.Timestamptz(6)
   created_at            DateTime                @default(now()) @db.Timestamptz(6)
   modified_at           DateTime                @default(now()) @db.Timestamptz(6)
+  decision_on           DateTime?               @db.Date
+  decision_reason       String?
+  decision_by           String?                 @db.VarChar(255)
+  left_on               DateTime?               @db.Date
+  left_reason           String?
+  archived_at           DateTime?               @db.Timestamptz(6)
+  archived_by           String?                 @db.VarChar(255)
+  archive_reason        String?                 @db.VarChar(500)
+  restored_at           DateTime?               @db.Timestamptz(6)
   emails                pea_email_log[]
   audit                 pea_employee_audit[]
+  pea_employee_notes    pea_employee_notes[]
   cycles                pea_evaluation_cycles[]
   candidates            pea_joiner_candidates[]
 
@@ -95,44 +106,55 @@ model pea_employees {
 }
 
 model pea_evaluation_cycles {
-  id                  BigInt                  @id @default(autoincrement())
-  employee_id         BigInt
-  seq_no              Int                     @db.SmallInt
-  is_extension        Boolean                 @default(false)
+  id                       BigInt                     @id @default(autoincrement())
+  employee_id              BigInt
+  seq_no                   Int                        @db.SmallInt
+  is_extension             Boolean                    @default(false)
   /// The sweep matches due_date <= CURRENT_DATE. The Power Automate original
   /// matched an EXACT day count (== 30), so one failed run skipped that
   /// evaluation permanently and silently. Plan §3.1.
-  due_date            DateTime                @db.Date
-  period_from         DateTime?               @db.Date
-  period_to           DateTime?               @db.Date
+  due_date                 DateTime                   @db.Date
+  period_from              DateTime?                  @db.Date
+  period_to                DateTime?                  @db.Date
   /// pending | email_sent | opened | completed | skipped
-  status              String                  @default("pending") @db.VarChar(20)
+  status                   String                     @default("pending") @db.VarChar(20)
   /// The manager's credential for the form. No login required — this mirrors
   /// the ATS interviewer-scorecard pattern that replaces MS Forms.
-  token               String                  @unique(map: "uq_pea_evaluation_cycles_token") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  token_expires_at    DateTime?               @db.Timestamptz(6)
-  sent_at             DateTime?               @db.Timestamptz(6)
-  opened_at           DateTime?               @db.Timestamptz(6)
-  submitted_at        DateTime?               @db.Timestamptz(6)
-  submitted_by_email  String?                 @db.VarChar(255)
-  submitted_ip        String?                 @db.VarChar(64)
+  token                    String                     @unique(map: "uq_pea_evaluation_cycles_token") @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  token_expires_at         DateTime?                  @db.Timestamptz(6)
+  sent_at                  DateTime?                  @db.Timestamptz(6)
+  opened_at                DateTime?                  @db.Timestamptz(6)
+  submitted_at             DateTime?                  @db.Timestamptz(6)
+  submitted_by_email       String?                    @db.VarChar(255)
+  submitted_ip             String?                    @db.VarChar(64)
   /// Two reminders per cycle at due_date +2 and +4 days. Reconstructed from the
   /// PPT user guide because the reminder flow was never exported. Plan §2.3b.
-  reminder_count      Int                     @default(0) @db.SmallInt
-  last_reminded_at    DateTime?               @db.Timestamptz(6)
-  avg_rating          Decimal?                @db.Decimal(3, 2)
-  remarks             String?
+  reminder_count           Int                        @default(0) @db.SmallInt
+  last_reminded_at         DateTime?                  @db.Timestamptz(6)
+  avg_rating               Decimal?                   @db.Decimal(3, 2)
+  remarks                  String?
   /// Captured on the final cycle only.
-  confirmation_status String?                 @db.VarChar(50)
+  confirmation_status      String?                    @db.VarChar(50)
   /// Verbatim pre-migration text for legacy rows we deliberately do NOT parse
   /// (Sheet1 free-text blobs, Sheet3's 4-parameter scale). Plan R5, tier 3.
-  legacy_raw          String?
-  legacy_format       String?                 @db.VarChar(30)
-  created_at          DateTime                @default(now()) @db.Timestamptz(6)
-  modified_at         DateTime                @default(now()) @db.Timestamptz(6)
-  emails              pea_email_log[]
-  employee            pea_employees           @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  scores              pea_evaluation_scores[]
+  legacy_raw               String?
+  legacy_format            String?                    @db.VarChar(30)
+  created_at               DateTime                   @default(now()) @db.Timestamptz(6)
+  modified_at              DateTime                   @default(now()) @db.Timestamptz(6)
+  confirmation_reason      String?
+  draft                    Json?
+  draft_saved_at           DateTime?                  @db.Timestamptz(6)
+  sent_to_name             String?                    @db.VarChar(150)
+  sent_to_email            String?                    @db.VarChar(255)
+  delegated                Boolean                    @default(false)
+  submitted_by_name        String?                    @db.VarChar(150)
+  entered_by               String?                    @db.VarChar(255)
+  emails                   pea_email_log[]
+  employee                 pea_employees              @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pea_evaluation_followups pea_evaluation_followups[]
+  pea_evaluation_reads     pea_evaluation_reads[]
+  pea_evaluation_revisions pea_evaluation_revisions[]
+  scores                   pea_evaluation_scores[]
 
   @@unique([employee_id, seq_no], map: "uq_pea_evaluation_cycles_emp_seq")
   @@index([due_date, status], map: "idx_pea_evaluation_cycles_due")
@@ -331,4 +353,57 @@ model pea_manager_links {
   created_at   DateTime  @default(now()) @db.Timestamptz(6)
 
   @@map("pea_manager_links")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model pea_employee_notes {
+  id            BigInt        @id @default(autoincrement())
+  employee_id   BigInt
+  body          String
+  created_by    String        @db.VarChar(255)
+  created_at    DateTime      @default(now()) @db.Timestamptz(6)
+  pea_employees pea_employees @relation(fields: [employee_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([employee_id, created_at(sort: Desc)], map: "idx_pea_employee_notes_employee")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model pea_evaluation_followups {
+  id                    BigInt                @id @default(autoincrement())
+  cycle_id              BigInt
+  outcome               String                @db.VarChar(40)
+  note                  String?
+  recorded_by           String                @db.VarChar(255)
+  recorded_at           DateTime              @default(now()) @db.Timestamptz(6)
+  pea_evaluation_cycles pea_evaluation_cycles @relation(fields: [cycle_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([cycle_id, recorded_at(sort: Desc)], map: "idx_pea_evaluation_followups_cycle")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model pea_evaluation_reads {
+  id                    BigInt                @id @default(autoincrement())
+  cycle_id              BigInt
+  user_id               Int
+  read_at               DateTime              @default(now()) @db.Timestamptz(6)
+  pea_evaluation_cycles pea_evaluation_cycles @relation(fields: [cycle_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  pea_users             pea_users             @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([cycle_id, user_id], map: "uq_pea_evaluation_reads_cycle_user")
+  @@index([user_id, cycle_id], map: "idx_pea_evaluation_reads_user")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model pea_evaluation_revisions {
+  id                    BigInt                @id @default(autoincrement())
+  cycle_id              BigInt
+  snapshot              Json
+  reason                String
+  reopened_by           String                @db.VarChar(255)
+  reopened_at           DateTime              @default(now()) @db.Timestamptz(6)
+  pea_evaluation_cycles pea_evaluation_cycles @relation(fields: [cycle_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([cycle_id, reopened_at(sort: Desc)], map: "idx_pea_evaluation_revisions_cycle")
 }

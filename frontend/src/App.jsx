@@ -24,7 +24,9 @@ import {
 } from '@ant-design/icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import api, { unwrap, TOKEN_KEY } from './api.js';
-import { MODULES, NESTED_MODULES, ROLE_LABEL, canUse, homePath, initialsOf, isAdminTier, signOut, useCurrentUser } from './auth.js';
+import {
+  MODULES, NESTED_MODULES, ROLE_LABEL, SETTINGS_MODULES, canUse, gateOf, homePath, initialsOf, isAdminTier, signOut, useCurrentUser,
+} from './auth.js';
 import NotificationBell from './components/NotificationBell.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import AdminPortalIcon from './components/AdminPortalIcon.jsx';
@@ -38,7 +40,7 @@ import Employees from './pages/Employees.jsx';
 import EmployeeDetail from './pages/EmployeeDetail.jsx';
 import NewJoiners from './pages/NewJoiners.jsx';
 import Analytics from './pages/Analytics.jsx';
-import ImportSheet from './pages/ImportSheet.jsx';
+// W-12 (27-10-2026) — ImportSheet and EmailTemplates render inside Settings now.
 import Evaluations from './pages/Evaluations.jsx';
 import EvaluationBoard from './pages/EvaluationBoard.jsx';
 import EvaluationProfile from './pages/EvaluationProfile.jsx';
@@ -46,7 +48,6 @@ import { CrumbProvider, useCrumbTrail } from './crumbs.jsx';
 import ManagerLinks from './pages/ManagerLinks.jsx';
 import ManagerPortal from './pages/ManagerPortal.jsx';
 import Settings from './pages/Settings.jsx';
-import EmailTemplates from './pages/EmailTemplates.jsx';
 import AdminDashboard from './pages/AdminDashboard.jsx';
 import SelfView from './pages/SelfView.jsx';
 
@@ -113,7 +114,9 @@ function Shell({ module, children }) {
 
   // A module switched off for this user is left out of the sidebar, and a
   // direct visit is redirected below. The API refuses it regardless.
-  const nav = MODULES.filter((m) => canUse(user, m.key)).map((m) => ({ key: m.path, icon: ICONS[m.key], label: m.label }));
+  // W-12 (27-10-2026) — gateOf(): Settings shows for anyone who may use one of
+  // its tabs. It was canUse(user, m.key).
+  const nav = MODULES.filter((m) => canUse(user, gateOf(m.key))).map((m) => ({ key: m.path, icon: ICONS[m.key], label: m.label }));
 
   // Surfaced in the header because both brakes silently mean "no manager hears
   // from us", and that is precisely the failure the old system suffered from.
@@ -299,6 +302,16 @@ function AdminPortal() {
   );
 }
 
+/**
+ * Walkthrough (27-10-2026) W-07 — a screen inside a module that only the admin
+ * tier may open; anyone else is sent to `to`. The API refuses them too.
+ */
+function AdminOnly({ to, children }) {
+  const user = useCurrentUser();
+  if (!isAdminTier(user.role)) return <Navigate to={to} replace />;
+  return children;
+}
+
 /** Where an HR user lands when every module has been switched off for them. */
 function NoAccess() {
   return (
@@ -328,13 +341,22 @@ export default function App() {
           whole page now. The route as it was:
       <Route path="/evaluations/worklist" element={<Protected module="evaluations"><Evaluations /></Protected>} />
       */}
+      {/* Walkthrough (27-10-2026) W-07 — the Email log is admin tier only. It was:
       <Route path="/evaluations/emails" element={<Protected module="evaluations"><Evaluations /></Protected>} />
+      */}
+      <Route path="/evaluations/emails" element={<Protected module="evaluations"><AdminOnly to="/evaluations"><Evaluations /></AdminOnly></Protected>} />
       <Route path="/evaluations/worklist" element={<Navigate to="/evaluations/emails" replace />} />
       <Route path="/evaluations/:id" element={<Protected module="evaluations"><EvaluationProfile /></Protected>} />
+      {/* Walkthrough (27-10-2026) W-12 — Upload sheet and Email templates are
+          Settings tabs; their old addresses open the tab. They were:
       <Route path="/import" element={<Protected module="import_sheet"><ImportSheet /></Protected>} />
-      <Route path="/manager-portal" element={<Protected module="manager_portal"><ManagerLinks /></Protected>} />
-      <Route path="/settings" element={<Protected module="settings"><Settings /></Protected>} />
       <Route path="/email-templates" element={<Protected module="email_templates"><EmailTemplates /></Protected>} />
+      */}
+      <Route path="/import" element={<Navigate to="/settings?tab=upload-sheet" replace />} />
+      <Route path="/manager-portal" element={<Protected module="manager_portal"><ManagerLinks /></Protected>} />
+      {/* W-12 — was module="settings"; any one of its three tabs opens it. */}
+      <Route path="/settings" element={<Protected module={SETTINGS_MODULES}><Settings /></Protected>} />
+      <Route path="/email-templates" element={<Navigate to="/settings?tab=email-templates" replace />} />
       <Route path="/no-access" element={<Protected><NoAccess /></Protected>} />
       <Route path="/admin" element={<AdminPortal />} />
       {/* Users moved into the Admin Portal; old bookmarks still arrive. */}

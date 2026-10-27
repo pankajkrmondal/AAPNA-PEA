@@ -48,6 +48,7 @@ const WALK_LABEL = {
   attention: 'Needs attention',
   recent: 'Recently submitted',
   in_progress: 'In progress',
+  with_manager: 'Waiting for manager', // W-03 (27-10-2026) — the Dashboard tile's list
   submitted: 'Submitted',
   waiting: 'Waiting for manager',
   opened: 'Opened',

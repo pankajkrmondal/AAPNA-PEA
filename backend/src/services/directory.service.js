@@ -117,7 +117,11 @@ const norm = (v) => String(v || '').trim().toLowerCase() || null;
 
 /** The words that suggest each track, and what each setting is when its row is absent. */
 export const TITLE_WORD_DEFAULTS = Object.freeze({
-  joiner_title_words_fresher: 'intern,trainee,fresher,graduate,apprentice,junior',
+  // Walkthrough (27-10-2026) W-10 — Raginee: "Graduate doesn't make any sense".
+  // A stored row wins over this default, so an environment that already saved
+  // the list is changed in Settings → New joiners. It was:
+  //   joiner_title_words_fresher: 'intern,trainee,fresher,graduate,apprentice,junior',
+  joiner_title_words_fresher: 'intern,trainee,fresher,apprentice,junior',
   joiner_title_words_experienced:
     'associate,senior,sr,lead,manager,architect,principal,head,specialist,consultant',
 });

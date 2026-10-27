@@ -110,7 +110,8 @@ export const PLACEHOLDERS = Object.freeze({
   // H1 (07-10-2026) — new joiners waiting for review.
   joiner_count: { label: 'How many new joiners are waiting for review' },
   new_count: { label: 'How many of them this scan found' },
-  joiner_table: { label: 'Table: each joiner waiting, the suggested joining date and track, and what is still needed', block: true },
+  // W-09 (27-10-2026) — was 'Table: each joiner waiting, the suggested joining date and track, and what is still needed'.
+  joiner_table: { label: 'Table: each joiner waiting, what will be saved, and Confirm / Not confirm (sent to the review mailbox)', block: true },
   inbox_link: { label: 'Link to the New joiners screen (plain)' },
   inbox_button: { label: 'Button: open New joiners', block: true },
   report_header_table: { label: 'Table: Commando, manager, joined, type, decision, progress', block: true },
@@ -356,17 +357,26 @@ const TEMPLATES = Object.freeze({
   joiners_waiting: {
     name: 'New joiners waiting for review',
     category: 'hr',
-    recipient: 'Admin and HR users in PEA',
+    // Walkthrough (27-10-2026) W-09 — the review mailbox, with buttons. It was
+    // recipient 'Admin and HR users in PEA', and the description ended "Goes to
+    // every active Super Admin and Admin, and to every HR user who can open New
+    // joiners." The body's second paragraph read: "Microsoft 365 does not hold
+    // the date of joining or the years of experience, so each joiner needs a
+    // person to confirm them before any evaluation is scheduled. PEA has
+    // suggested both — the joining date from when the account was created, and
+    // fresher or experienced from the designation — please check them."
+    recipient: 'The review mailbox (Settings → New joiners), or every admin and HR user when none is set',
     description:
       'Sent when the Microsoft 365 check finds new joiners, and once a day while anyone is still ' +
-      'waiting in the New Joiner Inbox. Goes to every active Super Admin and Admin, and to every HR ' +
-      'user who can open New joiners.',
+      'waiting in the New Joiner Inbox. Goes to the review mailbox set in Settings → New joiners ' +
+      '(hr2@aapnainfotech.com by default) with Confirm and Not confirm beside each joiner; when no ' +
+      'mailbox is set, to every admin and HR user without the buttons.',
     placeholders: ['today', 'joiner_count', 'new_count', 'headline', 'joiner_table', 'inbox_link', 'inbox_button'],
     requiredAny: [['inbox_button', 'inbox_link']],
     subject: '{{joiner_count}} new joiner(s) waiting for review — {{today}}',
     body: `<p>Hello,</p>
 <p>{{headline}}</p>
-<p>Microsoft 365 does not hold the date of joining or the years of experience, so each joiner needs a person to confirm them before any evaluation is scheduled. PEA has suggested both — the joining date from when the account was created, and fresher or experienced from the designation — please check them.</p>
+<p>Microsoft 365 does not hold the joining date or the years of experience, so each joiner is confirmed by HR before any evaluation is scheduled. PEA counts the evaluations from the account creation date in Microsoft 365 (AD) and suggests fresher or experienced from the designation. Check the details, then press Confirm or Not confirm — each opens a page with one button, so nothing happens until you press it there.</p>
 {{joiner_table}}
 {{inbox_button}}
 <p>This reminder is sent once a day while anyone is still waiting.</p>`,
@@ -535,7 +545,37 @@ function buildBlocks(v) {
     // ── H1 (07-10-2026): new joiners waiting for review ──────────────────
     inbox_button: button(v.inbox_link, 'Open New joiners'),
 
-    joiner_table: (v._joiners || []).length
+    // Walkthrough (27-10-2026) W-09 — sent to the review mailbox, each row
+    // carries Confirm / Not confirm (Raginee: "the email ID and the name of
+    // the person, and on the right hand side a button of confirm or not
+    // confirm"). The details stay, small, so nobody confirms blind. Without
+    // links — the email went to every admin and HR user — the table is as before.
+    joiner_table: (v._joiners || []).some((j) => j.actions)
+      ? table(
+        `<tr><th style="${TH}">Joiner</th><th style="${TH}">Will be saved as</th><th style="${TH}">Action</th></tr>`
+          + v._joiners.map((j) => {
+            const a = j.actions || {};
+            const track = j.isExperienced === true ? 'Experienced' : j.isExperienced === false ? 'Fresher' : 'fresher / experienced not known';
+            const small = (t) => `<span style="font-size:12px;color:${BRAND.muted}">${t}</span>`;
+            const pill = (url, label, bg) =>
+              `<a href="${esc(url)}" style="display:inline-block;margin:2px 4px 2px 0;padding:8px 14px;border-radius:6px;background:${bg};color:#ffffff;font-weight:700;font-size:13px;text-decoration:none">${label}</a>`;
+            return `<tr><td style="${TD}"><strong>${esc(j.name || j.email)}</strong>${j.isNew ? ` <span style="font-size:11px;color:${BRAND.accent};font-weight:700">NEW</span>` : ''}`
+              + `<br>${small(esc(j.email || ''))}</td>`
+              + `<td style="${TD}">${small(
+                `${j.accountCreated ? `Account created ${esc(j.accountCreated)}` : 'Account creation date missing'}`
+                + `${j.suggestedDoj ? ` · counted from ${esc(j.suggestedDoj)}` : ''}<br>`
+                + `${esc(track)}${j.jobTitle ? ` (“${esc(j.jobTitle)}”)` : ''}<br>`
+                + `Manager: ${esc(j.manager || 'missing')} · PL: ${esc(j.projectLeader || 'missing')}`
+              )}</td>`
+              + `<td style="${TD};white-space:nowrap">`
+              + (a.confirmUrl ? pill(a.confirmUrl, 'Confirm', BRAND.accent) : '')
+              + (a.dismissUrl ? pill(a.dismissUrl, 'Not confirm', '#b42318') : '')
+              + (a.blocker ? `<br>${small(`${esc(a.blocker)} — <a href="${esc(v.inbox_link)}" style="color:${BRAND.accent}">review in PEA</a>`)}` : '')
+              + `</td></tr>`;
+          }).join('')
+      )
+      // H1 (07-10-2026) — the table without links, unchanged.
+      : (v._joiners || []).length
       ? table(
         `<tr><th style="${TH}">Joiner</th><th style="${TH}">Joining date (suggested)</th>`
           + `<th style="${TH}">Manager · project leader</th><th style="${TH}">Fresher or experienced</th>`
@@ -791,6 +831,12 @@ const SAMPLE_VARS = Object.freeze({
       manager: 'Chhavi Verma', projectLeader: 'aroy@aapnainfotech.com',
       isExperienced: true, jobTitle: 'Associate Software Engineer',
       todo: ['Confirm fresher or experienced', 'Confirm the joining date'],
+      // W-09 — as sent to the review mailbox.
+      actions: {
+        confirmUrl: 'https://pea-staging.aapnainfotech.com/api/joiner-action/sample-confirm',
+        dismissUrl: 'https://pea-staging.aapnainfotech.com/api/joiner-action/sample-dismiss',
+        blocker: null,
+      },
     },
     {
       name: 'Sneha Iyer', email: 'siyer@aapnainfotech.com', isNew: false, waitingDays: 3,
@@ -798,6 +844,11 @@ const SAMPLE_VARS = Object.freeze({
       manager: 'Chhavi Verma', projectLeader: null,
       isExperienced: null, jobTitle: 'Software Engineer',
       todo: ['Choose fresher or experienced', 'Confirm the joining date', 'Add the project leader'],
+      actions: {
+        confirmUrl: null,
+        dismissUrl: 'https://pea-staging.aapnainfotech.com/api/joiner-action/sample-dismiss-2',
+        blocker: 'Fresher or experienced is not known',
+      },
     },
   ],
   shared_by: 'subhajit',

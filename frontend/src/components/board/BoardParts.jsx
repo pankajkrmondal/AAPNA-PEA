@@ -9,7 +9,7 @@
  * says must never be a blank panel.
  */
 import { Link } from 'react-router-dom';
-import { Button, Popconfirm } from 'antd';
+import { Button, Popconfirm, Tooltip } from 'antd';
 import {
   ArrowDownOutlined, ArrowRightOutlined, ArrowUpOutlined, CalendarOutlined, CheckOutlined,
   ClockCircleOutlined, CloudUploadOutlined, ExclamationCircleOutlined, EyeOutlined, FlagOutlined,
@@ -75,10 +75,16 @@ export function SubmittedPill() {
   );
 }
 
-/** Any bucket's pill, with the design's small leading icon. */
+/**
+ * Any bucket's pill, with the design's small leading icon.
+ * Walkthrough (27-10-2026) W-05 — hovering says what the status means. The
+ * span is there because Tooltip needs a child that takes mouse handlers.
+ */
 export function BucketPill({ bucket }) {
-  if (bucket === 'submitted') return <SubmittedPill />;
   const meta = bucketMeta(bucket);
+  if (bucket === 'submitted') {
+    return <Tooltip title={meta.hint}><span><SubmittedPill /></span></Tooltip>;
+  }
   const icon = {
     waiting: <ClockCircleOutlined />,
     opened: <EyeOutlined />,
@@ -86,9 +92,13 @@ export function BucketPill({ bucket }) {
     scheduled: <CalendarOutlined />,
   }[bucket];
   return (
-    <StatusPill tone={meta.tone} nodot={!!icon} className="pea-pill-icon">
-      {icon} {meta.pill}
-    </StatusPill>
+    <Tooltip title={meta.hint}>
+      <span>
+        <StatusPill tone={meta.tone} nodot={!!icon} className="pea-pill-icon">
+          {icon} {meta.pill}
+        </StatusPill>
+      </span>
+    </Tooltip>
   );
 }
 

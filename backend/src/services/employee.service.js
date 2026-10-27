@@ -509,6 +509,9 @@ export const LIST_STATES = Object.freeze([
   'left',
   // Archive (07-10-2026) — probation over and moved out of the day-to-day lists.
   'archived',
+  // Walkthrough (27-10-2026) W-03 — the Dashboard's "In probation" tile opens
+  // this: no decision yet OR extended, the same people its number counts.
+  'probation',
 ]);
 
 /** Columns the list may be sorted by — U6. Anything else is refused. */
@@ -556,6 +559,12 @@ function stateWhere(state) {
     // archive itself is applied in employeeWhere(), which has the ids.
     case 'archived':
       return {};
+    // Walkthrough (27-10-2026) W-03 — must match dashboard.service.js inProbation.
+    case 'probation':
+      return {
+        employment_status: 'active',
+        OR: [{ confirmation_status: null }, { confirmation_status: { startsWith: 'Extend' } }],
+      };
     default:
       return { employment_status: 'left' };
   }

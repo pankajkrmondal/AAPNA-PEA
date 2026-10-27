@@ -21,6 +21,7 @@ import AppError from '../utils/AppError.js';
 import { notifyStaff } from './inAppNotification.service.js';
 import { TEMPLATE_DEFS, listTemplateCatalog, validateDraft, renderPreview } from './emailTemplate.service.js';
 import { DIRECTORY_DEFAULTS, WITHOUT_MANAGER, TITLE_WORD_DEFAULTS } from './directory.service.js';
+import { JOINER_REVIEW_TO_DEFAULT } from './joinerEmailLink.service.js';
 
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -41,7 +42,11 @@ export const REGISTRY = Object.freeze([
   {
     key: 'cc_emails', group: 'Email', type: 'email_list',
     label: 'CC on evaluation emails',
-    help: 'Copied on every evaluation request and reminder, alongside the project leader. Lifted from the Power Automate flow.',
+    // Walkthrough (27-10-2026) W-13 — the help texts on this screen are HR's,
+    // not the build team's: references to the old flow, the database and who
+    // said what are gone. Each one's previous wording is noted beside it.
+    // Was: '… alongside the project leader. Lifted from the Power Automate flow.'
+    help: 'Copied on every evaluation request and reminder, alongside the project leader.',
   },
   {
     key: 'hr_notification_emails', group: 'Email', type: 'email_list',
@@ -56,13 +61,15 @@ export const REGISTRY = Object.freeze([
   {
     key: 'never_cc_as_pl', group: 'Email', type: 'email_list',
     label: 'Never copy these as project leader',
-    help: 'People who should not be copied on evaluation emails just because they are listed as the project leader. The old Power Automate flow left one address off on purpose; PEA copied everyone until now. They are still copied if they are the reporting manager, or if they are on the CC list above.',
+    // W-13 — dropped: "The old Power Automate flow left one address off on purpose; PEA copied everyone until now."
+    help: 'People who should not be copied on evaluation emails just because they are listed as the project leader. They are still copied if they are the reporting manager, or if they are on the CC list above.',
   },
   {
     key: 'cc_on_team_links', group: 'Email', type: 'boolean',
     default: 'true',
     label: 'Copy HR on manager team-link emails',
-    help: 'On: the "my team" link sent to a manager is copied to the HR notification recipients and the CC list, like every other evaluation email. Subhajit, 15 Sep: "Anuj will be there in the CC as well… along with the HR."',
+    // W-13 — dropped the quote: 'Subhajit, 15 Sep: "Anuj will be there in the CC as well… along with the HR."'
+    help: 'On: the "my team" link sent to a manager is copied to the HR notification recipients and the CC list, like every other evaluation email.',
   },
 
   // ── Evaluations ────────────────────────────────────────────────────────
@@ -74,17 +81,21 @@ export const REGISTRY = Object.freeze([
   {
     key: 'reminder_max_count', group: 'Evaluations', type: 'integer', min: 0, max: 2,
     label: 'Reminders per evaluation',
-    help: 'At most 2 — the database enforces it. 0 turns reminders off.',
+    // W-13 — was: 'At most 2 — the database enforces it. 0 turns reminders off.'
+    help: 'At most 2. 0 turns reminders off.',
   },
   {
     key: 'reminder_offsets_days', group: 'Evaluations', type: 'int_list', min: 1, max: 30,
     label: 'Reminder days after sending',
-    help: 'Comma-separated, ascending, e.g. 2,4. Reconstructed from the PPT user guide — HR to confirm.',
+    // W-13 — was: '… e.g. 2,4. Reconstructed from the PPT user guide — HR to confirm.'
+    help: 'Comma-separated, ascending, e.g. 2,4 sends the first reminder 2 days after the evaluation email and the second 4 days after.',
   },
   {
     key: 'sweep_cron', group: 'Evaluations', type: 'cron',
-    label: 'Daily sweep time (cron)',
-    help: 'When evaluation emails and reminders go out, in IST. Default 0 11 * * * — 11:00, as the old flow.',
+    // W-13 — was 'Daily sweep time (cron)'.
+    label: 'Daily email time',
+    // W-13 — was: '… Default 0 11 * * * — 11:00, as the old flow.'
+    help: 'When evaluation emails and reminders go out each day, in IST. Written as a schedule code: 0 11 * * * means every day at 11:00.',
   },
 
   // ── Probation ──────────────────────────────────────────────────────────
@@ -108,7 +119,8 @@ export const REGISTRY = Object.freeze([
   {
     key: 'deadline_alert_email_enabled', group: 'Probation', type: 'boolean',
     label: 'Email HR a daily deadline digest',
-    help: 'Decision 17. The dashboard and bell show overdue probations either way.',
+    // W-13 — was: 'Decision 17. The dashboard and bell show overdue probations either way.'
+    help: 'On: HR is emailed once a day about probations whose decision is overdue. The dashboard and bell show them either way.',
   },
 
   // ── New joiners (Entra) ────────────────────────────────────────────────
@@ -119,13 +131,15 @@ export const REGISTRY = Object.freeze([
   },
   {
     key: 'azure_scan_cron', group: 'New joiners', type: 'cron',
-    label: 'Scan time (cron)',
-    help: 'Default 0 9 * * * — two hours before the evaluation sweep.',
+    // W-13 — was label 'Scan time (cron)', help 'Default 0 9 * * * — two hours before the evaluation sweep.'
+    label: 'Daily Microsoft 365 check time',
+    help: 'When the daily Microsoft 365 check runs, in IST. Written as a schedule code: 0 9 * * * means every day at 09:00, two hours before the evaluation emails.',
   },
   {
     key: 'azure_scan_window_days', group: 'New joiners', type: 'integer', min: 1, max: 365,
     label: 'Look back for new accounts (days)',
-    help: 'Wide enough for a delayed joining date; narrow enough not to enqueue years of staff.',
+    // W-13 — was: '… narrow enough not to enqueue years of staff.'
+    help: 'How far back the check looks for new Microsoft 365 accounts. Wide enough to catch a delayed start; narrow enough not to bring back long-standing staff.',
   },
   // H1 (AD sync) — one domain became a list. The entry before, kept for reference:
   // {
@@ -189,6 +203,14 @@ export const REGISTRY = Object.freeze([
     label: 'Designation words that suggest Experienced',
     help: 'The same for Experienced. "Associate" is here because an associate has one to two years\' experience. A title with words from both lists is suggested as Experienced; a title with neither gets no suggestion and HR chooses. Blank: Experienced is never suggested.',
   },
+  // Walkthrough (27-10-2026) W-09 — Raginee: the review email goes to the HR
+  // mailbox, and Subhajit confirms or not straight from it.
+  {
+    key: 'joiner_review_email_to', group: 'New joiners', type: 'email_list', critical: true,
+    default: JOINER_REVIEW_TO_DEFAULT,
+    label: 'Send the new joiner review email to',
+    help: 'The daily "new joiners waiting" email goes only to these addresses, with Confirm and Not confirm buttons beside each joiner — anyone who can read this mailbox can confirm a joiner, so keep it to the HR mailbox. Confirm is offered only when nothing needs a choice; otherwise the email says "Review in PEA". Links work for 72 hours. Blank: the email goes to every admin and HR user instead, without the buttons.',
+  },
   {
     key: 'azure_field_sync_enabled', group: 'New joiners', type: 'boolean', critical: true,
     label: 'Let the scan update names and emails',
@@ -198,7 +220,8 @@ export const REGISTRY = Object.freeze([
     key: 'hold_evaluations_for_leavers', group: 'New joiners', type: 'boolean', critical: true,
     default: 'true',
     label: 'Hold evaluations when Microsoft 365 says someone has left',
-    help: 'On: the moment the nightly check finds an account switched off and unlicensed, that person’s evaluation emails stop — before HR confirms the exit. This is the case Subhajit described on 15 Sep, where a forgotten pause let an evaluation go out to someone who had left. Off: emails keep going until HR marks them as left by hand.',
+    help: 'On: the moment the nightly check finds an account switched off and unlicensed, that person’s evaluation emails stop — before HR confirms the exit, so no evaluation goes out for someone who has left. Off: emails keep going until HR marks them as left by hand.',
+    // W-13 — was: '… This is the case Subhajit described on 15 Sep, where a forgotten pause let an evaluation go out to someone who had left. …'
   },
   {
     key: 'sync_alert_enabled', group: 'New joiners', type: 'boolean', critical: true,
@@ -224,7 +247,8 @@ export const REGISTRY = Object.freeze([
     options: ['off', 'schedule', 'averages', 'full'],
     default: 'averages',
     label: 'Commando self-view',
-    help: 'What a Commando sees through their own link. off: nothing. schedule: dates and status only. averages: plus their average ratings. full: plus per-parameter ratings and manager comments. HR chose averages (13 Sep).',
+    help: 'What a Commando sees through their own link. off: nothing. schedule: dates and status only. averages: plus their average ratings. full: plus per-parameter ratings and manager comments.',
+    // W-13 — dropped: "HR chose averages (13 Sep)."
   },
 ]);
 

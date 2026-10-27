@@ -6,6 +6,7 @@
  *   4. No setting says "needs restart". Changing the sweep cron reschedules the
  *      running job, because HR cannot restart a server.
  *   2. "Upload sheet" is no longer a tab here (it has a sidebar entry).
+ *      Reversed by the 27-Oct walkthrough (W-12): it is a tab here again.
  *   1/3. The pea_settings column names and the "Not in effect" tab are shown to
  *      a super admin and to nobody else.
  */
@@ -39,9 +40,16 @@ test.describe('Settings — everyone', () => {
     }
   });
 
-  test('Upload sheet is not a tab here any more', async ({ page }) => {
-    // Point 2, the other half of the move proved in navigation.spec.js.
-    await expect(page.getByRole('tab', { name: 'Upload sheet' })).toHaveCount(0);
+  // Walkthrough (27-10-2026) W-12 — reversed: both are tabs here again. It was
+  // 'Upload sheet is not a tab here any more', expecting a count of 0.
+  test('Upload sheet and Email templates are tabs here', async ({ page }) => {
+    await expect(page.getByRole('tab', { name: 'Upload sheet' })).toHaveCount(1);
+    await expect(page.getByRole('tab', { name: 'Email templates' })).toHaveCount(1);
+  });
+
+  test('W-13: the subtitle is in HR language, not the build team\'s', async ({ page }) => {
+    await expect(page.getByText('Power Automate flows hardcoded', { exact: false })).toHaveCount(0);
+    await expect(page.getByText('without a deployment', { exact: false })).toHaveCount(0);
   });
 });
 
@@ -127,7 +135,8 @@ test.describe('Settings — a schedule change applies without a restart', () => 
     // The cron lives on the Evaluations tab; the screen opens on Email.
     await openSettingsTab(page, 'Evaluations');
 
-    const row = settingRow(page, 'Daily sweep time (cron)');
+    // Walkthrough (27-10-2026) W-13 — the label was 'Daily sweep time (cron)'.
+    const row = settingRow(page, 'Daily email time');
     await expect(row).toBeVisible();
     const input = row.locator('input');
 

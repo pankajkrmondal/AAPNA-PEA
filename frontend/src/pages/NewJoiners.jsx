@@ -77,7 +77,10 @@ function Suggested({ value, source, hint }) {
  */
 function toFix(r) {
   const missing = [];
-  if (!r.suggested_doj) missing.push('date of joining');
+  // Walkthrough (27-10-2026) W-08 — "account creation date" on this screen,
+  // never "date of joining": Microsoft 365 holds no joining date. It was
+  // 'date of joining' here and in `check` below.
+  if (!r.suggested_doj) missing.push('account creation date');
   if (!r.suggested_rm_email) missing.push('reporting manager');
   if (!r.suggested_pl_email) missing.push('project leader');
   // H1 (07-10-2026) — fresher or experienced is suggested from the designation
@@ -87,7 +90,7 @@ function toFix(r) {
   if (!hasTrack) missing.push('fresher or experienced');
 
   const check = [];
-  if (r.suggested_doj && r.doj_source) check.push('date of joining');
+  if (r.suggested_doj && r.doj_source) check.push('account creation date');
   if (hasTrack) check.push('fresher or experienced');
   if (r.suggested_rm_email && r.rm_source) check.push('manager');
 
@@ -275,7 +278,14 @@ export default function NewJoiners() {
               Test run
             </Button>
           </Tooltip>
-          <Tooltip title="Checks Microsoft 365 now (the nightly check does the same if switched on in Settings → New joiners). Fills the inbox and records account status on Commandos. No email is sent; a bell notification is raised if something new is found.">
+          {/* Walkthrough (27-10-2026) W-11 — Subhajit: the hint was not correct.
+              It said "No email is sent", but a scan that finds new joiners
+              emails every admin and HR user (notifyJoinersWaiting, 'arrived').
+              It was: "Checks Microsoft 365 now (the nightly check does the same
+              if switched on in Settings → New joiners). Fills the inbox and
+              records account status on Commandos. No email is sent; a bell
+              notification is raised if something new is found." */}
+          <Tooltip title="Checks Microsoft 365 now — the same check that runs on its own every day, at the time set in Settings → New joiners. New accounts are added to the list below and account status is recorded on Commandos. If new joiners are found, every admin and HR user is emailed to review them and the bell rings; possible leavers ring the bell only. No email goes to any manager or Commando.">
             <Button icon={<SyncOutlined />} onClick={() => scan.mutate(false)} loading={scan.isPending}>
               Scan now
             </Button>
@@ -327,7 +337,8 @@ export default function NewJoiners() {
                 {sync.rows.some((p) => p.fixable) && (
                   <div style={{ marginTop: 6 }}>
                     Add the missing details by hand below, or{' '}
-                    <Link to="/import">upload the sheet</Link> with them. Everything
+                    {/* W-12 (27-10-2026) — was to="/import"; the sheet is a Settings tab now. */}
+                    <Link to="/settings?tab=upload-sheet">upload the sheet</Link> with them. Everything
                     else carries on as normal.
                   </div>
                 )}
@@ -439,17 +450,26 @@ export default function NewJoiners() {
               ),
             },
             {
-              title: 'Joining date',
-              width: 180,
+              // Walkthrough (27-10-2026) W-08 — Raginee: "instead of date of
+              // joining, write it down account creation date", with an info
+              // text saying where it comes from. The column shows the real
+              // creation date; the day the schedule counts from (the day after,
+              // H1 07-10-2026 — unchanged) is said in the hint. It was titled
+              // 'Joining date' and showed fmt(r.suggested_doj).
+              title: (
+                <span>
+                  Account creation date{' '}
+                  <HintIcon title="The date IT created this person's Microsoft 365 (AD) account. Microsoft 365 does not hold a joining date, so the evaluation schedule is worked out from this account date." />
+                </span>
+              ),
+              width: 230,
               render: (_, r) => (
                 <Suggested
-                  value={r.suggested_doj ? fmt(r.suggested_doj) : null}
+                  value={r.account_created_at ? fmt(r.account_created_at) : r.suggested_doj ? fmt(r.suggested_doj) : null}
                   source={r.doj_source}
                   hint={
-                    (r.doj_source === 'account_created'
-                      ? 'The Microsoft account creation date, used as a proxy. The next scan changes it to the day after.'
-                      : 'The day after the Microsoft account was created. Microsoft 365 does not hold the joining date — check it against the offer letter.')
-                    + (r.account_created_at ? ` Account created ${fmt(r.account_created_at)}.` : '')
+                    'The date IT created the Microsoft 365 (AD) account. It can be a few days before or after the real first day — check it.'
+                    + (r.suggested_doj ? ` Evaluations will be counted from ${fmt(r.suggested_doj)}${r.doj_source === 'created_next_day' ? ' (the day after the account was created)' : ''}; you can change it when confirming.` : '')
                   }
                 />
               ),
@@ -782,17 +802,22 @@ export default function NewJoiners() {
             <Input />
           </Form.Item>
 
+          {/* Walkthrough (27-10-2026) W-08 — for an account found in Microsoft
+              365 this is not a joining date, so it is not called one: the label
+              says what the date does, and the help says where it came from.
+              Added by hand, a real joining date is typed, so the label stays.
+              It was: label="Date of joining", message 'Confirm the joining date'. */}
           <Form.Item
             name="doj"
-            label="Date of joining"
-            rules={[{ required: true, message: 'Confirm the joining date' }]}
+            label={accepting?.byHand ? 'Date of joining' : 'Evaluations counted from'}
+            rules={[{ required: true, message: accepting?.byHand ? 'Confirm the joining date' : 'Confirm the date the evaluations are counted from' }]}
             // H1 (07-10-2026) — was: accepting?.doj_source === 'account_created' ? 'Prefilled from the
             // Microsoft account creation date — check it against the offer letter or with the Commando.'
             extra={
               accepting?.doj_source === 'created_next_day'
-                ? 'Suggested: the day after the Microsoft account was created. Microsoft 365 does not hold the joining date — check it against the offer letter or with the Commando.'
+                ? `Account created in Microsoft 365 (AD) on ${fmt(accepting.account_created_at)}; prefilled with the day after. Change it if the person started on a different day.`
                 : accepting?.doj_source === 'account_created'
-                  ? 'Prefilled from the Microsoft account creation date — check it against the offer letter or with the Commando.'
+                  ? `Prefilled with the Microsoft 365 (AD) account creation date${accepting.account_created_at ? `, ${fmt(accepting.account_created_at)}` : ''}. Change it if the person started on a different day.`
                   : undefined
             }
           >

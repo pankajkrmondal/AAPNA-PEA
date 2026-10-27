@@ -57,6 +57,8 @@ import { archivedIds, notInIds, notArchivedSql } from '../utils/archiveScope.js'
 import {
   todayIn, toUtcMidnight, toDateString, formatDisplay, addDays, dateIn, daysBetween,
 } from '../utils/dateUtils.js';
+// Walkthrough (27-10-2026) W-09 — Confirm / Not confirm in the review email.
+import { actionLinks, JOINER_REVIEW_TO_DEFAULT } from './joinerEmailLink.service.js';
 
 const DEFAULTS = {
   azure_scan_window_days: 45,
@@ -787,6 +789,17 @@ export function dailyReminderDue(lastSentAt, today, timeZone = config.scheduler.
  * @param {{reason?: 'arrived'|'daily', newIds?: string[]}} [opts]
  * @returns {Promise<object>}
  */
+/**
+ * W-09 — the review mailbox from Settings → New joiners, as a list. The
+ * default when the row is absent; empty when an admin cleared it.
+ * @returns {Promise<string[]>}
+ */
+async function reviewEmailTo() {
+  const row = await prisma.pea_settings.findUnique({ where: { setting_key: 'joiner_review_email_to' } });
+  return String(row?.setting_value ?? JOINER_REVIEW_TO_DEFAULT)
+    .split(/[;,\s]+/).map((s) => s.trim()).filter(Boolean);
+}
+
 export async function notifyJoinersWaiting({ reason = 'arrived', newIds = [] } = {}) {
   const tz = config.scheduler.timezone;
   const today = todayIn(tz);
@@ -813,8 +826,19 @@ export async function notifyJoinersWaiting({ reason = 'arrived', newIds = [] } =
   }
 
   const isNew = new Set(newIds.map(String));
+  // Walkthrough (27-10-2026) W-09 — with a review mailbox set, the email goes
+  // there alone and each row carries its Confirm / Not confirm links. It was:
+  //   .map((c) => joinerReviewRow(c, words, today, isNew, tz))
+  const reviewTo = await reviewEmailTo();
+  const base = String(config.frontendUrl || '').replace(/\/+$/, '');
   const rows = waiting
-    .map((c) => joinerReviewRow(c, words, today, isNew, tz))
+    .map((c) => {
+      const row = joinerReviewRow(c, words, today, isNew, tz);
+      if (reviewTo.length) {
+        row.actions = actionLinks(serialiseCandidate(c, words), { today, to: reviewTo.join(';'), base });
+      }
+      return row;
+    })
     .sort((a, b) => Number(b.isNew) - Number(a.isNew) || b.waitingDays - a.waitingDays);
   const newCount = rows.filter((r) => r.isNew).length;
   const others = rows.length - newCount;
@@ -869,9 +893,11 @@ export async function notifyJoinersWaiting({ reason = 'arrived', newIds = [] } =
     : `Microsoft 365 found ${newCount} new ${plural(newCount, 'joiner', 'joiners')}.` +
       `${others ? ` ${others} more ${plural(others, 'is', 'are')} still waiting.` : ''}`;
 
+  // W-09 — `reviewTo` picks the recipients (notification.service.js); empty
+  // means every admin and HR user, as before.
   const result = await queueEmail({
     type: 'joiners_waiting',
-    context: { joiners: rows, newCount, headline, today: formatDisplay(today) },
+    context: { joiners: rows, newCount, headline, today: formatDisplay(today), reviewTo },
   });
 
   return done({ emailed: result.status === 'sent' || result.status === 'suppressed', emailStatus: result.status });

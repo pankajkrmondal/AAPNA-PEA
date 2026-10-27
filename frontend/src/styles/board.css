@@ -1021,8 +1021,8 @@ a.pea-rail-rating:hover, a.pea-rail-step:hover { background: var(--pea-surface-2
   box-shadow: var(--pea-shadow);
   color: var(--pea-text);
 }
-button.pea-tile { cursor: pointer; transition: border-color .15s, box-shadow .2s; }
-button.pea-tile:hover { border-color: var(--pea-green-200); box-shadow: var(--pea-shadow-lift); }
+button.pea-tile, .pea-tile--link { cursor: pointer; transition: border-color .15s, box-shadow .2s; }
+button.pea-tile:hover, .pea-tile--link:hover { border-color: var(--pea-green-200); box-shadow: var(--pea-shadow-lift); }
 .pea-tile strong { font-family: var(--pea-display); font-size: 28px; font-weight: 700; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .pea-tile strong em { font-style: normal; font-size: 18px; font-weight: 600; color: var(--pea-text-muted); }
 .pea-tile > span { font-size: 13px; color: var(--pea-text-muted); }
