@@ -32,9 +32,10 @@ import StatusPill from '../components/StatusPill.jsx';
 import {
   Avatar, BucketPill, CardSkeleton, EvaluationCard, LoadProblem, ProgressCard,
 } from '../components/board/BoardParts.jsx';
-import { BUCKETS, LEGACY_SCOPE, avg, decisionTone, holderName, ratingTone, shortDate } from '../evaluationDisplay.js';
+import { BUCKETS, CHIP_HINTS, LEGACY_SCOPE, avg, decisionTone, holderName, ratingTone, shortDate } from '../evaluationDisplay.js';
 import { DATE_FORMAT } from '../formatDate.js';
 import { useCrumbs } from '../crumbs.jsx';
+import { isAdminTier, useCurrentUser } from '../auth.js';
 
 const { RangePicker } = DatePicker;
 
@@ -78,6 +79,7 @@ export default function EvaluationBoard() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  const user = useCurrentUser();
 
   useCrumbs([{ label: 'Evaluations', to: '/evaluations' }, { label: 'Board' }]);
 
@@ -159,11 +161,12 @@ export default function EvaluationBoard() {
   };
 
   const counts = data?.counts || {};
-  const stats = data?.stats || {};
+  // W-04 — `stats` fed the Average rating card only. It was:
+  // const stats = data?.stats || {};
 
   const chips = [
-    { key: 'all', label: 'All', count: counts.all },
-    ...BUCKETS.map((b) => ({ key: b.key, label: b.label, count: counts[b.key], tone: b.tone })),
+    { key: 'all', label: 'All', count: counts.all, hint: CHIP_HINTS.all },
+    ...BUCKETS.map((b) => ({ key: b.key, label: b.label, count: counts[b.key], tone: b.tone, hint: b.hint })),
   ];
 
   const managerOptions = useMemo(
@@ -190,43 +193,11 @@ export default function EvaluationBoard() {
             Status, the overall comment and every question comment — for every evaluation, on one screen.
           </p>
         </div>
-        <div className="pea-figures pea-figures--single">
-          {/* H3 (HR, 29-09-2026) — removed from the screen, kept for reference.
-              These three figures repeated the counts on the status chips just
-              below (Submitted, Waiting, Needs attention). Average rating stays:
-              it is on no chip.
-
-          <button type="button" className="pea-figure" onClick={() => set({ status: 'submitted' })}>
-            <strong>{stats.submitted ?? '—'}</strong><span>Submitted</span>
-          </button>
-          <button type="button" className="pea-figure" onClick={() => set({ status: 'waiting' })}>
-            <strong>{stats.waitingForManager ?? '—'}</strong><span>Waiting for manager</span>
-          </button>
-          <button type="button" className="pea-figure" onClick={() => set({ status: 'attention' })}>
-            <strong className={stats.needAttention ? 'pea-ink-crit' : ''}>{stats.needAttention ?? '—'}</strong>
-            <span>Need attention</span>
-          </button>
-          */}
-          {/* Board tidy-up (01-10-2026) — with one figure left, the four-column
-              band was a wide, mostly empty box. The average is a compact card
-              now: the number, "out of 5", and the six-month line beside it.
-              It was:
-          <div className="pea-figure pea-figure--static">
-            <strong>{stats.averageRating == null ? '—' : avg(stats.averageRating)}</strong><span>Average rating</span>
-            <TrendLine points={stats.averageTrend} />
-          </div>
-          */}
-          <div className="pea-figure pea-figure--static pea-figure--avg">
-            <span className="pea-figure-label">Average rating</span>
-            <div className="pea-figure-line">
-              <strong>{stats.averageRating == null ? '—' : avg(stats.averageRating)}</strong>
-              <em>/ 5</em>
-              {/* H2 (HR, 29-09-2026; removed 07-10-2026) — the six-month line was
-                  "Average Rating by Month" in miniature. It was:
-              <TrendLine points={stats.averageTrend} /> */}
-            </div>
-          </div>
-        </div>
+        {/* Walkthrough (27-10-2026) W-04 — the "Average rating" card, the last
+            figure in this box, is removed with the box (see ce72b9a for it and
+            the H3 / tidy-up history). Raginee: one average across different
+            people means nothing — fresher and experienced are rated on
+            different tracks. Averages stay on each evaluation and Commando. */}
       </section>
 
       {/* Filters and chips stay in reach down a long board.
@@ -294,37 +265,44 @@ export default function EvaluationBoard() {
             <Link to="/evaluations/worklist"><Button type="text" icon={<MailOutlined />}>Work list &amp; emails</Button></Link>
           </Tooltip>
           */}
-          <Tooltip title="Every email PEA has sent, to whom, and whether it went — the place to check that a manager received theirs.">
-            {/* Board tidy-up — an outlined button, to match the controls beside it. It was type="text". */}
-            <Link to="/evaluations/emails"><Button icon={<MailOutlined />}>Email log</Button></Link>
-          </Tooltip>
+          {/* W-07 — admin tier only; HR users no longer see the button. */}
+          {isAdminTier(user.role) && (
+            <Tooltip title="Every email PEA has sent, to whom, and whether it went — the place to check that a manager received theirs.">
+              {/* Board tidy-up — an outlined button, to match the controls beside it. It was type="text". */}
+              <Link to="/evaluations/emails"><Button icon={<MailOutlined />}>Email log</Button></Link>
+            </Tooltip>
+          )}
         </div>
 
         {/* ── Status chips ─────────────────────────────────────────────── */}
         <div className="pea-chips" role="tablist" aria-label="Status">
+          {/* W-05 — every chip says what its status means on hover. */}
           {chips.map((c) => (
+            <Tooltip key={c.key} title={c.hint} mouseEnterDelay={0.3}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={status === c.key}
+                className={`pea-chip${status === c.key ? ' is-active' : ''}`}
+                onClick={() => { set({ status: c.key }); setSelected([]); }}
+              >
+                {c.tone && <span className={`pea-chip-dot pea-bg-${c.tone}`} />}
+                {c.label}
+                <span className="pea-chip-count">{c.count ?? 0}</span>
+              </button>
+            </Tooltip>
+          ))}
+          <Tooltip title={CHIP_HINTS.attention} mouseEnterDelay={0.3}>
             <button
-              key={c.key}
               type="button"
               role="tab"
-              aria-selected={status === c.key}
-              className={`pea-chip${status === c.key ? ' is-active' : ''}`}
-              onClick={() => { set({ status: c.key }); setSelected([]); }}
+              aria-selected={status === 'attention'}
+              className={`pea-chip pea-chip--attention${status === 'attention' ? ' is-active' : ''}`}
+              onClick={() => { set({ status: 'attention' }); setSelected([]); }}
             >
-              {c.tone && <span className={`pea-chip-dot pea-bg-${c.tone}`} />}
-              {c.label}
-              <span className="pea-chip-count">{c.count ?? 0}</span>
+              <FlagOutlined /> Needs attention <span className="pea-chip-count">{counts.attention ?? 0}</span>
             </button>
-          ))}
-          <button
-            type="button"
-            role="tab"
-            aria-selected={status === 'attention'}
-            className={`pea-chip pea-chip--attention${status === 'attention' ? ' is-active' : ''}`}
-            onClick={() => { set({ status: 'attention' }); setSelected([]); }}
-          >
-            <FlagOutlined /> Needs attention <span className="pea-chip-count">{counts.attention ?? 0}</span>
-          </button>
+          </Tooltip>
         </div>
        </div>
       </div>
@@ -356,10 +334,15 @@ export default function EvaluationBoard() {
           </button>
         </div>
       )}
-      {(status === 'recent' || status === 'in_progress') && (
+      {/* W-03 — `with_manager` is the Dashboard's "Waiting for manager" tile. */}
+      {(status === 'recent' || status === 'in_progress' || status === 'with_manager') && (
         <div className="pea-banner">
           <span>
-            Showing <strong>{status === 'recent' ? 'recently submitted evaluations that need no attention' : 'every evaluation still with a manager or not yet sent'}</strong>.
+            Showing <strong>{{
+              recent: 'recently submitted evaluations that need no attention',
+              in_progress: 'every evaluation still with a manager or not yet sent',
+              with_manager: 'every evaluation waiting for the reporting manager — sent, opened or not yet opened',
+            }[status]}</strong>.
           </span>
           <button type="button" className="pea-link-strong" onClick={() => set({ status: 'all' })}>
             Clear filter <ArrowRightOutlined />

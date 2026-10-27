@@ -30,6 +30,8 @@ const STATE_OPTIONS = [
   { value: 'left', label: 'Left' },
   // Archive (07-10-2026) — probation over, out of the day-to-day lists.
   { value: 'archived', label: 'Archived' },
+  // Walkthrough (27-10-2026) W-03 — what the Dashboard's "In probation" tile opens.
+  { value: 'probation', label: 'In probation (incl. extended)' },
 ];
 
 export default function Employees() {

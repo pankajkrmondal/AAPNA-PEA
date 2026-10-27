@@ -18,6 +18,7 @@ import { selfViewLinksRouter, selfViewPublicRouter } from './selfView.routes.js'
 import { managerLinksRouter, managerPublicRouter } from './managerPortal.routes.js';
 import dashboardRoutes from './dashboard.routes.js';
 import directoryRoutes from './directory.routes.js';
+import joinerActionRoutes from './joinerAction.routes.js';
 
 const router = Router();
 
@@ -94,5 +95,7 @@ router.use('/directory', directoryRoutes);
 router.use('/evaluation', evaluationRoutes);
 router.use('/manager', managerPublicRouter);
 router.use('/self-view', selfViewPublicRouter);
+// Walkthrough (27-10-2026) W-09 — Confirm / Not confirm in the review email.
+router.use('/joiner-action', joinerActionRoutes);
 
 export default router;

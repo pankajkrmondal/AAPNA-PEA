@@ -12,18 +12,29 @@
  *   · "Act on these first" now includes that feedback — not confirmed,
  *     extended, low scores — with a "Read feedback" button that opens the
  *     evaluation itself. Reading it clears the row for that reader only.
- *   · Recently submitted shows what the manager SAID, not only the average.
  *   · Every figure still opens the list behind it, so a number is never a dead
  *     end.
+ *
+ * ── The 27-Oct walkthrough (Raginee Somani) ────────────────────────────────
+ *
+ *   · W-01 — "Preview" and "Send due emails now…" are gone. The daily send is
+ *     automatic; a manual trigger only invited the question "why would I?".
+ *     The sweep endpoint stays for the scheduler and the Admin Portal.
+ *   · W-02 — "Coming up" and "Recently submitted" are gone: the tiles already
+ *     say the same, and each tile opens the people behind its number.
+ *   · W-03 — "In probation" opens the list too, like every other tile.
+ *   · W-04 — no average across different people; it mixes fresher and
+ *     experienced tracks and means nothing for any one person.
+ *   Before these, the file is as at commit ce72b9a.
  */
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
-  Button, Alert, Spin, App, Tooltip, Tabs, Typography, Empty, Popconfirm,
+  Button, Alert, Spin, App, Tooltip, Tabs, Empty, Popconfirm,
 } from 'antd';
 import {
-  DownloadOutlined, EyeOutlined, ArrowRightOutlined, ExclamationCircleOutlined, ClockCircleOutlined,
+  DownloadOutlined, ArrowRightOutlined, ExclamationCircleOutlined, ClockCircleOutlined,
   MessageOutlined,
 } from '@ant-design/icons';
 import api, { unwrap, TOKEN_KEY } from '../api.js';
@@ -32,7 +43,7 @@ import StatusPill from '../components/StatusPill.jsx';
 import { Avatar } from '../components/board/BoardParts.jsx';
 import Analytics from './Analytics.jsx';
 import { formatDate } from '../formatDate.js';
-import { avg, daysLabel, decisionTone, ratingTone, shortDate } from '../evaluationDisplay.js';
+import { daysLabel } from '../evaluationDisplay.js';
 
 /**
  * How each kind of problem is shown. Colour is never the only signal — the pill
@@ -142,11 +153,7 @@ function NeedsAction({ data, isLoading }) {
 }
 
 export default function Overview() {
-  // `modal` alongside `message`: the static Modal.confirm renders outside the
-  // ConfigProvider, so it ignores the theme. This one confirms sending real
-  // email, so it should look like the rest of the product.
-  const { message, modal } = App.useApp();
-  const qc = useQueryClient();
+  const { message } = App.useApp();
   const navigate = useNavigate();
   const user = useCurrentUser();
   const [tab, setTab] = useState('action');
@@ -165,53 +172,6 @@ export default function Overview() {
   const { data: action, isLoading: actionLoading } = useQuery({
     queryKey: ['needs-action'],
     queryFn: () => api.get('/dashboard/needs-action').then(unwrap),
-  });
-
-  const sweep = useMutation({
-    mutationFn: (dryRun) => api.post(`/admin/sweep?dryRun=${dryRun}`).then((r) => r.data),
-    onSuccess: (res) => {
-      message.success(res.message);
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
-      qc.invalidateQueries({ queryKey: ['needs-action'] });
-    },
-    onError: (err) => { message.error(err.friendlyMessage); },
-  });
-
-  /** Dry run first, then confirm against the real numbers. */
-  const confirmAndSweep = useMutation({
-    mutationFn: () => api.post('/admin/sweep?dryRun=true').then((r) => r.data),
-    onError: (err) => { message.error(err.friendlyMessage); },
-    onSuccess: (res) => {
-      const d = res.data || {};
-      const evaluations = d.evaluations?.due ?? 0;
-      const reminders = d.reminders?.due ?? 0;
-
-      if (evaluations + reminders === 0) {
-        message.info('Nothing is due right now, so no email would be sent.');
-        return;
-      }
-
-      modal.confirm({
-        title: 'Send these emails now?',
-        width: 520,
-        okText: `Send ${evaluations + reminders} email(s) now`,
-        cancelText: 'Cancel',
-        content: (
-          <div>
-            <p style={{ marginTop: 8 }}>This sends real email to reporting managers:</p>
-            <ul style={{ paddingLeft: 18 }}>
-              {evaluations > 0 && <li><strong>{evaluations}</strong> evaluation request(s) now due</li>}
-              {reminders > 0 && <li><strong>{reminders}</strong> reminder(s) for evaluations already sent</li>}
-            </ul>
-            <Typography.Text type="secondary" style={{ fontSize: 12.5 }}>
-              The daily sweep would send these at 11:00 anyway. Running it now does not send
-              anything twice.
-            </Typography.Text>
-          </div>
-        ),
-        onOk: () => sweep.mutateAsync(false),
-      });
-    },
   });
 
   const download = async () => {
@@ -233,8 +193,21 @@ export default function Overview() {
 
   const { employees: emp, evaluations: ev } = data;
 
-  /** Every figure opens the list behind it — a number is never a dead end. */
-  const openBoard = (status) => navigate(`/evaluations${status ? `?status=${status}` : ''}`);
+  /**
+   * Every figure opens the list behind it — a number is never a dead end.
+   * W-03 — and the list holds exactly the people the number counts, so a tile
+   * may carry extra filters (the end date on the "Due" tile).
+   */
+  const openBoard = (status, extra = {}) => {
+    const q = new URLSearchParams({ ...(status ? { status } : {}), ...extra });
+    navigate(`/evaluations${q.toString() ? `?${q}` : ''}`);
+  };
+  // Q-1 (27-10-2026) — the "Due" tile looks two months ahead; the server says
+  // up to which day, so the list it opens stops on the same day. It was 14
+  // days, worked out here:
+  // const in14 = new Date(Date.now() + 14 * 86_400_000).toLocaleDateString('en-CA', { timeZone: data.timezone });
+  const dueUntil = ev.dueAheadUntil;
+  const dueMonths = ev.dueAheadMonths ?? 2;
 
   const now = new Date();
   const dateLine = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
@@ -259,20 +232,6 @@ export default function Overview() {
           <Tooltip title="Download a snapshot in the old master workbook layout. Changes nothing.">
             <Button icon={<DownloadOutlined />} onClick={download}>Export</Button>
           </Tooltip>
-          <Tooltip title="Shows what would be sent now. Nothing is sent or changed.">
-            <Button icon={<EyeOutlined />} onClick={() => sweep.mutate(true)} loading={sweep.isPending}>
-              Preview
-            </Button>
-          </Tooltip>
-          <Tooltip title="Shows exactly what would be sent and asks before sending anything.">
-            <Button
-              type="primary"
-              onClick={() => confirmAndSweep.mutate()}
-              loading={confirmAndSweep.isPending || sweep.isPending}
-            >
-              Send due emails now…
-            </Button>
-          </Tooltip>
         </div>
       </div>
 
@@ -289,7 +248,17 @@ export default function Overview() {
       {tab === 'action' ? (
         <>
           <div className="pea-tiles">
-            <div className="pea-tile">
+            {/* W-03 — a div acting as a button rather than a <button>, because
+                the "archived" link inside it may not sit in a real button. */}
+            <div
+              className="pea-tile pea-tile--link"
+              role="button"
+              tabIndex={0}
+              onClick={() => navigate('/employees?state=probation')}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/employees?state=probation'); }
+              }}
+            >
               <strong>{emp.inProbation}</strong>
               <span>In probation</span>
               {/* Archive (07-10-2026) — the confirmed are archived the morning
@@ -298,11 +267,13 @@ export default function Overview() {
               <small>
                 {emp.extended} extended
                 {emp.archived != null && (
-                  <> · <Link to="/employees?state=archived">{emp.archived} archived</Link></>
+                  <> · <Link to="/employees?state=archived" onClick={(e) => e.stopPropagation()}>{emp.archived} archived</Link></>
                 )}
               </small>
             </div>
-            <button type="button" className="pea-tile" onClick={() => openBoard('waiting')}>
+            {/* W-03 — was openBoard('waiting'): that chip leaves out the opened
+                links this number counts. */}
+            <button type="button" className="pea-tile" onClick={() => openBoard('with_manager')}>
               <strong>{counts?.waiting ?? ev.awaitingResponse}</strong>
               <span>Waiting for manager</span>
               <small>{oldestWaiting ? `oldest waiting ${daysLabel(oldestWaiting)}` : 'nobody is waiting'}</small>
@@ -312,16 +283,19 @@ export default function Overview() {
               <span>Not sent yet</span>
               <small>{(counts?.not_sent ?? ev.overdue) ? 'needs a fix' : 'all sent on time'}</small>
             </button>
-            <button type="button" className="pea-tile" onClick={() => openBoard('scheduled')}>
-              <strong>{counts?.due_soon ?? ev.dueInNext14Days}</strong>
-              <span>Due in 14 days</span>
+            {/* W-03 — was openBoard('scheduled'): every future evaluation, not
+                only the next 14 days, so the list did not match the number. */}
+            {/* Q-1 — "Due in 14 days" became "Due in the next 2 months". */}
+            <button type="button" className="pea-tile" onClick={() => openBoard('scheduled', dueUntil ? { to: dueUntil } : {})}>
+              <strong>{counts?.due_soon ?? ev.dueAhead}</strong>
+              <span>Due in the next {dueMonths} months</span>
               <small>sent automatically</small>
             </button>
             <button type="button" className="pea-tile pea-tile--accent" onClick={() => openBoard('submitted')}>
               <strong>{ev.completed} <em>/ {ev.total}</em></strong>
               <span>Submitted</span>
+              {/* W-04 — was: {ev.averageRating != null ? `average ${ev.averageRating.toFixed(2)} · ` : ''} */}
               <small>
-                {ev.averageRating != null ? `average ${ev.averageRating.toFixed(2)} · ` : ''}
                 <span className="pea-link-strong">open the board <ArrowRightOutlined /></span>
               </small>
             </button>
@@ -329,71 +303,9 @@ export default function Overview() {
 
           <NeedsAction data={action} isLoading={actionLoading} />
 
-          <div className="pea-overview-pair">
-            <section className="pea-card pea-card-pad pea-mini-list">
-              <header className="pea-mini-head">
-                <h3>Coming up</h3>
-                <span className="pea-muted pea-small">next 14 days</span>
-              </header>
-              {(data.upcomingList || []).length === 0 ? (
-                <p className="pea-muted">Nothing falls due in the next 14 days.</p>
-              ) : (
-                <ul>
-                  {data.upcomingList.slice(0, 8).map((r) => (
-                    <li key={r.cycleId}>
-                      <Avatar name={r.employee} size="xs" />
-                      <Link to={`/evaluations/${r.cycleId}`} className="pea-mini-name">{r.employee}</Link>
-                      <span className="pea-muted">evaluation {r.seqNo}</span>
-                      <span className="pea-grow" />
-                      <span className="pea-num pea-muted">{shortDate(r.dueDate)}</span>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            <section className="pea-card pea-card-pad pea-mini-list">
-              <header className="pea-mini-head">
-                <h3>Recently submitted</h3>
-                <span className="pea-grow" />
-                <Link to="/evaluations?status=submitted" className="pea-link-strong">
-                  Open the board <ArrowRightOutlined />
-                </Link>
-              </header>
-              {(data.recentSubmissions || []).length === 0 ? (
-                <p className="pea-muted">No evaluations submitted yet.</p>
-              ) : (
-                <ul className="pea-recent">
-                  {data.recentSubmissions.slice(0, 6).map((r) => (
-                    <li key={r.cycleId}>
-                      <Avatar name={r.employee} />
-                      <div className="pea-recent-body">
-                        <div>
-                          <Link to={`/evaluations/${r.cycleId}`} className="pea-mini-name">{r.employee}</Link>{' '}
-                          <span className="pea-muted pea-small">
-                            E{r.seqNo}{r.isFinal ? ' · final' : ''} · {shortDate(r.submittedAt)}
-                          </span>
-                        </div>
-                        {r.remarks ? (
-                          <em className="pea-clamp-2">“{r.remarks}”</em>
-                        ) : (
-                          <em className="pea-muted">
-                            No overall comment · {r.commentedCount} of {r.questionCount} questions commented
-                          </em>
-                        )}
-                      </div>
-                      <div className="pea-recent-score">
-                        <strong className={`pea-ink-${ratingTone(r.average)}`}>{avg(r.average)}</strong>
-                        {r.confirmation && (
-                          <StatusPill tone={decisionTone(r.confirmation)} nodot>{r.confirmation}</StatusPill>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
-          </div>
+          {/* W-02 — the "Coming up" and "Recently submitted" pair stood here
+              (see ce72b9a). "Due in 14 days" and "Submitted" open the same
+              people, so the pair only repeated the tiles. */}
         </>
       ) : (
         // The whole Analytics screen, heading suppressed. Resource trends lead

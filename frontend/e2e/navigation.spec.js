@@ -4,6 +4,10 @@
  *   8. "Overview" is called "Dashboard" everywhere it appears.
  *   2. "Upload sheet" is a sidebar entry directly after "Link generation",
  *      not a tab buried inside Settings.
+ *
+ * Walkthrough (27-10-2026) W-12 reverses point 2: the HR lead asked for Upload
+ * sheet and Email templates inside Settings. The two tests below now prove
+ * that, and that the old addresses still arrive at the right tab.
  */
 import { test, expect } from '@playwright/test';
 import { signIn, sidebarLabels } from './helpers.js';
@@ -22,25 +26,25 @@ test.describe('sidebar', () => {
     expect(labels).not.toContain('Overview');
   });
 
-  test('Upload sheet sits directly after Link generation', async ({ page }) => {
+  // W-12 — before, these two read "Upload sheet sits directly after Link
+  // generation" and "Upload sheet opens the real page, not a Settings tab".
+  test('Upload sheet and Email templates are not in the sidebar; Settings is', async ({ page }) => {
     const labels = await sidebarLabels(page);
-    const link = labels.indexOf('Link generation');
-    const upload = labels.indexOf('Upload sheet');
 
-    expect(link, 'Link generation missing from the sidebar').toBeGreaterThan(-1);
-    expect(upload, 'Upload sheet missing from the sidebar').toBeGreaterThan(-1);
-    // "directly after" is the requirement, not merely "present somewhere".
-    expect(upload).toBe(link + 1);
+    expect(labels).not.toContain('Upload sheet');
+    expect(labels).not.toContain('Email templates');
+    expect(labels.at(-1)).toBe('Settings');
   });
 
-  test('Upload sheet opens the real page, not a Settings tab', async ({ page }) => {
-    await page.locator('.pea-nav').getByText('Upload sheet', { exact: true }).click();
-
-    await expect(page).toHaveURL(/\/import$/);
-    // The standalone page renders its own heading; the embedded variant does
-    // not. Asserting on it proves we are not looking at the Settings tab.
-    await expect(page.getByRole('heading', { name: 'Upload sheet', level: 2 })).toBeVisible();
+  test('the old addresses open the matching Settings tab', async ({ page }) => {
+    await page.goto('/import');
+    await expect(page).toHaveURL(/\/settings\?tab=upload-sheet$/);
+    await expect(page.getByRole('tab', { name: 'Upload sheet', selected: true })).toBeVisible();
     await expect(page.getByText('Drop the master Excel workbook here', { exact: false })).toBeVisible();
+
+    await page.goto('/email-templates');
+    await expect(page).toHaveURL(/\/settings\?tab=email-templates$/);
+    await expect(page.getByRole('tab', { name: 'Email templates', selected: true })).toBeVisible();
   });
 
   test('the dashboard says Dashboard, and never Overview', async ({ page }) => {

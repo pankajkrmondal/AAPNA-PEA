@@ -39,11 +39,19 @@ describe('Commandos list filters (U5)', () => {
   // Archive (07-10-2026) — "archived" is the eighth status. Before it:
   //   test('the seven statuses are the ones the screen offers', …
   //     ['in_probation', 'extended', 'confirmed', 'not_confirmed', 'paused', 'held', 'left']
-  test('the eight statuses are the ones the screen offers', () => {
+  // Walkthrough (27-10-2026) W-03 — "probation" (no decision or extended) is
+  // the ninth, opened from the Dashboard's "In probation" tile.
+  test('the nine statuses are the ones the screen offers', () => {
     assert.deepEqual(
       [...LIST_STATES],
-      ['in_probation', 'extended', 'confirmed', 'not_confirmed', 'paused', 'held', 'left', 'archived']
+      ['in_probation', 'extended', 'confirmed', 'not_confirmed', 'paused', 'held', 'left', 'archived', 'probation']
     );
+  });
+
+  test('"probation" is no decision yet or extended — the Dashboard tile\'s count', () => {
+    const [where] = parts({ state: 'probation' });
+    assert.equal(where.employment_status, 'active');
+    assert.deepEqual(where.OR, [{ confirmation_status: null }, { confirmation_status: { startsWith: 'Extend' } }]);
   });
 
   // Archive (07-10-2026) — "archived" is whoever is archived, here or not; the

@@ -31,8 +31,14 @@ router.use(authenticate, requireModule('evaluations'));
 /** GET /api/evaluations/counts — the tab badges, and the Overview figures. */
 router.get('/counts', catchAsync(async (_req, res) => success(res, await getCounts())));
 
-/** GET /api/evaluations/emails — every email PEA has sent. */
-router.get('/emails', catchAsync(async (req, res) => success(res, await listEmails(req.query))));
+/**
+ * GET /api/evaluations/emails — every email PEA has sent.
+ *
+ * Walkthrough (27-10-2026) W-07 — admin tier only. It is the admin's check that
+ * a mail reached its recipient, not part of HR's day. It was:
+ * router.get('/emails', catchAsync(async (req, res) => success(res, await listEmails(req.query))));
+ */
+router.get('/emails', requireMinRole('admin'), catchAsync(async (req, res) => success(res, await listEmails(req.query))));
 
 /**
  * POST /api/evaluations/remind   { ids: [...] }

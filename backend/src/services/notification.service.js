@@ -121,8 +121,14 @@ async function resolveRecipients(type, employee, context = {}) {
 
     // H1 (07-10-2026) — new joiners waiting for review. Harish: to "the admin
     // and hr" — the PEA users who can act on it, not the HR recipients list.
+    //
+    // Walkthrough (27-10-2026) W-09 — to the review mailbox alone when one is
+    // set (Settings → New joiners), because that email carries Confirm / Not
+    // confirm links. It was always: { to: await reviewRecipientsNow(), cc: [] }
     case 'joiners_waiting':
-      return { to: await reviewRecipientsNow(), cc: [] };
+      return context.reviewTo?.length
+        ? { to: context.reviewTo, cc: [] }
+        : { to: await reviewRecipientsNow(), cc: [] };
 
     case 'acknowledgement':
     case 'extend_alert':
