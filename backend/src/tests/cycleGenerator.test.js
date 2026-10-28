@@ -27,14 +27,19 @@ import {
   todayIn,
   daysBetween,
 } from '../utils/dateUtils.js';
+// Excel import (28-10-2026) — isOldUndecided() is no longer applied: old
+// undecided rows import in probation, listed as needing a decision. Its tests
+// were the four "imported as Confirmed" cases below; the new rule is tested in
+// excelImport.test.js (probationEnded). It was:
+// import { parseTextDate, parseExcelDate, isOldUndecided, legacyCycleState } from '../services/excelImport.service.js';
 import {
   parseTextDate,
   parseExcelDate,
-  isOldUndecided,
   legacyCycleState,
 } from '../services/excelImport.service.js';
 
-describe('sheet import at go-live — old rows and unanswered MS Forms links', () => {
+describe('sheet import at go-live — unanswered MS Forms links', () => {
+  /* Excel import (28-10-2026) — removed with the rule, kept for reference:
   const today = utcDate(2026, 9, 13);
 
   test('a blank status long after DOJ is old demo data → imported as Confirmed', () => {
@@ -52,6 +57,7 @@ describe('sheet import at go-live — old rows and unanswered MS Forms links', (
   test('a real final decision is never overwritten', () => {
     assert.equal(isOldUndecided({ doj: utcDate(2022, 1, 1), confirmation_status: 'Not Confirmed' }, today), false);
   });
+  */
 
   test('"Email Sent" with no answer is recognised as an unanswered MS Forms link', () => {
     assert.equal(legacyCycleState({ status: 'Email Sent' }), 'in_flight');

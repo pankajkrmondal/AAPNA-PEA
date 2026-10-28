@@ -30,11 +30,12 @@ export default function AdminLayout({ user, children }) {
             <AdminPortalIcon />
           </div>
           <div style={{ lineHeight: 1.2, minWidth: 0 }}>
+            {/* Headers (28-10-2026) — it read "HR Admin" / "Users · Access". */}
             <div className="pea-admin-title-row">
-              <span className="pea-admin-title">HR Admin</span>
+              <span className="pea-admin-title">Admin Portal</span>
               <RoleBadge role={user.role} />
             </div>
-            <span className="pea-admin-sub">Users · Access</span>
+            <span className="pea-admin-sub">Users and what each one can open</span>
           </div>
         </div>
 

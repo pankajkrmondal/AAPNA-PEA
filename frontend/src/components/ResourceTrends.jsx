@@ -22,6 +22,8 @@ import { Link } from 'react-router-dom';
 import api, { unwrap } from '../api.js';
 import StatusPill from './StatusPill.jsx';
 import TrendDelta, { TrendPill } from './TrendDelta.jsx';
+import HintIcon from './HintIcon.jsx';
+import { ratingTone } from '../evaluationDisplay.js';
 
 /** The per-parameter table shown when a row is expanded. */
 function ParameterBreakdown({ employeeId }) {
@@ -197,6 +199,21 @@ export default function ResourceTrends() {
             width: 80,
             align: 'right',
             render: (v) => (v == null ? '—' : v.toFixed(1)),
+          },
+          // Commando average (28-10-2026) — this person's own evaluations, each
+          // counting once; the same figure as on their Commando page.
+          {
+            title: (
+              <span>
+                Overall average{' '}
+                <HintIcon title="This Commando's average across all of their own submitted evaluations, each counting once. It is the same figure shown on their Commando page." />
+              </span>
+            ),
+            dataIndex: 'overallAvg',
+            width: 130,
+            align: 'right',
+            sorter: (a, b) => (a.overallAvg ?? 0) - (b.overallAvg ?? 0),
+            render: (v) => (v == null ? '—' : <strong className={`pea-ink-${ratingTone(v)}`}>{v.toFixed(2)}</strong>),
           },
           {
             title: 'Change',

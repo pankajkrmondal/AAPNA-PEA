@@ -1216,10 +1216,21 @@ body {
   color: var(--pea-text);
 }
 
+/* Headers (28-10-2026) — the line under a heading says what the screen is for,
+   so it reads as a sentence: 14px with room to breathe, kept to a readable
+   width. It was 13px with no line height or width. */
 .pea-page-head p {
-  margin: 2px 0 0;
-  font-size: 13px;
+  margin: 4px 0 0;
+  max-width: 820px;
+  font-size: 14px;
+  line-height: 1.5;
   color: var(--pea-text-muted);
+}
+
+/* A live fact under the description, e.g. when New joiners last checked. */
+.pea-page-head p.pea-page-note {
+  margin-top: 2px;
+  font-size: 12.5px;
 }
 
 /* The round count badges in the ATS role-summary table. */

@@ -23,7 +23,7 @@ import StatusPill from '../components/StatusPill.jsx';
 import { formatDate as fmt, formatDateTime, DATE_FORMAT } from '../formatDate.js';
 import { Avatar, LoadProblem } from '../components/board/BoardParts.jsx';
 import { CommentMatrix, JourneyStepper, trendOf } from '../components/EmployeeJourney.jsx';
-import { decisionTone } from '../evaluationDisplay.js';
+import { avg, decisionTone, ratingTone, ratingWord } from '../evaluationDisplay.js';
 import { useCrumbs } from '../crumbs.jsx';
 import PastDueChoice, { PAST_DUE_DEFAULT, pastDueAction } from '../components/PastDueChoice.jsx';
 import PersonPicker, { useManagerPick } from '../components/PersonPicker.jsx';
@@ -78,6 +78,16 @@ const AUDIT_SOURCES = {
 
 /** How many history entries show before "Show all". */
 const AUDIT_PREVIEW = 20;
+
+/**
+ * What the Commando's overall average is — Commando average (28-10-2026).
+ * @param {{averageOf: number, unrated?: number}} progress
+ */
+function averageHint(progress) {
+  return `The average of this Commando's own ${progress.averageOf} submitted evaluation${progress.averageOf === 1 ? '' : 's'}, `
+    + 'each counting once, on the 1–5 scale. It is never mixed with anyone else’s ratings.'
+    + (progress.unrated ? ` ${progress.unrated} imported without a rating ${progress.unrated === 1 ? 'is' : 'are'} not counted.` : '');
+}
 
 /** One stored value as a person reads it. The audit table keeps everything as text. */
 function auditValue(field, value) {
@@ -510,7 +520,8 @@ export default function EmployeeDetail() {
       <section className="pea-card pea-journey-hero">
         <Avatar name={e.full_name} size="xl" />
         <div className="pea-journey-id">
-          <div className="pea-eyebrow">Commando · probation journey</div>
+          {/* Headers (28-10-2026) — it read "Commando · probation journey". */}
+          <div className="pea-eyebrow">Commando profile</div>
           <h1 className="pea-display">{e.full_name}</h1>
           <p className="pea-lead">
             {e.is_experienced ? 'Experienced' : 'Fresher'} · joined {fmt(e.doj)} · reporting manager {e.rm_name}
@@ -550,6 +561,17 @@ export default function EmployeeDetail() {
                 {nextOpen.is_extension ? 'Extension due' : 'Next due'} {fmt(nextOpen.due_date)}
               </span>
             )} */}
+            {/* Commando average (28-10-2026) — this person's own evaluations,
+                each counting once. Never an average across people. */}
+            {progress.average != null && (
+              <Tooltip title={averageHint(progress)}>
+                <span>
+                  <StatusPill tone={ratingTone(progress.average)} nodot>
+                    Overall average {avg(progress.average)} / 5 · {ratingWord(progress.average)} · {progress.averageOf} evaluation{progress.averageOf === 1 ? '' : 's'}
+                  </StatusPill>
+                </span>
+              </Tooltip>
+            )}
             {trend && (
               <StatusPill tone={trend.tone} nodot className="pea-pill-icon">
                 {trend.word === 'Improving' ? <ArrowUpOutlined /> : trend.word === 'Declining' ? <ArrowDownOutlined /> : null} {trend.text}
@@ -620,7 +642,8 @@ export default function EmployeeDetail() {
       <JourneyStepper employee={e} />
       <CommentMatrix employee={e} />
 
-      <h2 className="pea-record-head">Record and schedule</h2>
+      {/* Headers (28-10-2026) — it read "Record and schedule". */}
+      <h2 className="pea-record-head">Details and evaluation dates</h2>
 
       <Row gutter={[16, 16]}>
         <Col xs={24} lg={12}>
@@ -699,6 +722,24 @@ export default function EmployeeDetail() {
                     <div className="pea-muted pea-small" style={{ marginTop: 6 }}>
                       {record.decisionOn ? `${fmt(record.decisionOn)} · ` : ''}{record.decisionBy ? `${record.decisionBy} · ` : ''}
                       {record.decisionReason}
+                    </div>
+                  )}
+                </Descriptions.Item>
+                {/* Commando average (28-10-2026) — the same figure as the pill above. */}
+                <Descriptions.Item label="Overall average">
+                  {progress.average != null ? (
+                    <Tooltip title={averageHint(progress)}>
+                      <span>
+                        <strong className={`pea-ink-${ratingTone(progress.average)}`}>{avg(progress.average)} / 5</strong>
+                        {' '}· {ratingWord(progress.average)} · from {progress.averageOf} evaluation{progress.averageOf === 1 ? '' : 's'}
+                      </span>
+                    </Tooltip>
+                  ) : (
+                    <span className="pea-muted">— no evaluation submitted yet</span>
+                  )}
+                  {progress.unrated > 0 && (
+                    <div className="pea-muted pea-small" style={{ marginTop: 4 }}>
+                      {progress.unrated} imported evaluation{progress.unrated === 1 ? ' has' : 's have'} no rating and {progress.unrated === 1 ? 'is' : 'are'} not counted.
                     </div>
                   )}
                 </Descriptions.Item>

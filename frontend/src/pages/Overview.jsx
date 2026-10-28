@@ -38,7 +38,7 @@ import {
   MessageOutlined,
 } from '@ant-design/icons';
 import api, { unwrap, TOKEN_KEY } from '../api.js';
-import { useCurrentUser } from '../auth.js';
+import { pageCopy, useCurrentUser } from '../auth.js';
 import StatusPill from '../components/StatusPill.jsx';
 import { Avatar } from '../components/board/BoardParts.jsx';
 import Analytics from './Analytics.jsx';
@@ -222,11 +222,16 @@ export default function Overview() {
 
   return (
     <>
+      {/* Headers (28-10-2026) — the heading says what the screen is; the
+          greeting moved to the small line above it, beside the date. The words
+          are auth.js pageCopy('dashboard'). It was: eyebrow {dateLine}, heading
+          "{greeting}, {name}", and the weekly sentence as the lead. */}
       <div className="pea-dash-head">
         <div>
-          <div className="pea-eyebrow">{dateLine}</div>
-          <h2 className="pea-display">{greeting(now)}, {user.first_name || user.username}</h2>
-          <p className="pea-lead">{summary}</p>
+          <div className="pea-eyebrow">{greeting(now)}, {user.first_name || user.username} · {dateLine}</div>
+          <h2 className="pea-display">{pageCopy('dashboard').title}</h2>
+          <p className="pea-lead">{pageCopy('dashboard').intro}</p>
+          <p className="pea-muted" style={{ margin: '6px 0 0' }}>{summary}</p>
         </div>
         <div className="pea-dash-actions">
           <Tooltip title="Download a snapshot in the old master workbook layout. Changes nothing.">

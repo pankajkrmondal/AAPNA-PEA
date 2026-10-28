@@ -20,6 +20,7 @@ import StatusPill from '../components/StatusPill.jsx';
 import { formatDate, formatDateTime, DATE_FORMAT } from '../formatDate.js';
 import PastDueChoice, { PAST_DUE_DEFAULT, pastDueAction } from '../components/PastDueChoice.jsx';
 import PersonPicker, { useManagerPick } from '../components/PersonPicker.jsx';
+import { pageCopy } from '../auth.js';
 
 /** U8 (AD sync) — where a suggested project leader came from, as the screen says it. */
 const PL_HINT = {
@@ -247,19 +248,24 @@ export default function NewJoiners() {
 
   return (
     <>
+      {/* Headers (28-10-2026) — the words are auth.js pageCopy('new_joiners'),
+          and the last check is its own line. It read: "New Microsoft accounts,
+          however the person joined · confirm what Microsoft cannot tell us ·
+          anyone can also be added directly from Commandos · last scan {when}
+          ({status}) · left out: {leftOut}". */}
       <div className="pea-page-head">
         <div>
-          <h2>New joiners</h2>
-          <p>
-            New Microsoft accounts, however the person joined · confirm what Microsoft
-            cannot tell us · anyone can also be added directly from Commandos
-            {lastScan && (
-              <> · last scan {formatDateTime(lastScan.runAt)} ({lastScan.status})</>
-            )}
-            {/* H1 — what the directory rules left out on that scan, so an empty
-                inbox is not mistaken for "nobody was looked at". */}
-            {lastScan?.leftOut && <> · left out: {lastScan.leftOut}</>}
-          </p>
+          <h2>{pageCopy('new_joiners').title}</h2>
+          <p>{pageCopy('new_joiners').intro}</p>
+          {lastScan && (
+            <p className="pea-page-note">
+              Last checked {formatDateTime(lastScan.runAt)}
+              {lastScan.status === 'failed' ? ' — the check did not finish' : lastScan.status === 'partial' ? ' — finished with some errors' : ''}
+              {/* H1 — what the directory rules left out on that scan, so an empty
+                  inbox is not mistaken for "nobody was looked at". */}
+              {lastScan.leftOut && <> · not counted as new joiners: {lastScan.leftOut}</>}
+            </p>
+          )}
         </div>
         <Space wrap>
           {/* U8 (decided 02-10-2026) — removed from the screen, kept for

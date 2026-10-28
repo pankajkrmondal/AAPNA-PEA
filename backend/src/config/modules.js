@@ -15,8 +15,10 @@ export const MODULES = Object.freeze([
   { key: 'employees', label: 'Commandos' },
   { key: 'new_joiners', label: 'New joiners' },
   { key: 'analytics', label: 'Trends' },
-  { key: 'import_sheet', label: 'Upload sheet' },
-  { key: 'manager_portal', label: 'Link generation' },
+  // Headers (28-10-2026) — renamed to match the screen; they were 'Upload
+  // sheet' and 'Link generation'. The keys are unchanged.
+  { key: 'import_sheet', label: 'Upload Excel' },
+  { key: 'manager_portal', label: 'Evaluation links' },
   { key: 'email_templates', label: 'Email templates' },
   { key: 'settings', label: 'Settings' },
 ]);

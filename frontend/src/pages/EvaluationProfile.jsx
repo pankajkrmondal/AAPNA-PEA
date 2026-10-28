@@ -22,16 +22,17 @@ import { Alert, App, Button, Popconfirm, Tooltip } from 'antd';
 import {
   ArrowLeftOutlined, BellOutlined, CalendarOutlined, CheckOutlined, ClockCircleOutlined, CopyOutlined,
   // P8 — FlagOutlined was used by the attention card, which is now in
-  // components/EvaluationActions.jsx.
-  EyeOutlined, ExportOutlined, LeftOutlined, MessageOutlined, PrinterOutlined, RightOutlined,
-  SendOutlined,
+  // components/EvaluationActions.jsx. Excel import (28-10-2026) — used again,
+  // for an imported evaluation's missing ratings.
+  EyeOutlined, ExportOutlined, FlagOutlined, LeftOutlined, MessageOutlined, PrinterOutlined, RightOutlined,
+  SendOutlined, TeamOutlined,
 } from '@ant-design/icons';
 import api, { unwrap } from '../api.js';
 import StatusPill from '../components/StatusPill.jsx';
 import { Avatar, BucketPill, Delta, LoadProblem, RatingChip } from '../components/board/BoardParts.jsx';
 import {
   avg, bucketMeta, decisionTone, formatDate, ratingTone, ratingWord, shortDate, shortDateTime, daysLabel,
-  missingComments, answeredName, holderName, holderRole,
+  missingComments, answeredName, holderName, holderRole, coverageLabel,
 } from '../evaluationDisplay.js';
 // M3 / U13 (review of 01-10-2026) — every `answeredName(e)` and `holderName(e)`
 // on this page was `e.rmName`, `holderRole(e)` was the fixed text "reporting
@@ -40,7 +41,9 @@ import {
 import { formatDateTime } from '../formatDate.js';
 import { getUser } from '../auth.js';
 import { useCrumbs } from '../crumbs.jsx';
-import { AttentionCard, EarlierVersions, OpenEvaluationActions, ReopenAction } from '../components/EvaluationActions.jsx';
+import {
+  AttentionCard, EarlierVersions, FillRatingsAction, OpenEvaluationActions, ReopenAction,
+} from '../components/EvaluationActions.jsx';
 
 /** What the navigation says the reader is walking. */
 const WALK_LABEL = {
@@ -112,6 +115,32 @@ function Ring({ value }) {
       <text x="55" y="56" textAnchor="middle" className="pea-ring-num">{avg(value)}</text>
       <text x="55" y="74" textAnchor="middle" className="pea-ring-sub">out of 5</text>
     </svg>
+  );
+}
+
+/**
+ * Commando average (28-10-2026) — this Commando's average across their own
+ * submitted evaluations, each counting once. Never an average across people.
+ * @param {{overall?: {average: number|null, count: number, unrated: number}}} props
+ */
+function CommandoAverageLine({ overall }) {
+  if (!overall) return null;
+  return (
+    <div className="pea-side-foot">
+      <TeamOutlined />{' '}
+      {overall.average == null ? (
+        <>Commando’s overall average: — <span className="pea-muted">(no rated evaluations yet)</span></>
+      ) : (
+        <>
+          Commando’s overall average:{' '}
+          <strong className={`pea-ink-${ratingTone(overall.average)}`}>{avg(overall.average)}</strong>
+          {' '}from {overall.count} evaluation{overall.count === 1 ? '' : 's'}
+        </>
+      )}
+      {overall.unrated > 0 && (
+        <span className="pea-muted"> · {overall.unrated} imported without a rating, not counted</span>
+      )}
+    </div>
   );
 }
 
@@ -501,9 +530,10 @@ export default function EvaluationProfile() {
               {e.isExtension ? ' · extension' : e.isFinal ? ' · final evaluation' : ''}
             </div>
             <h1 className="pea-display">{e.employeeName}</h1>
+            {/* Headers (28-10-2026) — "covers … to …" read "period … → …". */}
             <p className="pea-lead">
               {e.cohort === 'experienced' ? 'Experienced' : 'Fresher'}
-              {e.periodFrom && <> · period {formatDate(e.periodFrom)} → {formatDate(e.periodTo)}</>}
+              {e.periodFrom && <> · covers {formatDate(e.periodFrom)} to {formatDate(e.periodTo)}</>}
               {' '}· reporting manager {e.rmName}
             </p>
           </div>
@@ -518,9 +548,13 @@ export default function EvaluationProfile() {
       <div className="pea-profile-grid">
         {/* ── Left: the numbers, the decision, and the actions ─────────── */}
         <aside className="pea-profile-side">
-          {submitted && !legacy && (
+          {/* Excel import (28-10-2026) — shown whenever there is an average, so
+              an evaluation imported with only an overall number still has its
+              card. It was `submitted && !legacy`. The kicker said "Overall
+              rating", which now means the Commando's average below. */}
+          {submitted && e.avgRating != null && (
             <section className="pea-card pea-card-pad pea-no-print">
-              <div className="pea-kicker">Overall rating</div>
+              <div className="pea-kicker">Rating for this evaluation</div>
               <div className="pea-rating-head">
                 <Ring value={e.avgRating} />
                 <div>
@@ -528,12 +562,37 @@ export default function EvaluationProfile() {
                   {since && <Delta value={e.delta} suffix={` vs E${since}`} />}
                 </div>
               </div>
+              {coverageLabel(e.ratingCoverage, e.scores.length) && (
+                <div className="pea-side-foot pea-ink-warn">
+                  <FlagOutlined /> {coverageLabel(e.ratingCoverage, e.scores.length)}
+                </div>
+              )}
               <Sparkline history={e.history} />
+              {/* Commando average (28-10-2026) — this person's own evaluations. */}
+              <CommandoAverageLine overall={e.commandoAverage} />
               {missingComments(e) && (
                 <div className="pea-side-foot">
                   <MessageOutlined /> {missingComments(e)}
                 </div>
               )}
+            </section>
+          )}
+
+          {/* Excel import (28-10-2026) — imported without all its ratings: say
+              so, and let HR add the missing ones. */}
+          {e.actions?.fillRatings && (
+            <section className="pea-card pea-card-pad pea-no-print">
+              <div className="pea-kicker"><FlagOutlined /> Imported from Excel</div>
+              <p className="pea-small">
+                {coverageLabel(e.ratingCoverage, e.scores.length)}.{' '}
+                {e.ratingCoverage === 'none'
+                  ? 'It does not count in the Commando’s average until it is rated.'
+                  : 'It counts in the Commando’s average with the ratings it has.'}
+              </p>
+              {e.avgRating == null && <CommandoAverageLine overall={e.commandoAverage} />}
+              <div className="pea-side-actions" style={{ marginTop: 10 }}>
+                <FillRatingsAction e={e} onDone={refresh} />
+              </div>
             </section>
           )}
 
@@ -647,9 +706,12 @@ export default function EvaluationProfile() {
             <div className="pea-kicker">Manager’s overall comment</div>
             {legacy ? (
               <>
+                {/* Excel import (28-10-2026) — it read: "Imported from the original
+                    spreadsheet — the old form stored free text, so there are no
+                    per-question ratings." */}
                 <div className="pea-ev-legacy-banner">
-                  <strong>Imported from the original spreadsheet</strong> — the old form stored free text, so there are
-                  no per-question ratings.
+                  <strong>Imported from Excel</strong> — the sheet had no question ratings for this evaluation, only
+                  what is below.
                 </div>
                 <pre className="pea-ev-legacy-raw">{e.legacy.raw || 'No text was recorded.'}</pre>
               </>

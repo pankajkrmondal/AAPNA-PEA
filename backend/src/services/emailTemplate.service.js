@@ -26,6 +26,7 @@ import AppError from '../utils/AppError.js';
 import { formatDisplay } from '../utils/dateUtils.js';
 import { RATING_SCALE, LOW_RATING_AT_OR_BELOW } from '../config/ratingScale.js';
 import { wrapBrandedEmail, brandedWrapperParts, BRAND } from './emailLayout.service.js';
+import { commandoAverageText } from '../utils/ratings.js';
 
 /** Escape a value for HTML. */
 function esc(value) {
@@ -114,7 +115,8 @@ export const PLACEHOLDERS = Object.freeze({
   joiner_table: { label: 'Table: each joiner waiting, what will be saved, and Confirm / Not confirm (sent to the review mailbox)', block: true },
   inbox_link: { label: 'Link to the New joiners screen (plain)' },
   inbox_button: { label: 'Button: open New joiners', block: true },
-  report_header_table: { label: 'Table: Commando, manager, joined, type, decision, progress', block: true },
+  // Commando average (28-10-2026) — was '… decision, progress'.
+  report_header_table: { label: 'Table: Commando, manager, joined, type, decision, progress, overall average', block: true },
   report_history_table: { label: 'Table of every submitted evaluation with its average and remarks', block: true },
 });
 
@@ -608,6 +610,8 @@ function buildBlocks(v) {
         ['Type', esc(v._report.employee.cohort)],
         ['Probation decision', `<strong>${esc(v._report.employee.confirmationStatus || 'In probation')}</strong>`],
         ['Evaluations submitted', `${v._report.completedCount} of ${v._report.totalCount}`],
+        // Commando average (28-10-2026) — this person's own evaluations only.
+        ['Overall average', `<strong>${esc(commandoAverageText(v._report.overall))}</strong>`],
       ]))
       : '',
 

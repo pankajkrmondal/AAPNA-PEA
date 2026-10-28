@@ -26,6 +26,7 @@ import { queueEmail, probationContext, probationNote } from './notification.serv
 import { notifyStaff } from './inAppNotification.service.js';
 import { currentLevel } from './selfView.service.js';
 import { hasDecisionReason, hasDraftColumns, hasRecipientColumns } from '../utils/schemaCapabilities.js';
+import { averageOf } from '../utils/ratings.js';
 import config from '../config/index.js';
 // H6 — toDateString printed the submitted date as 2026-09-22; every date a
 // person reads is now dd-MM-yyyy.
@@ -493,12 +494,18 @@ export async function recipientOf(cycle, tx = prisma) {
  * @param {{name: string|null, email: string|null}} answer.submittedBy - whose answers these are
  * @param {string|null} [answer.ip]
  * @param {string|null} [answer.enteredBy] - HR username, when HR typed them in
+ * @param {boolean} [answer.keepSubmittedAt] - leave submitted_at as it is: HR
+ *   filling in ratings an Excel import lacked, which is history rather than
+ *   fresh feedback for the Dashboard (Excel import, 28-10-2026)
  * @returns {Promise<{average: number, extensionCycles: number, nextCycle: object|null}>}
  */
 export async function recordSubmission(cycle, {
   rows, remarks = null, confirmation = null, reason = null, submittedBy, ip = null, enteredBy = null,
+  keepSubmittedAt = false,
 }) {
-  const average = Number((rows.reduce((s, r) => s + r.rating, 0) / rows.length).toFixed(2));
+  // Commando average (28-10-2026) — the same sum, now shared with the Excel
+  // import. It was: Number((rows.reduce((s, r) => s + r.rating, 0) / rows.length).toFixed(2))
+  const average = averageOf(rows.map((r) => r.rating));
   // Stored only when the column exists; the decision itself never waits on it.
   const storeReason = !!reason && (await hasDecisionReason());
   const clearDraft = await hasDraftColumns();
@@ -517,7 +524,8 @@ export async function recordSubmission(cycle, {
       where: { id: cycle.id },
       data: {
         status: 'completed',
-        submitted_at: now,
+        // Excel import (28-10-2026) — was always `submitted_at: now`.
+        ...(keepSubmittedAt ? {} : { submitted_at: now }),
         submitted_by_email: submittedBy.email,
         submitted_ip: ip || null,
         avg_rating: average,

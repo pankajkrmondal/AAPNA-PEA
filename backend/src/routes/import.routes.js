@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import multer from 'multer';
 import path from 'path';
-import { preview, importExcel } from '../controllers/import.controller.js';
+import { preview, importExcel, template } from '../controllers/import.controller.js';
 import { authenticate, requireMinRole, requireModule } from '../middleware/auth.js';
 import AppError from '../utils/AppError.js';
 
@@ -23,6 +23,8 @@ const upload = multer({
 
 router.use(authenticate);
 
+// Excel import (28-10-2026) — the empty workbook to fill in. Writes nothing.
+router.get('/template', requireMinRole('hr'), template);
 router.post('/preview', requireMinRole('hr'), upload.single('file'), preview);
 // HR may dry-run; the real import is admin-only, checked in the controller
 // because the same route serves both.

@@ -8,6 +8,9 @@
  * Walkthrough (27-10-2026) W-12 reverses point 2: the HR lead asked for Upload
  * sheet and Email templates inside Settings. The two tests below now prove
  * that, and that the old addresses still arrive at the right tab.
+ *
+ * Headers (28-10-2026) — "Upload sheet" is "Upload Excel" and "Link
+ * generation" is "Evaluation links"; every screen's heading is HR's words.
  */
 import { test, expect } from '@playwright/test';
 import { signIn, sidebarLabels } from './helpers.js';
@@ -28,19 +31,30 @@ test.describe('sidebar', () => {
 
   // W-12 — before, these two read "Upload sheet sits directly after Link
   // generation" and "Upload sheet opens the real page, not a Settings tab".
-  test('Upload sheet and Email templates are not in the sidebar; Settings is', async ({ page }) => {
+  // Headers (28-10-2026) — the tab is "Upload Excel" now.
+  test('Upload Excel and Email templates are not in the sidebar; Settings is', async ({ page }) => {
     const labels = await sidebarLabels(page);
 
-    expect(labels).not.toContain('Upload sheet');
+    expect(labels).not.toContain('Upload Excel');
     expect(labels).not.toContain('Email templates');
     expect(labels.at(-1)).toBe('Settings');
+  });
+
+  // Headers (28-10-2026) — "Link generation" is "Evaluation links".
+  test('the link screen is called Evaluation links', async ({ page }) => {
+    const labels = await sidebarLabels(page);
+
+    expect(labels).toContain('Evaluation links');
+    expect(labels).not.toContain('Link generation');
   });
 
   test('the old addresses open the matching Settings tab', async ({ page }) => {
     await page.goto('/import');
     await expect(page).toHaveURL(/\/settings\?tab=upload-sheet$/);
-    await expect(page.getByRole('tab', { name: 'Upload sheet', selected: true })).toBeVisible();
-    await expect(page.getByText('Drop the master Excel workbook here', { exact: false })).toBeVisible();
+    // Headers (28-10-2026) — were 'Upload sheet' and 'Drop the master Excel workbook here'.
+    await expect(page.getByRole('tab', { name: 'Upload Excel', selected: true })).toBeVisible();
+    await expect(page.getByText('Drop your filled-in Excel template here', { exact: false })).toBeVisible();
+    await expect(page.getByRole('button', { name: /Download template/ })).toBeVisible();
 
     await page.goto('/email-templates');
     await expect(page).toHaveURL(/\/settings\?tab=email-templates$/);
@@ -49,10 +63,42 @@ test.describe('sidebar', () => {
 
   test('the dashboard says Dashboard, and never Overview', async ({ page }) => {
     await expect(page.locator('.pea-header-title')).toHaveText('Dashboard');
-    // Since the 23-Sep redesign the page opens with a greeting ("Good morning,
-    // Meenal") rather than repeating the word in a heading; what must never
-    // come back is the old name.
-    await expect(page.getByRole('heading', { name: /^Good (morning|afternoon|evening), /, level: 2 })).toBeVisible();
+    // Headers (28-10-2026) — the heading says what the screen is, and the
+    // greeting moved to the line above it. It expected a level-2 heading
+    // matching /^Good (morning|afternoon|evening), /. What must never come
+    // back is the old name.
+    await expect(page.getByRole('heading', { name: 'Probation at a glance', level: 2 })).toBeVisible();
+    await expect(page.getByText(/^Good (morning|afternoon|evening), /)).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Overview' })).toHaveCount(0);
+  });
+});
+
+// Headers (28-10-2026) — every screen says what it is for, in HR's words.
+test.describe('screen headings', () => {
+  test.beforeEach(async ({ page }) => {
+    await signIn(page, 'superadmin');
+  });
+
+  for (const [path, heading] of [
+    ['/evaluations', 'All evaluations'],
+    ['/evaluations/emails', 'Sent emails'],
+    ['/employees', 'Commandos'],
+    ['/new-joiners', 'New joiners'],
+    ['/manager-portal', 'Evaluation links'],
+    ['/settings', 'Settings'],
+  ]) {
+    test(`${path} has the heading "${heading}" and a description`, async ({ page }) => {
+      await page.goto(path);
+      const h = page.getByRole('heading', { name: heading, level: 2 });
+      await expect(h).toBeVisible();
+      await expect(h.locator('xpath=following-sibling::p[1]')).not.toBeEmpty();
+    });
+  }
+
+  test('the build team\'s headings are gone', async ({ page }) => {
+    await page.goto('/evaluations');
+    await expect(page.getByRole('heading', { name: 'What every manager said' })).toHaveCount(0);
+    await page.goto('/settings?tab=upload-sheet');
+    await expect(page.getByText('Reconciliation report')).toHaveCount(0);
   });
 });
