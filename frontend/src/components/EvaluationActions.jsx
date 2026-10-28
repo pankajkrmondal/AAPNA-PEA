@@ -21,7 +21,7 @@ import {
 import api from '../api.js';
 import StatusPill from './StatusPill.jsx';
 import PersonPicker from './PersonPicker.jsx';
-import { avg, decisionTone, formatDate, ratingWord } from '../evaluationDisplay.js';
+import { avg, coverageLabel, decisionTone, formatDate, ratingWord } from '../evaluationDisplay.js';
 import { formatDateTime } from '../formatDate.js';
 
 const RATINGS = [1, 2, 3, 4, 5];
@@ -89,11 +89,27 @@ function DelegateDialog({ e, open, onClose, onDone }) {
   );
 }
 
-/** B5 — HR enters the ratings in the app. M8 — "Copy from evaluation N". */
-function RecordDialog({ e, open, onClose, onDone }) {
+/**
+ * B5 — HR enters the ratings in the app. M8 — "Copy from evaluation N".
+ *
+ * Excel import (28-10-2026) — `filling`: the same entry for an evaluation
+ * imported without all its ratings ("Add missing ratings"). It starts from
+ * what the sheet had; a half-point rating is left for HR to choose, because the
+ * buttons are whole numbers.
+ */
+function RecordDialog({ e, open, onClose, onDone, filling = false }) {
   const [form] = Form.useForm();
   const act = useAction(e, 'record', { onDone, close: onClose });
   const before = e.previousEvaluation;
+  const imported = filling
+    ? {
+      ratings: Object.fromEntries((e.scores || []).map((s) => [
+        s.key,
+        { rating: Number.isInteger(s.rating) ? s.rating : undefined, comments: s.comment || '' },
+      ])),
+      remarks: e.remarks || '',
+    }
+    : undefined;
 
   const copyPrevious = () => {
     const ratings = {};
@@ -107,28 +123,40 @@ function RecordDialog({ e, open, onClose, onDone }) {
 
   return (
     <Modal
-      title={`Enter ratings for evaluation ${e.seqNo} — ${e.employeeName}`}
+      title={filling
+        ? `Add missing ratings for evaluation ${e.seqNo} — ${e.employeeName}`
+        : `Enter ratings for evaluation ${e.seqNo} — ${e.employeeName}`}
       open={open}
       onCancel={onClose}
       onOk={() => form.submit()}
       confirmLoading={act.isPending}
-      okText="Record evaluation"
+      okText={filling ? 'Save ratings' : 'Record evaluation'}
       width={760}
       destroyOnClose
     >
-      <Alert
-        type="info"
-        showIcon
-        style={{ marginBottom: 14 }}
-        message={`Recorded as entered by HR on behalf of ${e.withName || e.rmName}`}
-        description={
-          <>
-            For history the manager never answered in PEA. A rating is needed on every question; a comment is not.
-            No email is sent{e.linkLive ? ', and the link already with the manager stops working' : ''}.
-            {e.isFinal && <> A confirmation decision is recorded separately, with <strong>Record decision</strong> on the Commando page.</>}
-          </>
-        }
-      />
+      {filling ? (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 14 }}
+          message={`Imported from Excel — ${coverageLabel(e.ratingCoverage, e.scores?.length).toLowerCase()}`}
+          description="The ratings the sheet had are filled in. Rate every question to save; a comment is not needed. No email is sent, and the evaluation keeps its imported date."
+        />
+      ) : (
+        <Alert
+          type="info"
+          showIcon
+          style={{ marginBottom: 14 }}
+          message={`Recorded as entered by HR on behalf of ${e.withName || e.rmName}`}
+          description={
+            <>
+              For history the manager never answered in PEA. A rating is needed on every question; a comment is not.
+              No email is sent{e.linkLive ? ', and the link already with the manager stops working' : ''}.
+              {e.isFinal && <> A confirmation decision is recorded separately, with <strong>Record decision</strong> on the Commando page.</>}
+            </>
+          }
+        />
+      )}
       {before && (
         <Tooltip title={`Fills in the ratings and comments from evaluation ${before.seqNo} as a starting point. Nothing is saved until you record.`}>
           <Button icon={<CopyOutlined />} onClick={copyPrevious} style={{ marginBottom: 14 }}>
@@ -136,7 +164,7 @@ function RecordDialog({ e, open, onClose, onDone }) {
           </Button>
         </Tooltip>
       )}
-      <Form form={form} layout="vertical" requiredMark={false} onFinish={(v) => act.mutate(v)}>
+      <Form form={form} layout="vertical" requiredMark={false} initialValues={imported} onFinish={(v) => act.mutate(v)}>
         {e.questions.map((q, i) => (
           <div key={q.key} style={{ marginBottom: 14 }}>
             <Form.Item
@@ -272,6 +300,25 @@ export function OpenEvaluationActions({ e, onDone }) {
       <DelegateDialog e={e} open={dialog === 'delegate'} onClose={() => setDialog(null)} onDone={onDone} />
       <RecordDialog e={e} open={dialog === 'record'} onClose={() => setDialog(null)} onDone={onDone} />
     </div>
+  );
+}
+
+/**
+ * "Add missing ratings…" for an evaluation imported from Excel without all of
+ * its ratings — Excel import (28-10-2026). The server offers it only then.
+ * @param {{e: object, onDone: () => void}} props
+ */
+export function FillRatingsAction({ e, onDone }) {
+  const [open, setOpen] = useState(false);
+  if (!e.actions?.fillRatings) return null;
+
+  return (
+    <>
+      <Tooltip title="Type in the ratings the Excel sheet did not have. Once every question is rated, this evaluation counts fully in the averages and Trends.">
+        <Button icon={<EditOutlined />} onClick={() => setOpen(true)} block>Add missing ratings…</Button>
+      </Tooltip>
+      <RecordDialog e={e} open={open} onClose={() => setOpen(false)} onDone={onDone} filling />
+    </>
   );
 }
 

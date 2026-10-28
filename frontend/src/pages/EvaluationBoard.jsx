@@ -35,7 +35,7 @@ import {
 import { BUCKETS, CHIP_HINTS, LEGACY_SCOPE, avg, decisionTone, holderName, ratingTone, shortDate } from '../evaluationDisplay.js';
 import { DATE_FORMAT } from '../formatDate.js';
 import { useCrumbs } from '../crumbs.jsx';
-import { isAdminTier, useCurrentUser } from '../auth.js';
+import { isAdminTier, pageCopy, useCurrentUser } from '../auth.js';
 
 const { RangePicker } = DatePicker;
 
@@ -186,12 +186,14 @@ export default function EvaluationBoard() {
     <div className="pea-board">
       {/* ── Heading and the four figures ─────────────────────────────── */}
       <section className="pea-board-hero">
+        {/* Headers (28-10-2026) — the words are auth.js pageCopy('evaluations')
+            (W-06, the wording Raginee asked for). It read "What every manager
+            said" / "Status, the overall comment and every question comment —
+            for every evaluation, on one screen." */}
         <div>
           <div className="pea-eyebrow">Probation evaluations</div>
-          <h2 className="pea-display">What every manager said</h2>
-          <p className="pea-lead">
-            Status, the overall comment and every question comment — for every evaluation, on one screen.
-          </p>
+          <h2 className="pea-display">{pageCopy('evaluations').title}</h2>
+          <p className="pea-lead">{pageCopy('evaluations').intro}</p>
         </div>
         {/* Walkthrough (27-10-2026) W-04 — the "Average rating" card, the last
             figure in this box, is removed with the box (see ce72b9a for it and
@@ -269,7 +271,8 @@ export default function EvaluationBoard() {
           {isAdminTier(user.role) && (
             <Tooltip title="Every email PEA has sent, to whom, and whether it went — the place to check that a manager received theirs.">
               {/* Board tidy-up — an outlined button, to match the controls beside it. It was type="text". */}
-              <Link to="/evaluations/emails"><Button icon={<MailOutlined />}>Email log</Button></Link>
+              {/* Headers (28-10-2026) — the button read "Email log". */}
+              <Link to="/evaluations/emails"><Button icon={<MailOutlined />}>Sent emails</Button></Link>
             </Tooltip>
           )}
         </div>

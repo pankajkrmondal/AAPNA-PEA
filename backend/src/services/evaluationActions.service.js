@@ -45,6 +45,7 @@ import {
 } from '../utils/schemaCapabilities.js';
 import { addDays, formatDisplay } from '../utils/dateUtils.js';
 import { assertNotArchived } from '../utils/archiveScope.js';
+import { ratingCoverage } from '../utils/ratings.js';
 
 /** Statuses meaning an evaluation could still be sent or answered. */
 const OPEN = ['pending', 'email_sent', 'opened'];
@@ -664,6 +665,18 @@ export async function recordFollowUp(cycleId, input = {}, actor) {
 }
 
 /**
+ * Is this an evaluation imported from Excel that came without all of its
+ * ratings — one HR may complete with "Add missing ratings"? Excel import
+ * (28-10-2026). Pure.
+ * @param {{status: string, legacy_format?: string|null, avg_rating?: any, scores?: object[]}} cycle
+ * @returns {boolean}
+ */
+export function importedNeedingRatings(cycle) {
+  if (cycle.status !== 'completed' || !cycle.legacy_format) return false;
+  return ratingCoverage(cycle.status, cycle.avg_rating, (cycle.scores || []).length) !== 'full';
+}
+
+/**
  * HR enters an evaluation's ratings in the app, on the manager's behalf — B5.
  *
  * For history: someone added to PEA months after joining has evaluations that
@@ -683,13 +696,21 @@ export async function recordByHr(cycleId, body = {}, actor) {
   if (!(await hasRecipientColumns())) throw new AppError(NEEDS_DDL, 503);
 
   const cycle = await loadCycle(cycleId);
-  if (cycle.status === 'completed') {
+  // Excel import (28-10-2026) — an evaluation imported from Excel without all
+  // its ratings may be completed here: "Add missing ratings". A manager's own
+  // submission stays locked, as before.
+  const filling = importedNeedingRatings(cycle);
+  if (cycle.status === 'completed' && !filling) {
     throw new AppError('This evaluation has already been submitted. Use Reopen to have it corrected.', 409);
   }
 
   const params = await activeParams(cycle.employee);
   const scored = scoreProblems(params, body.ratings || {});
-  const decided = await decisionProblems(cycle, body, { required: false });
+  // The decision of an imported evaluation came with the sheet; filling in its
+  // ratings does not ask for one again.
+  const decided = filling
+    ? { confirmation: null, reason: null, problems: [] }
+    : await decisionProblems(cycle, body, { required: false });
   const problems = [
     // A comment is the manager's to give; HR entering history may not have one.
     ...scored.problems.filter((p) => !p.field.startsWith('comments_')),
@@ -702,7 +723,10 @@ export async function recordByHr(cycleId, body = {}, actor) {
   }
 
   const submittedBy = await recipientOf(cycle);
-  const remarks = String(body.remarks || '').trim() || null;
+  // Excel import (28-10-2026) — an imported evaluation keeps the comment it
+  // came with unless HR writes a new one. It was:
+  // const remarks = String(body.remarks || '').trim() || null;
+  const remarks = String(body.remarks || '').trim() || (filling ? cycle.remarks : null) || null;
   const result = await recordSubmission(cycle, {
     rows: scored.rows,
     remarks,
@@ -710,11 +734,16 @@ export async function recordByHr(cycleId, body = {}, actor) {
     reason: decided.reason,
     submittedBy,
     enteredBy: actor,
+    // History, not feedback that just came back: off the Dashboard's list.
+    keepSubmittedAt: filling,
   });
 
+  // It was always: `Evaluation N entered by HR on behalf of …`.
   await note(
     cycle.employee_id,
-    `Evaluation ${cycle.seq_no} entered by HR on behalf of ${submittedBy.name || 'the reporting manager'} — ` +
+    (filling
+      ? `Evaluation ${cycle.seq_no} (imported from Excel) — missing ratings added by HR — `
+      : `Evaluation ${cycle.seq_no} entered by HR on behalf of ${submittedBy.name || 'the reporting manager'} — `) +
       `average ${result.average.toFixed(2)} / 5` +
       (decided.confirmation ? `, decision ${decided.confirmation}` : '') + '.',
     actor

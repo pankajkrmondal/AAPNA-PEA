@@ -8,12 +8,69 @@ import {
 //   InboxOutlined, EyeOutlined, ExperimentOutlined, CloudUploadOutlined, ClusterOutlined,
 // } from '@ant-design/icons';
 import {
-  InboxOutlined, EyeOutlined, ExperimentOutlined, CloudUploadOutlined,
+  InboxOutlined, EyeOutlined, ExperimentOutlined, CloudUploadOutlined, DownloadOutlined,
 } from '@ant-design/icons';
-import api, { unwrap, USER_KEY } from '../api.js';
+import api, { unwrap, USER_KEY, TOKEN_KEY } from '../api.js';
+import PageHeader from '../components/PageHeader.jsx';
+import { coverageLabel } from '../evaluationDisplay.js';
 import { isAdminTier } from '../auth.js';
 import HintIcon from '../components/HintIcon.jsx';
 import { formatDate } from '../formatDate.js';
+
+/** How each source of a rating reads to HR — excelImport.service.js resolveRating(). */
+const SOURCE_WORDS = {
+  sheet2: 'Sheet2 ratings',
+  sheet1_text: 'ratings written in Sheet1',
+  sheet2_average: 'overall number in Sheet2',
+  sheet1_number: 'overall number in Sheet1',
+};
+
+/**
+ * "Ratings found" — what each Completed evaluation imports with, and the gaps,
+ * before anything is saved. Excel import (28-10-2026). A missing Sheet2 is not
+ * an error; this says what PEA will use instead.
+ * @param {{preview: object}} props
+ */
+function RatingsFound({ preview }) {
+  const r = preview.ratings || {};
+  const total = (r.full || 0) + (r.partial || 0) + (r.averageOnly || 0) + (r.none || 0);
+  if (!total) return null;
+  const gaps = total - (r.full || 0);
+
+  return (
+    <>
+      <Alert
+        type={gaps ? 'warning' : 'success'}
+        showIcon
+        style={{ margin: '16px 0 10px' }}
+        message={`Ratings found for ${total} completed evaluation${total === 1 ? '' : 's'}`}
+        description={
+          <>
+            {r.full || 0} fully rated · {r.partial || 0} partly rated · {r.averageOnly || 0} average only · {r.none || 0} without a rating.
+            {!preview.ratingsSheetFound && ' There is no Sheet2 in this file, so PEA uses what Sheet1 has.'}
+            {gaps > 0 && ' All of them are imported. Missing ratings can be added later on each evaluation’s page; one without a rating is left out of the Commando’s average until then.'}
+          </>
+        }
+      />
+      {gaps > 0 && (
+        <Table
+          size="small"
+          rowKey={(x) => `${x.excelRow}-${x.evaluation}`}
+          pagination={false}
+          dataSource={preview.ratingRows}
+          columns={[
+            { title: 'Row', dataIndex: 'excelRow', width: 70 },
+            { title: 'Name', dataIndex: 'name' },
+            { title: 'Evaluation', dataIndex: 'evaluation', width: 100 },
+            { title: 'Imported as', dataIndex: 'coverage', render: (v, x) => <Tag color={v === 'none' ? 'red' : 'gold'}>{coverageLabel(v, x.rated)}</Tag> },
+            { title: 'Average', dataIndex: 'average', width: 90, render: (v) => (v == null ? '—' : v.toFixed(2)) },
+            { title: 'From', dataIndex: 'source', render: (v) => SOURCE_WORDS[v] || '—' },
+          ]}
+        />
+      )}
+    </>
+  );
+}
 
 /**
  * Load the master sheet without a developer. Plan R5: the migration is
@@ -74,48 +131,68 @@ export default function ImportSheet({ embedded = false } = {}) {
   const step = result && !result.dryRun ? 3 : result?.dryRun ? 2 : preview ? 1 : 0;
   const busy = runPreview.isPending || runImport.isPending;
 
+  // Excel import (28-10-2026) — the empty workbook to fill in, the same
+  // fetch-and-save as the Dashboard's Export.
+  const downloadTemplate = async () => {
+    const res = await fetch('/api/import/template', {
+      headers: { Authorization: `Bearer ${localStorage.getItem(TOKEN_KEY)}` },
+    });
+    if (!res.ok) return message.error('Could not download the template');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'PEA - Excel upload template.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <>
-      {!embedded && (
-        <div className="pea-page-head">
-          <div>
-            <h2>Upload sheet</h2>
-            <p>
-              For go-live, and for anyone the Microsoft 365 check missed ·
-              preview the file, test run, then import — nothing is written until the last step
-            </p>
-          </div>
-        </div>
-      )}
+      {/* Headers (28-10-2026) — the copy is in auth.js, like every screen's. It
+          read "Upload sheet" / "For go-live, and for anyone the Microsoft 365
+          check missed · preview the file, test run, then import — nothing is
+          written until the last step". */}
+      {!embedded && <PageHeader module="import_sheet" />}
 
       {/* R-07 — Pankaj built this for the case where the automatic pick-up
           misses someone (14:38), and Subhajit approved it as "a good addition"
           (15:39) while saying the dependence on sync "scares me". It is the
-          remedy half of R-03: the alert says who is missing, this puts them in. */}
+          remedy half of R-03: the alert says who is missing, this puts them in.
+          Headers (28-10-2026) — reworded for HR, with the template. It read:
+          "Most people arrive on their own through the nightly Microsoft 365
+          check. Use this screen to load the master sheet at go-live, or to add
+          anyone that check could not pick up — someone with no manager or no
+          joining date in Microsoft 365. PEA emails you when that happens, so you
+          should not have to go looking." */}
       <Alert
         type="info"
         showIcon
         style={{ borderRadius: 'var(--pea-radius)', marginBottom: 12 }}
-        message="When to use this"
+        message="Add Commandos and their past evaluations from Excel"
         description={
           <>
-            Most people arrive on their own through the nightly Microsoft 365 check. Use this
-            screen to load the master sheet at go-live, or to add anyone that check could not
-            pick up — someone with no manager or no joining date in Microsoft 365. PEA emails
-            you when that happens, so you should not have to go looking.
+            New joiners normally arrive on their own from their AAPNA email account. Use this to
+            load people who were on probation before PEA, with the evaluations already done, or
+            anyone the daily check could not pick up. Download the template, fill it in, then
+            check it and import it. Nothing is saved until you press Import.
+            <div style={{ marginTop: 10 }}>
+              <Button icon={<DownloadOutlined />} onClick={downloadTemplate}>Download template</Button>
+            </div>
           </>
         }
       />
 
       <Card className="pea-card" size="small">
+        {/* Headers (28-10-2026) — the steps were Choose file · Preview the file · Test run · Import. */}
         <Steps
           size="small"
           current={step}
           style={{ marginBottom: 18 }}
           items={[
             { title: 'Choose file' },
-            { title: 'Preview the file' },
-            { title: 'Test run' },
+            { title: 'Check file' },
+            { title: 'Trial import' },
             { title: 'Import' },
           ]}
         />
@@ -133,30 +210,33 @@ export default function ImportSheet({ embedded = false } = {}) {
           fileList={file ? [file] : []}
         >
           <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+          {/* Headers (28-10-2026) — it read "Drop the master Excel workbook here,
+              or click to choose" and "Sheet1, columns A–H. Max 10 MB." */}
           <p className="ant-upload-text">
-            Drop the master Excel workbook here, or click to choose
+            Drop your filled-in Excel template here, or click to choose
             {/* Stop the click reaching the dragger, or tapping the hint opens the file picker. */}
             <span onClick={(e) => e.stopPropagation()}>
-              <HintIcon title="Accepts .xlsx, .xls and .xlsm, up to 10 MB. PEA reads Sheet1, columns A–H: Names, Office Email, Halt_Process, Experience, DOJ, RM Name, RM Email, PL Email, plus Confirmation Status and each evaluation status. Choosing a file uploads nothing until you press a button. Remove the file to start again." />
+              <HintIcon title="Accepts .xlsx, .xls and .xlsm, up to 10 MB. PEA reads Sheet1 (one row per Commando) and, if it is there, Sheet2 (the ratings). The old master workbook works too, as it has the same columns. Choosing a file uploads nothing until you press a button. Remove the file to start again." />
             </span>
           </p>
-          <p className="ant-upload-hint">Sheet1, columns A–H. Max 10 MB.</p>
+          <p className="ant-upload-hint">Sheet1 for the people, Sheet2 for ratings (optional). Max 10 MB.</p>
         </Upload.Dragger>
 
         <Space wrap style={{ marginTop: 14 }}>
-          <Tooltip title="Enabled once a file is chosen. Reads the workbook, checks every row and shows the Reconciliation report. Writes nothing.">
+          {/* Headers (28-10-2026) — "Preview" and "Test run" became "Check file" and "Trial import". */}
+          <Tooltip title="Enabled once a file is chosen. Reads every row and shows what would happen — who is refused and why, which ratings are missing, and which managers will be emailed. Saves nothing.">
             <Button icon={<EyeOutlined />} disabled={!file} loading={runPreview.isPending} onClick={() => runPreview.mutate()}>
-              Preview
+              Check file
             </Button>
           </Tooltip>
-          <Tooltip title="Enabled after Preview. Simulates the full import and shows how many would be imported, skipped or failed. Writes nothing.">
+          <Tooltip title="Enabled after Check file. Goes through the whole import without saving, and shows how many would be added, how many are already in PEA, and anything that would fail. Saves nothing.">
             <Button
               icon={<ExperimentOutlined />}
               disabled={!file || !preview}
               loading={runImport.isPending && runImport.variables === true}
               onClick={() => runImport.mutate(true)}
             >
-              Test run
+              Trial import
             </Button>
           </Tooltip>
           {isAdmin ? (
@@ -166,7 +246,7 @@ export default function ImportSheet({ embedded = false } = {}) {
               onConfirm={() => runImport.mutate(false)}
               disabled={!file || !result?.dryRun}
             >
-              <Tooltip title="Admins only, enabled after a Test run. Asks to confirm, then creates the Commandos and generates their evaluation schedules. Office emails already in PEA are skipped, not overwritten. Writes data.">
+              <Tooltip title="Admins only, enabled after a Trial import. Asks to confirm, then adds the Commandos with their evaluations and ratings. Anyone whose office email is already in PEA is skipped, not changed. This saves.">
                 <Button
                   type="primary"
                   icon={<CloudUploadOutlined />}
@@ -180,55 +260,111 @@ export default function ImportSheet({ embedded = false } = {}) {
           ) : (
             <Typography.Text type="secondary">
               Only an admin can run the final import.
-              <HintIcon title="Import creates the Commandos and generates their evaluation schedules, so only Admins and Super Admins can run it. You can still Preview and Test run." />
+              <HintIcon title="Import adds the Commandos and their evaluations, so only Admins and Super Admins can run it. You can still Check file and Trial import." />
             </Typography.Text>
           )}
         </Space>
       </Card>
 
       {preview && (
-        <Card className="pea-card" size="small" title={<span className="pea-section-title">Reconciliation report</span>}>
+        // Headers (28-10-2026) — "File check results" was "Reconciliation report".
+        <Card className="pea-card" size="small" title={<span className="pea-section-title">File check results</span>}>
+          {/* Excel import (28-10-2026) — "Old rows → Confirmed" and "Unanswered
+              MS Forms links" were the last two figures here; nothing is
+              confirmed on the sheet's behalf now, and the emailed list covers
+              every evaluation the next daily send will email. */}
           <Row gutter={[16, 16]}>
             <Col xs={12} md={4}><Statistic title="Rows read" value={preview.rowsRead} /></Col>
-            <Col xs={12} md={4}><Statistic title="Valid" value={preview.valid} valueStyle={{ color: 'var(--pea-green-600)' }} /></Col>
-            <Col xs={12} md={4}><Statistic title="Rejected" value={preview.rejected} valueStyle={{ color: preview.rejected ? 'var(--pea-red)' : undefined }} /></Col>
+            <Col xs={12} md={4}><Statistic title="Ready to import" value={preview.valid} valueStyle={{ color: 'var(--pea-green-600)' }} /></Col>
+            <Col xs={12} md={4}><Statistic title="Refused" value={preview.rejected} valueStyle={{ color: preview.rejected ? 'var(--pea-red)' : undefined }} /></Col>
             <Col xs={12} md={4}><Statistic title="Freshers" value={preview.freshers} /></Col>
             <Col xs={12} md={4}><Statistic title="Experienced" value={preview.experienced} /></Col>
             <Col xs={12} md={4}><Statistic title="Already decided" value={preview.withConfirmation} /></Col>
-            <Col xs={12} md={4}><Statistic title="Old rows → Confirmed" value={preview.autoConfirmed} /></Col>
-            <Col xs={12} md={4}>
-              <Statistic
-                title="Unanswered MS Forms links"
-                value={preview.inFlight}
-              />
-            </Col>
+            <Col xs={12} md={4}><Statistic title="Decision needed" value={preview.decisionNeeded} /></Col>
+            <Col xs={12} md={4}><Statistic title="Managers to be emailed" value={preview.toEmail} /></Col>
           </Row>
 
-          {preview.inFlight > 0 && (
+          {/* Excel import (28-10-2026) — what each Completed evaluation brings. */}
+          <RatingsFound preview={preview} />
+
+          {preview.toEmail > 0 && (
             <>
+              {/* It read: "Power Automate sent these, but no answer was recorded
+                  — PEA will send a fresh link" / "The MS Forms are closed at
+                  go-live, so the old link no longer works. …" */}
               <Alert
                 type="info"
                 showIcon
                 style={{ margin: '16px 0 10px' }}
-                message="Power Automate sent these, but no answer was recorded — PEA will send a fresh link"
-                description="The MS Forms are closed at go-live, so the old link no longer works. Evaluations due more than 45 days ago are closed instead of re-sent."
+                message="These managers will be emailed an evaluation at the next daily send (11:00)"
+                description="Each evaluation was due in the last 45 days and is not marked Completed. Anything due earlier is closed instead of sent. People on hold, or already confirmed or not confirmed, are not emailed."
               />
               <Table
                 size="small"
                 rowKey={(r) => `${r.excelRow}-${r.evaluation}`}
                 pagination={false}
-                dataSource={preview.inFlightRows}
+                dataSource={preview.toEmailRows}
                 columns={[
                   { title: 'Row', dataIndex: 'excelRow', width: 70 },
                   { title: 'Name', dataIndex: 'name' },
-                  { title: 'Office email', dataIndex: 'office_email' },
                   { title: 'Manager', dataIndex: 'rm_email' },
                   { title: 'Evaluation', dataIndex: 'evaluation', width: 100 },
+                  { title: 'Was due', dataIndex: 'due', width: 110, render: (v) => formatDate(v) },
+                  { title: 'Sheet says', dataIndex: 'wasSent', width: 150, render: (v) => (v ? 'Email Sent — not answered' : 'Not sent yet') },
                 ]}
               />
             </>
           )}
 
+          {preview.decisionNeeded > 0 && (
+            <>
+              <Alert
+                type="warning"
+                showIcon
+                style={{ margin: '16px 0 10px' }}
+                message="Probation already over, with no decision in the sheet"
+                description="They are imported as still on probation, and their Commando page shows “Decision due”. Record the decision there once they are in, or fill in Confirmation Status in the sheet before importing."
+              />
+              <Table
+                size="small"
+                rowKey="excelRow"
+                pagination={false}
+                dataSource={preview.decisionNeededRows}
+                columns={[
+                  { title: 'Row', dataIndex: 'excelRow', width: 70 },
+                  { title: 'Name', dataIndex: 'name' },
+                  { title: 'DOJ', dataIndex: 'doj', width: 110, render: (v) => formatDate(v) },
+                  { title: 'Probation ended', dataIndex: 'ended', width: 140, render: (v) => formatDate(v) },
+                  { title: 'Sheet status', dataIndex: 'status', render: (v) => v || 'blank' },
+                ]}
+              />
+            </>
+          )}
+
+          {preview.warnings?.length > 0 && (
+            <>
+              <Alert
+                type="warning"
+                showIcon
+                style={{ margin: '16px 0 10px' }}
+                message="Things in the file that will be ignored"
+                description="These do not stop the import. Fix them in the file and check it again if they matter."
+              />
+              <Table
+                size="small"
+                rowKey={(r, i) => `${r.sheet}-${r.row}-${i}`}
+                pagination={false}
+                dataSource={preview.warnings}
+                columns={[
+                  { title: 'Sheet', dataIndex: 'sheet', width: 90 },
+                  { title: 'Row', dataIndex: 'row', width: 70 },
+                  { title: 'What', dataIndex: 'message' },
+                ]}
+              />
+            </>
+          )}
+
+          {/* Excel import (28-10-2026) — removed with the rule, kept for reference:
           {preview.autoConfirmed > 0 && (
             <>
               <Alert
@@ -238,20 +374,10 @@ export default function ImportSheet({ embedded = false } = {}) {
                 message={`Old rows imported as Confirmed (joined more than 8 months ago, no final decision)`}
                 description="Demo data, per HR decision 16. No emails are sent for these people."
               />
-              <Table
-                size="small"
-                rowKey="excelRow"
-                pagination={false}
-                dataSource={preview.autoConfirmedRows}
-                columns={[
-                  { title: 'Row', dataIndex: 'excelRow', width: 70 },
-                  { title: 'Name', dataIndex: 'name' },
-                  { title: 'DOJ', dataIndex: 'doj', width: 110, render: (v) => formatDate(v) },
-                  { title: 'Sheet status', dataIndex: 'was', render: (v) => v || 'blank' },
-                ]}
-              />
+              <Table … dataSource={preview.autoConfirmedRows} … />
             </>
           )}
+          */}
 
           {preview.rejected > 0 && (
             <>
@@ -259,8 +385,8 @@ export default function ImportSheet({ embedded = false } = {}) {
                 type="warning"
                 showIcon
                 style={{ margin: '16px 0 10px' }}
-                message="Rejected rows will NOT be imported"
-                description="Fix these in the workbook and preview again. This is the list HR signs off."
+                message="Refused rows will NOT be imported"
+                description="Fix these in the file and press Check file again. Nobody on this list is added."
               />
               <Table
                 size="small"
@@ -298,8 +424,8 @@ export default function ImportSheet({ embedded = false } = {}) {
               {
                 title: 'Status',
                 dataIndex: 'confirmation_status',
-                render: (v, r) =>
-                  r.auto_confirmed ? <Tag color="gold">Confirmed (old row)</Tag> : v || <Tag color="blue">In probation</Tag>,
+                // Excel import (28-10-2026) — the "Confirmed (old row)" tag is gone with the rule.
+                render: (v) => v || <Tag color="blue">In probation</Tag>,
               },
               { title: 'Evaluations', dataIndex: 'evaluationsToCreate', width: 100 },
             ]}
@@ -311,7 +437,7 @@ export default function ImportSheet({ embedded = false } = {}) {
         <Card
           className="pea-card"
           size="small"
-          title={<span className="pea-section-title">{result.dryRun ? 'Test run result' : 'Import result'}</span>}
+          title={<span className="pea-section-title">{result.dryRun ? 'Trial import result — nothing saved' : 'Import result'}</span>}
         >
           <Row gutter={[16, 16]}>
             <Col xs={12} md={6}>

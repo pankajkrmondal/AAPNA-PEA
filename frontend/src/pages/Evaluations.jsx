@@ -36,6 +36,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, Table, Tag, Space, Input, Select, Tooltip } from 'antd';
 import { formatDateTime } from '../formatDate.js';
 import { useCrumbs } from '../crumbs.jsx';
+import PageHeader from '../components/PageHeader.jsx';
 // import { Link, useSearchParams } from 'react-router-dom';
 // import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 // import {
@@ -151,16 +152,13 @@ function EmailsSent() {
 
 /** The Email log page — every email PEA has sent, and whether it went. */
 export default function Evaluations() {
-  useCrumbs([{ label: 'Evaluations', to: '/evaluations' }, { label: 'Email log' }]);
+  // Headers (28-10-2026) — "Sent emails" was "Email log", here and in the trail;
+  // the words are auth.js PAGES.email_log.
+  useCrumbs([{ label: 'Evaluations', to: '/evaluations' }, { label: 'Sent emails' }]);
 
   return (
     <>
-      <div className="pea-page-head">
-        <div>
-          <h2>Email log</h2>
-          <p>Every email PEA has sent — to whom, about whom, and whether it went</p>
-        </div>
-      </div>
+      <PageHeader module="email_log" />
       <EmailsSent />
     </>
   );

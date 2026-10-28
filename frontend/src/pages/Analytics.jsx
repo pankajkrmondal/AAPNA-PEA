@@ -17,6 +17,7 @@ import StatCard from '../components/StatCard.jsx';
 import HintIcon from '../components/HintIcon.jsx';
 import ResourceTrends from '../components/ResourceTrends.jsx';
 import { DATE_FORMAT } from '../formatDate.js';
+import { pageCopy } from '../auth.js';
 
 /**
  * Recharts draws SVG attributes, which do not reliably resolve CSS variables,
@@ -110,10 +111,12 @@ export default function Analytics({ embedded = false } = {}) {
   return (
     <>
       <div className={embedded ? 'pea-trend-range' : 'pea-page-head'}>
+        {/* Headers (28-10-2026) — the words are auth.js pageCopy('analytics'). It
+            read "Analytics" / "How each person is progressing, evaluation by evaluation". */}
         {!embedded && (
           <div>
-            <h2>Analytics</h2>
-            <p>How each person is progressing, evaluation by evaluation</p>
+            <h2>{pageCopy('analytics').title}</h2>
+            <p>{pageCopy('analytics').intro}</p>
           </div>
         )}
         <Space size={8} wrap>

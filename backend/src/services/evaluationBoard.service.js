@@ -45,6 +45,7 @@ import { todayIn, toDateString, daysBetween, dateIn } from '../utils/dateUtils.j
 // Archive (07-10-2026) — archived Commandos are out of the board and its counts.
 import { hasArchiveColumns } from '../utils/schemaCapabilities.js';
 import { notArchivedSql, archiveRecord } from '../utils/archiveScope.js';
+import { commandoAverage, ratingCoverage } from '../utils/ratings.js';
 
 /** An average below this needs a read. A single low question does too (LOW_RATING_AT_OR_BELOW). */
 export const LOW_AVERAGE = 2.5;
@@ -570,6 +571,11 @@ function shape(c, { today, siblings, reason, read, draftSavedAt = null, people =
     previousAvg,
     previousSeqNo: previous?.seq_no ?? null,
     delta: avg !== null && previousAvg !== null ? Number((avg - previousAvg).toFixed(2)) : null,
+    // Commando average (28-10-2026) — this Commando's own submitted
+    // evaluations, each counting once: { average, count, unrated }.
+    commandoAverage: commandoAverage(siblings),
+    // Excel import (28-10-2026) — how much of the rating came with it.
+    ratingCoverage: ratingCoverage(c.status, avg, scores.length),
 
     decision: c.confirmation_status,
     reason,
@@ -808,9 +814,15 @@ export async function getEvaluation(id, q = {}, userId = null) {
     ? { id: String(next.id), seqNo: next.seq_no, dueDate: toDateString(next.due_date), isExtension: next.is_extension }
     : null;
 
-  // Not yet answered: show the questions the manager is being asked.
+  // Excel import (28-10-2026) — imported without all its ratings, so HR may
+  // add the missing ones (evaluationActions.service.js recordByHr).
+  const fillable = row.status === 'completed' && !!row.legacy && row.ratingCoverage !== 'full';
+
+  // Not yet answered: show the questions the manager is being asked. Excel
+  // import (28-10-2026) — and the questions HR fills in for an imported one. It
+  // was: if (!scores.length && !row.legacy) {
   let questions = [];
-  if (!scores.length && !row.legacy) {
+  if ((!scores.length && !row.legacy) || fillable) {
     questions = await prisma.pea_evaluation_params.findMany({
       where: { template: row.cohort, is_active: true },
       select: { param_key: true, param_label: true, sort_order: true },
@@ -891,12 +903,15 @@ export async function getEvaluation(id, q = {}, userId = null) {
       ? { archivedAt: archived.archived_at, archivedBy: archived.archived_by, reason: archived.archive_reason }
       : null,
     actions: archived
-      ? { delegate: false, record: false, reopen: false, reopenBlocked: null, followUp: false }
+      ? { delegate: false, record: false, fillRatings: false, reopen: false, reopenBlocked: null, followUp: false }
       : {
         delegate: canDelegate && open,
         // Needs the same columns as delegate: without `entered_by` an entry HR
         // typed would be stored looking like the manager's own.
         record: canDelegate && row.status !== 'completed' && !row.legacy,
+        // Excel import (28-10-2026) — "Add missing ratings", the same entry
+        // and the same columns.
+        fillRatings: canDelegate && fillable,
         reopen: canRevise && row.status === 'completed' && !reopenBlocked,
         reopenBlocked: canRevise ? reopenBlocked : null,
         followUp: canFollowUp && row.status === 'completed',

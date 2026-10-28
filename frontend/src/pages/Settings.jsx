@@ -7,6 +7,7 @@ import {
 import { SaveOutlined, ReloadOutlined } from '@ant-design/icons';
 import api, { unwrap, USER_KEY } from '../api.js';
 import { canUse, isAdminTier } from '../auth.js';
+import PageHeader from '../components/PageHeader.jsx';
 import StatusPill from '../components/StatusPill.jsx';
 // Walkthrough (27-10-2026) W-12 — both are tabs of this screen again.
 import ImportSheet from './ImportSheet.jsx';
@@ -152,17 +153,17 @@ export default function Settings() {
       {/* Walkthrough (27-10-2026) W-13 — Subhajit: the subtitle "Everything the
           Power Automate flows hardcoded — changeable without a deployment" is
           the build team's language, not HR's. Removed. */}
-      <div className="pea-page-head">
-        <div>
-          <h2>Settings</h2>
-          <p>Who is emailed and when, the rules for new joiners, the upload sheet and the email templates — change any of them here, at any time</p>
-        </div>
-        {canSettings && (
+      {/* Headers (28-10-2026) — the words are auth.js pageCopy('settings'). It
+          read "Who is emailed and when, the rules for new joiners, the upload
+          sheet and the email templates — change any of them here, at any time". */}
+      <PageHeader
+        module="settings"
+        actions={canSettings && (
           <Space wrap>
             <Button icon={<ReloadOutlined />} onClick={() => settings.refetch()}>Refresh</Button>
           </Space>
         )}
-      </div>
+      />
 
       {/* The environment banner that used to sit here is gone. Which
           environment this is, and where its email goes, is a deployment fact
@@ -198,7 +199,9 @@ export default function Settings() {
             // are tabs here again, at Raginee's request. Before, they had their
             // own sidebar entries ("a task HR performs, not a setting they
             // adjust"). Each tab still follows its own access switch.
-            ...(canImport ? [{ key: 'upload-sheet', label: 'Upload sheet', children: <ImportSheet embedded /> }] : []),
+            // Headers (28-10-2026) — the tab read "Upload sheet"; its key and
+            // address (?tab=upload-sheet) are unchanged so links still work.
+            ...(canImport ? [{ key: 'upload-sheet', label: 'Upload Excel', children: <ImportSheet embedded /> }] : []),
             ...(canTemplates ? [{ key: 'email-templates', label: 'Email templates', children: <EmailTemplates embedded /> }] : []),
             //
             // "Not in effect" is a list of database rows that nothing reads.

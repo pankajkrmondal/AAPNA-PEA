@@ -240,9 +240,11 @@ export async function generateCycles(employeeId, employee, tx = prisma) {
 /**
  * Create extension cycles after someone chooses "Extend …".
  *
- * Called from the evaluation submit path and from HR's "Record decision", not
- * from the importer: an extension is a decision, not a property of the joining
- * date.
+ * Called from the evaluation submit path and from HR's "Record decision": an
+ * extension is a decision, not a property of the joining date. Excel import
+ * (28-10-2026) — and from the importer, for a row whose Confirmation Status
+ * already records that decision. It said "not from the importer" before, and
+ * an imported "Extend for …" row got no extension evaluations.
  *
  * Refuses, rather than quietly creating fewer, when the decision asks for more
  * extension evaluations than this person has left. Both callers offer only what

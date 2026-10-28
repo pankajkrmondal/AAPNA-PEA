@@ -41,6 +41,32 @@ export function ratingWord(value) {
   return RATING_WORDS[Math.min(5, Math.max(1, Math.round(Number(value))))] || '';
 }
 
+/** The seven questions both tracks are rated on. Mirrors backend utils/ratings.js. */
+export const QUESTION_COUNT = 7;
+
+/**
+ * What an imported evaluation's rating is made of, in words — Excel import
+ * (28-10-2026). `coverage` is the server's ratingCoverage(); `rated` is how
+ * many questions carry a rating. Empty for a fully rated evaluation.
+ * @param {'full'|'partial'|'average_only'|'none'|null} coverage
+ * @param {number} [rated]
+ * @returns {string}
+ */
+export function coverageLabel(coverage, rated = 0) {
+  if (coverage === 'partial') return `Partly rated — ${rated} of ${QUESTION_COUNT} questions`;
+  if (coverage === 'average_only') return 'Average only — question ratings were not in the sheet';
+  if (coverage === 'none') return 'Imported without ratings';
+  return '';
+}
+
+/** The short form, for a dot or a card. */
+export function coverageShort(coverage, rated = 0) {
+  if (coverage === 'partial') return `${rated} of ${QUESTION_COUNT} rated`;
+  if (coverage === 'average_only') return 'average only';
+  if (coverage === 'none') return 'no rating';
+  return '';
+}
+
 /** The tone for a confirmation decision. */
 export function decisionTone(decision) {
   if (!decision) return 'mute';

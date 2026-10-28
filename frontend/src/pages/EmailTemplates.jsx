@@ -8,6 +8,7 @@ import dayjs from 'dayjs';
 import relativeTime from 'dayjs/plugin/relativeTime';
 import api, { unwrap, USER_KEY } from '../api.js';
 import { isAdminTier } from '../auth.js';
+import PageHeader from '../components/PageHeader.jsx';
 import { useThemeMode } from '../theme.jsx';
 import { EmailEditorTabs, EmailPreviewPane, FULL_TOOLBAR, sanitizeFragment } from '../components/EmailBodyEditor';
 import '../styles/emailTemplates.css';
@@ -176,14 +177,8 @@ export default function EmailTemplates({ embedded = false } = {}) {
 
   return (
     <div className="email-page">
-      {!embedded && (
-        <div className="pea-page-head">
-          <div>
-            <h2>Email templates</h2>
-            <p>The subject and wording of every email PEA sends. The AAPNA header, logo and footer are added automatically.</p>
-          </div>
-        </div>
-      )}
+      {/* Headers (28-10-2026) — the words are auth.js pageCopy('email_templates'). */}
+      {!embedded && <PageHeader module="email_templates" />}
 
       {!canEdit && (
         <Alert

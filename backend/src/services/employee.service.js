@@ -36,6 +36,7 @@ import { isAdminTier } from '../config/roles.js';
 // Archive (07-10-2026) — an archived Commando is a read-only record.
 import { notArchivedSql, archivedIds, archiveRecord, assertNotArchived } from '../utils/archiveScope.js';
 import { hasArchiveColumns } from '../utils/schemaCapabilities.js';
+import { commandoAverage, ratingCoverage } from '../utils/ratings.js';
 import { REASON_MAX } from '../config/ratingScale.js';
 import { toUtcMidnight, toDateString, todayIn, dateIn, daysBetween, formatDisplay } from '../utils/dateUtils.js';
 
@@ -806,10 +807,16 @@ function withProgress(employee) {
   const cycles = employee.cycles || [];
   const completed = cycles.filter((c) => c.status === 'completed').length;
   const today = new Date();
+  // Commando average (28-10-2026) — this person's own evaluations only.
+  const overall = commandoAverage(cycles);
 
   return {
     ...employee,
     progress: {
+      average: overall.average,
+      averageOf: overall.count,
+      // Imported evaluations that arrived without a rating — not counted above.
+      unrated: overall.unrated,
       total: cycles.length,
       completed,
       pending: cycles.filter((c) => c.status === 'pending').length,
@@ -868,7 +875,14 @@ export async function getEmployee(id) {
   // U13 / M7 / B5 — who each evaluation's link went to, who answered it, and
   // whether HR typed it in. Merged onto the cycles the page already shows.
   const people = await cyclePeople(employee.id);
-  employee.cycles = employee.cycles.map((c) => ({ ...c, ...(people.get(String(c.id)) || {}) }));
+  // Excel import (28-10-2026) — `rating_coverage` says how much of an imported
+  // evaluation's rating came with the sheet. It was:
+  // employee.cycles = employee.cycles.map((c) => ({ ...c, ...(people.get(String(c.id)) || {}) }));
+  employee.cycles = employee.cycles.map((c) => ({
+    ...c,
+    ...(people.get(String(c.id)) || {}),
+    rating_coverage: ratingCoverage(c.status, c.avg_rating, (c.scores || []).length),
+  }));
 
   return {
     ...withProgress(employee),

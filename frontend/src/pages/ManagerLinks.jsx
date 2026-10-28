@@ -11,6 +11,7 @@ import HintIcon from '../components/HintIcon.jsx';
 import NoticeStrip from '../components/NoticeStrip.jsx';
 import StatusPill from '../components/StatusPill.jsx';
 import { formatDateTime, formatDate } from '../formatDate.js';
+import PageHeader from '../components/PageHeader.jsx';
 
 const fmt = (d) => formatDateTime(d);
 
@@ -134,7 +135,8 @@ function EvaluationLinkTab() {
 }
 
 /**
- * Link generation — all three kinds of link PEA issues, in one place.
+ * Evaluation links (was "Link generation") — all three kinds of link PEA
+ * issues, in one place.
  *
  * They used to live in three: a manager's team link here, an employee's own
  * link on the Employee page, and an evaluation form link nowhere at all (HR
@@ -146,12 +148,10 @@ function EvaluationLinkTab() {
 export default function ManagerLinks() {
   return (
     <>
-      <div className="pea-page-head">
-        <div>
-          <h2>Link generation</h2>
-          <p>Create, copy or email a link. Nobody needs a login to open one.</p>
-        </div>
-      </div>
+      {/* Headers (28-10-2026) — "Evaluation links" was "Link generation"; the
+          words are auth.js pageCopy('manager_portal'). It read "Create, copy or
+          email a link. Nobody needs a login to open one." */}
+      <PageHeader module="manager_portal" />
 
       <Tabs
         items={[

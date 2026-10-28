@@ -283,8 +283,19 @@ export function parameterMovement(ratings, columns) {
   return { first, latest, change: round2(latest - first) };
 }
 
-/** Completed, non-legacy, actually scored — the rows a trend may be drawn from. */
-const COMPARABLE = Prisma.sql`c.status = 'completed' AND c.avg_rating IS NOT NULL AND c.legacy_format IS NULL`;
+/**
+ * Completed and actually scored — the rows a trend may be drawn from.
+ *
+ * Excel import (28-10-2026) — an imported evaluation now counts when it came
+ * with ratings. They are the same seven questions on the same 1–5 scale (the
+ * four-parameter instrument was never imported), and only PEA's form or the
+ * import of those seven questions ever sets avg_rating. One imported without a
+ * rating still has nothing to compare and stays out, reported as legacyCycles.
+ * This also stops an evaluation imported as "Email Sent" and answered in PEA
+ * later from being left out for good. It was:
+ * Prisma.sql`c.status = 'completed' AND c.avg_rating IS NOT NULL AND c.legacy_format IS NULL`
+ */
+const COMPARABLE = Prisma.sql`c.status = 'completed' AND c.avg_rating IS NOT NULL`;
 
 /**
  * Every employee with at least two comparable evaluations, with their first and
@@ -314,7 +325,8 @@ export async function getResourceTrends(opts = {}) {
       SELECT employee_id,
              max(done)                                     AS done,
              max(avg_rating) FILTER (WHERE first_rank = 1) AS first_avg,
-             max(avg_rating) FILTER (WHERE last_rank = 1)  AS last_avg
+             max(avg_rating) FILTER (WHERE last_rank = 1)  AS last_avg,
+             avg(avg_rating)                               AS overall_avg
         FROM ranked
        GROUP BY employee_id
       HAVING max(done) >= 2
@@ -361,11 +373,16 @@ export async function getResourceTrends(opts = {}) {
            round(o.first_avg::numeric, 2)::float               AS first_avg,
            round(o.last_avg::numeric, 2)::float                AS latest_avg,
            round((o.last_avg - o.first_avg)::numeric, 2)::float AS change,
+           -- Commando average (28-10-2026) — this person's own evaluations, each
+           -- counting once; utils/ratings.js commandoAverage() is the JS twin.
+           round(o.overall_avg::numeric, 2)::float             AS overall_avg,
            w.param_label                                       AS biggest_drop_label,
            round(w.change::numeric, 2)::float                  AS biggest_drop_change,
+           -- Excel import (28-10-2026) — imported AND unrated; was every
+           -- completed row with legacy_format set.
            (SELECT count(*)::int FROM pea_evaluation_cycles lc
              WHERE lc.employee_id = e.id AND lc.legacy_format IS NOT NULL
-               AND lc.status = 'completed')                    AS legacy_cycles,
+               AND lc.status = 'completed' AND lc.avg_rating IS NULL) AS legacy_cycles,
            (SELECT count(*)::int FROM pea_evaluation_cycles tc
              WHERE tc.employee_id = e.id)                      AS total_cycles
       FROM overall o
@@ -392,6 +409,7 @@ export async function getResourceTrends(opts = {}) {
     totalCycles: r.total_cycles,
     firstAvg: r.first_avg,
     latestAvg: r.latest_avg,
+    overallAvg: r.overall_avg,
     change: r.change,
     direction: trendDirection(r.change),
     biggestDrop: r.biggest_drop_label
@@ -442,13 +460,16 @@ export async function getEmployeeTrend(employeeId) {
         FROM pea_evaluation_scores s
         JOIN pea_evaluation_cycles c ON c.id = s.cycle_id
        WHERE c.employee_id = ${id} AND s.rating IS NOT NULL
-         AND c.status = 'completed' AND c.legacy_format IS NULL
+         AND ${COMPARABLE}
        ORDER BY s.sort_order, s.param_key, c.seq_no`,
   ]);
+  // Excel import (28-10-2026) — the scores query used
+  // `c.status = 'completed' AND c.legacy_format IS NULL`; it follows COMPARABLE now.
 
-  // Only comparable cycles become columns — see the instrument note above.
+  // Only comparable cycles become columns — see COMPARABLE. It was also
+  // `&& !c.legacy_format`.
   const columns = cycles
-    .filter((c) => c.status === 'completed' && c.avg_rating !== null && !c.legacy_format)
+    .filter((c) => c.status === 'completed' && c.avg_rating !== null)
     .map((c) => c.seq_no);
 
   const byParam = new Map();
@@ -513,11 +534,14 @@ export async function getEmployeeTrend(employeeId) {
       submittedOn: c.submitted_on,
       legacy: Boolean(c.legacy_format),
     })),
-    legacyCycles: cycles.filter((c) => c.legacy_format && c.status === 'completed').length,
+    // Excel import (28-10-2026) — imported without a rating; was every
+    // completed row with legacy_format set.
+    legacyCycles: cycles.filter((c) => c.legacy_format && c.status === 'completed' && c.avg_rating === null).length,
+    // It read: '… Evaluations imported from the old Excel sheet used a different
+    // set of parameters, so they are listed but left out of the comparison.'
     basis:
       'Movement compares the first and most recent submitted evaluation. Evaluations imported ' +
-      'from the old Excel sheet used a different set of parameters, so they are listed but left ' +
-      'out of the comparison.',
+      'from Excel without ratings are listed but left out of the comparison.',
     trendBand: TREND_BAND,
   };
 }

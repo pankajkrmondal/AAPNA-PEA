@@ -39,6 +39,7 @@ import AppError from '../utils/AppError.js';
 import logger from '../config/logger.js';
 import { queueEmail } from './notification.service.js';
 import { getEmployeeTrend } from './analytics.service.js';
+import { commandoAverage, commandoAverageText } from '../utils/ratings.js';
 import { formatDisplay } from '../utils/dateUtils.js';
 
 /** Someone must not be able to mail a report anywhere they like. */
@@ -122,6 +123,9 @@ export async function buildReport(employeeId) {
     },
     completedCount: completed.length,
     totalCount: employee.cycles.length,
+    // Commando average (28-10-2026) — this person's own evaluations, each
+    // counting once: { average, count, unrated }.
+    overall: commandoAverage(employee.cycles),
     cycles: employee.cycles.map((c) => ({
       seqNo: c.seq_no,
       status: c.status,
@@ -165,6 +169,8 @@ export function buildWorkbook(report) {
     ['Project leader', e.plEmail],
     ['Probation decision', e.confirmationStatus || 'In probation'],
     ['Evaluations submitted', `${report.completedCount} of ${report.totalCount}`],
+    // Commando average (28-10-2026).
+    ['Overall average', commandoAverageText(report.overall)],
     [],
     ['Evaluation', 'Due', 'Submitted', 'Average', 'Decision', 'Remarks'],
     ...report.cycles.map((c) => [

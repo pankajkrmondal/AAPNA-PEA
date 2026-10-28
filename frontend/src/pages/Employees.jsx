@@ -9,6 +9,9 @@ import { PlusOutlined, SearchOutlined, DownloadOutlined } from '@ant-design/icon
 import dayjs from 'dayjs';
 import api, { unwrap } from '../api.js';
 import StatusPill from '../components/StatusPill.jsx';
+import HintIcon from '../components/HintIcon.jsx';
+import { avg, ratingTone } from '../evaluationDisplay.js';
+import { pageCopy } from '../auth.js';
 import { formatDate, DATE_FORMAT } from '../formatDate.js';
 import PastDueChoice, { PAST_DUE_DEFAULT, pastDueAction } from '../components/PastDueChoice.jsx';
 import PersonPicker, { useManagerPick } from '../components/PersonPicker.jsx';
@@ -235,6 +238,25 @@ export default function Employees() {
         );
       },
     },
+    // Commando average (28-10-2026) — each person's own evaluations, the same
+    // figure as on their page. Never averaged across people.
+    {
+      title: (
+        <span>
+          Overall average{' '}
+          <HintIcon title="This Commando's average across all of their own submitted evaluations, each counting once. The same figure is on their Commando page." />
+        </span>
+      ),
+      key: 'average',
+      width: 140,
+      className: 'pea-num',
+      render: (_, r) => (r.progress?.average != null ? (
+        <span>
+          <strong className={`pea-ink-${ratingTone(r.progress.average)}`}>{avg(r.progress.average)}</strong>
+          <span className="pea-muted pea-small"> · {r.progress.averageOf} eval{r.progress.averageOf === 1 ? '' : 's'}</span>
+        </span>
+      ) : <span className="pea-muted">—</span>),
+    },
     {
       title: 'Next due',
       dataIndex: ['progress', 'nextDue'],
@@ -308,10 +330,12 @@ export default function Employees() {
 
   return (
     <>
+      {/* Headers (28-10-2026) — the words are auth.js pageCopy('employees'). It
+          read "Everyone on a probation schedule, and where each one has got to". */}
       <div className="pea-page-head">
         <div>
-          <h2>Commandos</h2>
-          <p>Everyone on a probation schedule, and where each one has got to</p>
+          <h2>{pageCopy('employees').title}</h2>
+          <p>{pageCopy('employees').intro}</p>
         </div>
         <Space wrap>
           {/* U6 — the list below as a file: same filters, same order. */}

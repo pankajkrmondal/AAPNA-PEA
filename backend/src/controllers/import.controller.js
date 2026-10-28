@@ -1,4 +1,5 @@
 import { parseWorkbook, importWorkbook } from '../services/excelImport.service.js';
+import { buildTemplate, TEMPLATE_FILENAME } from '../services/export.service.js';
 import catchAsync from '../utils/catchAsync.js';
 import { success } from '../utils/apiResponse.js';
 import AppError from '../utils/AppError.js';
@@ -22,6 +23,9 @@ export const preview = catchAsync(async (req, res) => {
     {
       ...report,
       rejectedRows: rejected,
+      // Excel import (28-10-2026) — `auto_confirmed` is gone with the rule, and
+      // the count includes extension evaluations. It was:
+      // auto_confirmed: v.auto_confirmed, evaluationsToCreate: v.is_experienced ? 3 : 6,
       preview: valid.slice(0, 20).map((v) => ({
         excelRow: v.excelRow,
         full_name: v.full_name,
@@ -30,13 +34,28 @@ export const preview = catchAsync(async (req, res) => {
         doj: toDateString(v.doj),
         rm_email: v.rm_email,
         confirmation_status: v.confirmation_status,
-        auto_confirmed: v.auto_confirmed,
         halt_process: v.halt_process,
-        evaluationsToCreate: v.is_experienced ? 3 : 6,
+        evaluationsToCreate: v.evaluationCount,
       })),
     },
-    'Preview only — nothing has been saved'
+    'Checked — nothing has been saved'
   );
+});
+
+/**
+ * GET /api/import/template — the empty workbook to fill in (Excel import,
+ * 28-10-2026). The layout the importer reads, with a "How to fill" sheet.
+ */
+export const template = catchAsync(async (_req, res) => {
+  const buffer = buildTemplate();
+  res
+    .status(200)
+    .set({
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename="${TEMPLATE_FILENAME}"`,
+      'Content-Length': buffer.length,
+    })
+    .send(buffer);
 });
 
 /**

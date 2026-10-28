@@ -18,7 +18,7 @@ import { Button } from 'antd';
 import { ArrowRightOutlined, CaretDownFilled, CaretUpFilled, CheckOutlined, MessageOutlined } from '@ant-design/icons';
 import StatusPill from './StatusPill.jsx';
 import { BucketPill, Delta, RatingChip } from './board/BoardParts.jsx';
-import { avg, decisionTone, ratingTone, shortDate } from '../evaluationDisplay.js';
+import { avg, coverageLabel, coverageShort, decisionTone, ratingTone, shortDate } from '../evaluationDisplay.js';
 
 /** How far apart the first and latest averages must be to call it a trend. Matches analytics TREND_BAND. */
 export const TREND_BAND = 0.3;
@@ -69,11 +69,13 @@ export function JourneyStepper({ employee }) {
   const lastSeq = finalSeq(cycles);
   const latestDone = cycles.filter((c) => c.status === 'completed').at(-1)?.seq_no;
 
+  // Headers (28-10-2026) — "Evaluation progress" was "Where {first} is", and
+  // the hint read "Each dot is one evaluation — click one to open it in full".
   if (!cycles.length) {
     return (
       <section className="pea-card pea-card-pad">
-        <h3 className="pea-panel-title">Where {first} is</h3>
-        <p className="pea-muted">No evaluations are scheduled yet.</p>
+        <h3 className="pea-panel-title">Evaluation progress</h3>
+        <p className="pea-muted">No evaluations are scheduled for {first} yet.</p>
       </section>
     );
   }
@@ -81,8 +83,8 @@ export function JourneyStepper({ employee }) {
   return (
     <section className="pea-card pea-card-pad">
       <div className="pea-panel-head">
-        <h3 className="pea-panel-title">Where {first} is</h3>
-        <span className="pea-muted pea-small">Each dot is one evaluation — click one to open it in full</span>
+        <h3 className="pea-panel-title">Evaluation progress</h3>
+        <span className="pea-muted pea-small">Each circle is one of {first}’s evaluations, with its average rating — click one to see it in full</span>
       </div>
       <ol className="pea-journey" style={{ '--n': cycles.length }}>
         {cycles.map((c, i) => {
@@ -107,6 +109,12 @@ export function JourneyStepper({ employee }) {
               <div className={`pea-jdot-avg pea-ink-${ratingTone(c.avg_rating)}`}>
                 {c.avg_rating != null ? avg(c.avg_rating) : '—'}
               </div>
+              {/* Excel import (28-10-2026) — an imported evaluation missing ratings. */}
+              {coverageShort(c.rating_coverage, (c.scores || []).length) && (
+                <div className="pea-jdot-note pea-ink-warn" title={coverageLabel(c.rating_coverage, (c.scores || []).length)}>
+                  {coverageShort(c.rating_coverage, (c.scores || []).length)}
+                </div>
+              )}
             </li>
           );
         })}
@@ -118,7 +126,10 @@ export function JourneyStepper({ employee }) {
 /** How many submitted evaluations get a full column before the oldest fold into "earlier". */
 const FULL_COLUMNS = 4;
 
-/** "Every comment, evaluation by evaluation". */
+/**
+ * "Ratings and comments from each evaluation" — Headers (28-10-2026); it was
+ * titled "Every comment, evaluation by evaluation".
+ */
 export function CommentMatrix({ employee }) {
   const cycles = employee.cycles || [];
   const done = cycles.filter((c) => c.status === 'completed');
@@ -152,7 +163,7 @@ export function CommentMatrix({ employee }) {
   if (!done.length) {
     return (
       <section className="pea-card pea-card-pad">
-        <h3 className="pea-panel-title">Every comment, evaluation by evaluation</h3>
+        <h3 className="pea-panel-title">Ratings and comments from each evaluation</h3>
         <p className="pea-muted"><MessageOutlined /> No evaluation has been submitted yet — the managers’ words will appear here.</p>
       </section>
     );
@@ -191,7 +202,7 @@ export function CommentMatrix({ employee }) {
   return (
     <section className="pea-card pea-card-pad">
       <div className="pea-panel-head">
-        <h3 className="pea-panel-title">Every comment, evaluation by evaluation</h3>
+        <h3 className="pea-panel-title">Ratings and comments from each evaluation</h3>
         <span className="pea-muted pea-small">
           <MessageOutlined /> Manager’s words in each cell · <CaretUpFilled className="pea-ink-ok" /><CaretDownFilled className="pea-ink-crit" /> change from the evaluation before
         </span>

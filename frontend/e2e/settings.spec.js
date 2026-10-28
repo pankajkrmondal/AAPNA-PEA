@@ -42,8 +42,9 @@ test.describe('Settings — everyone', () => {
 
   // Walkthrough (27-10-2026) W-12 — reversed: both are tabs here again. It was
   // 'Upload sheet is not a tab here any more', expecting a count of 0.
-  test('Upload sheet and Email templates are tabs here', async ({ page }) => {
-    await expect(page.getByRole('tab', { name: 'Upload sheet' })).toHaveCount(1);
+  // Headers (28-10-2026) — the tab is called "Upload Excel" now.
+  test('Upload Excel and Email templates are tabs here', async ({ page }) => {
+    await expect(page.getByRole('tab', { name: 'Upload Excel' })).toHaveCount(1);
     await expect(page.getByRole('tab', { name: 'Email templates' })).toHaveCount(1);
   });
 

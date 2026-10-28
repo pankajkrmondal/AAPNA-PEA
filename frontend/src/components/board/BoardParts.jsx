@@ -18,7 +18,7 @@ import {
 import StatusPill from '../StatusPill.jsx';
 import {
   avatarTone, initials, ratingTone, decisionTone, bucketMeta, evaluationLine, submittedLine,
-  shortDate, daysLabel, avg, missingComments, answeredName, holderName,
+  shortDate, daysLabel, avg, missingComments, answeredName, holderName, coverageLabel, coverageShort,
 } from '../../evaluationDisplay.js';
 
 // M3 / U13 (review of 01-10-2026) — every `answeredName(r)` and `holderName(r)`
@@ -157,16 +157,22 @@ function attentionAccent(r) {
   return 'crit';
 }
 
-/** Imported from the old sheet: free text, no per-question ratings. */
+/**
+ * Imported with no per-question ratings.
+ * Excel import (28-10-2026) — such a record may still carry an overall number
+ * ("average only"), shown above it. The note read "No numeric rating —
+ * imported" and the banner "Imported from the original spreadsheet — the old
+ * form stored free text, so there are no per-question ratings."
+ */
 function LegacyBody({ r }) {
   return (
     <>
       <p className="pea-ev-legacy-note">
-        <CloudUploadOutlined /> <em>No numeric rating — imported</em>
+        <CloudUploadOutlined /> <em>{r.avgRating == null ? 'No rating — imported from Excel' : 'Average only — imported from Excel'}</em>
       </p>
       <div className="pea-ev-legacy-banner">
-        <strong>Imported from the original spreadsheet</strong> — the old form stored free text, so there are no
-        per-question ratings.
+        <strong>Imported from Excel</strong> — the sheet had no question ratings for this evaluation. They can be
+        added on its page.
       </div>
       <pre className="pea-ev-legacy-raw">{r.legacy.raw || 'No text was recorded.'}</pre>
     </>
@@ -198,11 +204,18 @@ export function EvaluationCard({ r, to }) {
         <ClockCircleOutlined /> {legacy ? `Submitted by ${answeredName(r)} · recorded on the old form` : submittedLine(r)}
       </div>
 
-      {!legacy && (
+      {/* Excel import (28-10-2026) — shown whenever there is an average, with
+          a note when the sheet lacked some ratings. It was `!legacy`. */}
+      {r.avgRating != null && (
         <div className="pea-ev-score">
           <BigAverage value={r.avgRating} />
           {r.band && <StatusPill tone={r.band.tone} nodot>{r.band.label}</StatusPill>}
           <Delta value={r.delta} />
+          {coverageShort(r.ratingCoverage, r.scores.length) && (
+            <Tooltip title={coverageLabel(r.ratingCoverage, r.scores.length)}>
+              <span><StatusPill tone="warn" nodot>{coverageShort(r.ratingCoverage, r.scores.length)}</StatusPill></span>
+            </Tooltip>
+          )}
           <span className="pea-grow" />
           {r.decision && <StatusPill tone={decisionTone(r.decision)} nodot>{r.decision}</StatusPill>}
         </div>
