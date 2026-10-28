@@ -1,0 +1,57 @@
+/* The printed look of the PEA user guides: what export-guides.ps1 gives Edge
+   to print each guide to PDF. A4, AAPNA green, tables with borders. */
+
+@page { size: A4; margin: 18mm 16mm 18mm 16mm; }
+
+:root {
+  --ink: #1f2a17;
+  --muted: #5b6655;
+  --green: #4f7a28;
+  --green-soft: #eef4e6;
+  --line: #c9d3bf;
+}
+
+html { font-size: 10.5pt; }
+body {
+  margin: 0;
+  color: var(--ink);
+  font-family: "Segoe UI", Calibri, Arial, sans-serif;
+  line-height: 1.45;
+}
+
+/* pandoc's title block: the guide's own "# …" heading */
+header#title-block-header { margin-bottom: 14pt; padding-bottom: 8pt; border-bottom: 3px solid var(--green); }
+h1.title { font-size: 22pt; margin: 0; color: var(--green); }
+
+h1 { font-size: 15pt; color: var(--green); margin: 20pt 0 6pt; break-after: avoid; }
+h2 { font-size: 12.5pt; margin: 14pt 0 4pt; break-after: avoid; }
+h3 { font-size: 11pt; margin: 12pt 0 4pt; break-after: avoid; }
+p, li { orphans: 3; widows: 3; }
+p { margin: 0 0 6pt; }
+ul, ol { margin: 0 0 6pt; padding-left: 18pt; }
+li { margin: 1pt 0; }
+hr { border: 0; border-top: 1px solid var(--line); margin: 14pt 0; }
+a { color: var(--green); text-decoration: none; }
+strong { font-weight: 600; }
+code { font-family: Consolas, monospace; font-size: 9.5pt; background: #f3f5f0; padding: 0 2pt; border-radius: 2pt; }
+pre { background: #f3f5f0; padding: 6pt 8pt; border-radius: 3pt; white-space: pre-wrap; break-inside: avoid; }
+pre code { background: none; padding: 0; }
+
+blockquote {
+  margin: 8pt 0; padding: 6pt 10pt;
+  border-left: 3px solid var(--green); background: var(--green-soft);
+}
+blockquote p:last-child { margin-bottom: 0; }
+
+table { width: 100%; border-collapse: collapse; margin: 6pt 0 10pt; font-size: 9.5pt; }
+thead { display: table-header-group; }   /* the header row repeats on each page */
+tr { break-inside: avoid; }
+th, td { border: 1px solid var(--line); padding: 3pt 6pt; text-align: left; vertical-align: top; }
+th { background: var(--green-soft); font-weight: 600; }
+
+figure { margin: 8pt 0 12pt; break-inside: avoid; }
+img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 3pt; }
+figcaption { font-size: 9pt; color: var(--muted); margin-top: 3pt; }
+
+/* The checklist in the admin guide */
+ul.task-list { list-style: none; padding-left: 4pt; }
