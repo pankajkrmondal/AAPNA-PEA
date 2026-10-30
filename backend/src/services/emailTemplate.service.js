@@ -376,9 +376,13 @@ const TEMPLATES = Object.freeze({
     placeholders: ['today', 'joiner_count', 'new_count', 'headline', 'joiner_table', 'inbox_link', 'inbox_button'],
     requiredAny: [['inbox_button', 'inbox_link']],
     subject: '{{joiner_count}} new joiner(s) waiting for review — {{today}}',
+    // 30-10-2026 — the buttons open New joiners behind sign-in. The second
+    // paragraph ended: "Check the details, then press Confirm or Not confirm —
+    // each opens a page with one button, so nothing happens until you press it
+    // there."
     body: `<p>Hello,</p>
 <p>{{headline}}</p>
-<p>Microsoft 365 does not hold the joining date or the years of experience, so each joiner is confirmed by HR before any evaluation is scheduled. PEA counts the evaluations from the account creation date in Microsoft 365 (AD) and suggests fresher or experienced from the designation. Check the details, then press Confirm or Not confirm — each opens a page with one button, so nothing happens until you press it there.</p>
+<p>Microsoft 365 does not hold the joining date or the years of experience, so each joiner is confirmed by HR before any evaluation is scheduled. PEA counts the evaluations from the account creation date in Microsoft 365 (AD) and suggests fresher or experienced from the designation. Each button opens New joiners in PEA with that joiner ready to confirm or remove — sign in if asked. Nothing changes until you press the button there.</p>
 {{joiner_table}}
 {{inbox_button}}
 <p>This reminder is sent once a day while anyone is still waiting.</p>`,
@@ -570,9 +574,15 @@ function buildBlocks(v) {
                 + `Manager: ${esc(j.manager || 'missing')} · PL: ${esc(j.projectLeader || 'missing')}`
               )}</td>`
               + `<td style="${TD};white-space:nowrap">`
-              + (a.confirmUrl ? pill(a.confirmUrl, 'Confirm', BRAND.accent) : '')
+              // 30-10-2026 — both buttons open New joiners behind sign-in, so
+              // every joiner gets Confirm: labelled Review when something has to
+              // be filled in, which the hint under it names. It was:
+              //   (a.confirmUrl ? pill(a.confirmUrl, 'Confirm', BRAND.accent) : '')
+              //   + (a.dismissUrl ? pill(a.dismissUrl, 'Not confirm', '#b42318') : '')
+              //   + (a.blocker ? `<br>${small(`${esc(a.blocker)} — <a href="${esc(v.inbox_link)}" …>review in PEA</a>`)}` : '')
+              + (a.confirmUrl ? pill(a.confirmUrl, a.hint ? 'Review' : 'Confirm', BRAND.accent) : '')
               + (a.dismissUrl ? pill(a.dismissUrl, 'Not confirm', '#b42318') : '')
-              + (a.blocker ? `<br>${small(`${esc(a.blocker)} — <a href="${esc(v.inbox_link)}" style="color:${BRAND.accent}">review in PEA</a>`)}` : '')
+              + (a.hint ? `<br><span style="font-size:12px;color:${BRAND.muted};white-space:normal">${esc(a.hint)}</span>` : '')
               + `</td></tr>`;
           }).join('')
       )
@@ -835,11 +845,12 @@ const SAMPLE_VARS = Object.freeze({
       manager: 'Chhavi Verma', projectLeader: 'aroy@aapnainfotech.com',
       isExperienced: true, jobTitle: 'Associate Software Engineer',
       todo: ['Confirm fresher or experienced', 'Confirm the joining date'],
-      // W-09 — as sent to the review mailbox.
+      // W-09 — as sent to the review mailbox. 30-10-2026 — New joiners links
+      // (were /api/joiner-action/sample-…), and `hint` was `blocker`.
       actions: {
-        confirmUrl: 'https://pea-staging.aapnainfotech.com/api/joiner-action/sample-confirm',
-        dismissUrl: 'https://pea-staging.aapnainfotech.com/api/joiner-action/sample-dismiss',
-        blocker: null,
+        confirmUrl: 'https://pea-staging.aapnainfotech.com/new-joiners?joiner=1&action=confirm&via=email',
+        dismissUrl: 'https://pea-staging.aapnainfotech.com/new-joiners?joiner=1&action=dismiss&via=email',
+        hint: null,
       },
     },
     {
@@ -849,9 +860,9 @@ const SAMPLE_VARS = Object.freeze({
       isExperienced: null, jobTitle: 'Software Engineer',
       todo: ['Choose fresher or experienced', 'Confirm the joining date', 'Add the project leader'],
       actions: {
-        confirmUrl: null,
-        dismissUrl: 'https://pea-staging.aapnainfotech.com/api/joiner-action/sample-dismiss-2',
-        blocker: 'Fresher or experienced is not known',
+        confirmUrl: 'https://pea-staging.aapnainfotech.com/new-joiners?joiner=2&action=confirm&via=email',
+        dismissUrl: 'https://pea-staging.aapnainfotech.com/new-joiners?joiner=2&action=dismiss&via=email',
+        hint: 'Fresher or experienced is not known — choose it after pressing Review',
       },
     },
   ],

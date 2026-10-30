@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Card, Table, Space, Button, Modal, Form, Input, DatePicker, Radio, Alert,
@@ -98,8 +98,24 @@ function toFix(r) {
   return { missing, check, blocked: missing.length > 0 };
 }
 
+/**
+ * 30-10-2026 — what a review email link says when someone already dealt with
+ * that joiner: who and when, from the joiner's own record.
+ * @param {object} c - GET /intake/joiners/:id
+ * @returns {string}
+ */
+function handledText(c) {
+  const name = c.display_name || c.office_email || 'This joiner';
+  const who = c.reviewed_by === 'azure-sync' ? ' by the Microsoft 365 check' : c.reviewed_by ? ` by ${c.reviewed_by}` : '';
+  const when = c.reviewed_at ? ` on ${formatDateTime(c.reviewed_at)}` : '';
+  return c.status === 'accepted'
+    ? `${name} was already confirmed${who}${when}. Nothing more to do.`
+    : `${name} was already removed from the inbox${who}${when}. Nothing more to do.`;
+}
+
 export default function NewJoiners() {
-  const { message } = App.useApp();
+  // 30-10-2026 — `modal` was not needed before. It was: const { message } = App.useApp();
+  const { message, modal } = App.useApp();
   const qc = useQueryClient();
   const [accepting, setAccepting] = useState(null);
   const [form] = Form.useForm();
@@ -194,8 +210,11 @@ export default function NewJoiners() {
     }
   };
 
+  // 30-10-2026 (D-5) — `via` 'email' when the review email opened this joiner,
+  // so the history says so. It was:
+  //   mutationFn: (id) => api.post(`/intake/joiners/${id}/dismiss`, { reason: 'Not a new joiner' }),
   const dismiss = useMutation({
-    mutationFn: (id) => api.post(`/intake/joiners/${id}/dismiss`, { reason: 'Not a new joiner' }),
+    mutationFn: ({ id, via }) => api.post(`/intake/joiners/${id}/dismiss`, { reason: 'Not a new joiner', via }),
     onSuccess: () => { message.success('Removed from the inbox'); refresh(); },
     onError: (err) => { message.error(err.friendlyMessage); },
   });
@@ -240,6 +259,79 @@ export default function NewJoiners() {
       pl_email: row.suggested_pl_email,
     });
   };
+
+  // ── 30-10-2026 — opened from the review email ─────────────────────────────
+  //
+  // Confirm / Not confirm in the email open this screen on one joiner:
+  //   /new-joiners?joiner=<id>&action=confirm|dismiss&via=email
+  // — after sign-in, which is the point: the action goes through the API below
+  // as the person signed in, so the history names them. Confirm opens the same
+  // dialog as the row's button; Not confirm opens the row's own "Remove from the
+  // inbox?". Nothing happens until they press OK there.
+  // Plan: docs/PEA-Joiner-Email-Actions-Behind-Login-Plan-2026-10-30.md.
+  const [params, setParams] = useSearchParams();
+  // The emailed joiner's row, highlighted.
+  const [focusId, setFocusId] = useState(null);
+  // The row whose "Remove from the inbox?" is open.
+  const [dismissOpen, setDismissOpen] = useState(null);
+  // The joiner the email opened: their action is sent with via 'email' (D-5).
+  const [fromEmail, setFromEmail] = useState(null);
+  // A joiner someone already confirmed or removed, to say who and when.
+  const [handled, setHandled] = useState(null);
+  const viaFor = (id) => (fromEmail && fromEmail === id ? 'email' : undefined);
+
+  /**
+   * @param {object} row - an inbox row, or GET /intake/joiners/:id
+   * @param {string} action
+   * @param {{inList: boolean, via?: string}} opts
+   */
+  const openFromLink = (row, action, { inList, via }) => {
+    if (inList) {
+      setFocusId(row.id);
+      document.querySelector(`.pea-joiner-table [data-row-key="${row.id}"]`)?.scrollIntoView({ block: 'center' });
+    }
+    if (action === 'confirm') {
+      openAccept(row);
+    } else if (action === 'dismiss' && inList) {
+      setDismissOpen(row.id);
+    } else if (action === 'dismiss') {
+      // Waiting, but beyond the 100 rows the list shows: no row to open it on.
+      modal.confirm({
+        title: `Remove ${row.display_name || row.office_email} from the inbox?`,
+        content: 'They will not reappear unless their Microsoft 365 account changes.',
+        onOk: () => dismiss.mutateAsync({ id: row.id, via }),
+      });
+    }
+  };
+
+  useEffect(() => {
+    const id = params.get('joiner');
+    if (!id || !data) return; // wait for the inbox
+    const action = params.get('action');
+    const via = params.get('via') === 'email' ? 'email' : undefined;
+    // Once: a refresh or Back must not open it again.
+    setParams({}, { replace: true });
+    setFromEmail(via ? id : null);
+    setHandled(null);
+
+    const row = (data.joiners || []).find((j) => j.id === id);
+    if (row) {
+      openFromLink(row, action, { inList: true, via });
+      return;
+    }
+    // Not in the list: someone already dealt with them, or they are waiting
+    // beyond its first 100 rows.
+    api.get(`/intake/joiners/${encodeURIComponent(id)}`)
+      .then(unwrap)
+      .then((c) => {
+        if (c.status === 'pending') openFromLink(c, action, { inList: false, via });
+        else setHandled(c);
+      })
+      .catch((err) => { message.warning(err.friendlyMessage); });
+    // Runs when the link arrives and when the inbox has loaded; the rest are
+    // stable or read at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params, data]);
 
   const counts = data?.counts || {};
   const lastScan = data?.lastScan;
@@ -408,6 +500,23 @@ export default function NewJoiners() {
         ]}
       />
 
+      {/* 30-10-2026 — a review email link to a joiner someone already dealt with. */}
+      {handled && (
+        <Alert
+          type="info"
+          showIcon
+          closable
+          onClose={() => setHandled(null)}
+          style={{ marginBottom: 16 }}
+          message={handledText(handled)}
+          action={
+            handled.status === 'accepted' && handled.employee_id
+              ? <Link to={`/employees/${handled.employee_id}`}>Open the Commando</Link>
+              : undefined
+          }
+        />
+      )}
+
       {/* ── Entra-detected joiners ─────────────────────────────────────── */}
       <Card
         className="pea-card"
@@ -421,6 +530,10 @@ export default function NewJoiners() {
         extra={<span className="pea-count">{counts.joiners ?? 0}</span>}
       >
         <Table
+          // 30-10-2026 — the class scopes the review email's row lookup to this
+          // table, and the row it opened stays highlighted.
+          className="pea-joiner-table"
+          rowClassName={(r) => (r.id === focusId ? 'pea-row-focus' : '')}
           size="small"
           rowKey="id"
           loading={isLoading}
@@ -534,10 +647,19 @@ export default function NewJoiners() {
                         {fix.blocked ? 'Review' : 'Confirm'}
                       </Button>
                     </Tooltip>
+                    {/* 30-10-2026 — controlled, so Not confirm in the review
+                        email can open it on this row. It was uncontrolled, with
+                        onConfirm={() => dismiss.mutate(r.id)}. */}
                     <Popconfirm
                       title="Remove from the inbox?"
                       description="They will not reappear unless their Microsoft 365 account changes."
-                      onConfirm={() => dismiss.mutate(r.id)}
+                      open={dismissOpen === r.id}
+                      onOpenChange={(open) => setDismissOpen(open ? r.id : null)}
+                      onCancel={() => setDismissOpen(null)}
+                      onConfirm={() => {
+                        setDismissOpen(null);
+                        dismiss.mutate({ id: r.id, via: viaFor(r.id) });
+                      }}
                     >
                       <Tooltip title="Dismiss: remove this account from the inbox (after confirming). Use it for accounts that are not new joiners — shared mailboxes, test accounts and so on. A dismissed account does not come back on later scans.">
                         <Button size="small" icon={<CloseOutlined />} aria-label="Dismiss" />
@@ -795,7 +917,8 @@ export default function NewJoiners() {
             // goes straight to the employee endpoint, which has no candidate to
             // reconcile.
             if (accepting.byHand) addByHand.mutate(values);
-            else accept.mutate({ id: accepting.id, values });
+            // 30-10-2026 (D-5) — was: accept.mutate({ id: accepting.id, values });
+            else accept.mutate({ id: accepting.id, values: { ...values, via: viaFor(accepting.id) } });
           }}
         >
           <Form.Item name="full_name" label="Full name" rules={[{ required: true }]}>

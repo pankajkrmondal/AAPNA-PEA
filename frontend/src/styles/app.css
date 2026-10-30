@@ -2720,3 +2720,8 @@ html.theme-transition *::after {
 .pea-suggested { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .pea-suggested-value { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pea-suggested .pea-status-pill { flex: none; }
+
+/* 30-10-2026 — the joiner a review email link opened, so it is plain which row
+   the "Remove from the inbox?" belongs to, and still findable after Cancel. */
+.pea-joiner-table .ant-table-tbody > tr.pea-row-focus > td { background: var(--pea-green-50); }
+.pea-joiner-table .ant-table-tbody > tr.pea-row-focus > td:first-child { box-shadow: inset 3px 0 0 var(--pea-green-600); }

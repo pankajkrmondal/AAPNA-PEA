@@ -66,7 +66,13 @@ export const scan = catchAsync(async (req, res) => {
   );
 });
 
-/** POST /api/intake/joiners/:id/accept */
+/**
+ * GET /api/intake/joiners/:id — one joiner, whatever their status. 30-10-2026:
+ * for a review email link to a joiner the inbox list does not show.
+ */
+export const getJoiner = catchAsync(async (req, res) => success(res, await intake.getCandidate(req.params.id)));
+
+/** POST /api/intake/joiners/:id/accept   { …, via? } — via 'email' is noted in the history (D-5) */
 export const acceptJoiner = catchAsync(async (req, res) => {
   const employee = await intake.acceptCandidate(req.params.id, req.body, req.user.username);
   return success(
@@ -77,9 +83,10 @@ export const acceptJoiner = catchAsync(async (req, res) => {
   );
 });
 
-/** POST /api/intake/joiners/:id/dismiss   { reason } */
+/** POST /api/intake/joiners/:id/dismiss   { reason, via? } */
 export const dismissJoiner = catchAsync(async (req, res) => {
-  const row = await intake.dismissCandidate(req.params.id, req.body?.reason, req.user.username);
+  // D-5 (30-10-2026) — was: intake.dismissCandidate(req.params.id, req.body?.reason, req.user.username)
+  const row = await intake.dismissCandidate(req.params.id, req.body?.reason, req.user.username, { via: req.body?.via });
   return success(res, row, 'Removed from the inbox');
 });
 

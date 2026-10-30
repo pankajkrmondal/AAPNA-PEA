@@ -2,20 +2,24 @@
  * Walkthrough (27-10-2026) W-09 — Confirm / Not confirm from the new joiner
  * review email.
  *
- * The rules that make an emailed button safe enough to act on, checked without
- * a database: the link is signed for this purpose only, it expires, it is tied
- * to what the email showed, and Confirm is offered only when nothing needs a
- * person's choice.
+ * 30-10-2026 — behind sign-in. The buttons open the New joiners screen on that
+ * joiner instead of a public page that acted without one, so what is checked
+ * here: the links carry no secret and point at New joiners, every joiner gets
+ * both buttons, a link sent before the change is only redirected, the joiner
+ * lookup needs a sign-in, and an action from the email says so in the history.
+ * Plan: docs/PEA-Joiner-Email-Actions-Behind-Login-Plan-2026-10-30.md.
  */
-import { test, describe } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
 import config from '../config/index.js';
+import app from '../app.js';
 import {
-  AUDIENCE, LINK_HOURS, JOINER_REVIEW_TO_DEFAULT,
-  confirmValues, fingerprint, emailConfirmBlocker, signAction, verifyAction, actionLinks,
+  AUDIENCE, JOINER_REVIEW_TO_DEFAULT,
+  confirmValues, emailReviewHint, joinerLink, verifyAction, actionLinks,
 } from '../services/joinerEmailLink.service.js';
+import { dismissReason } from '../services/joinerIntake.service.js';
 import { TEMPLATE_DEFS, compile, buildVars } from '../services/emailTemplate.service.js';
 import { REGISTRY, normaliseValue } from '../services/settings.service.js';
 
@@ -34,7 +38,11 @@ const ready = {
 };
 const TODAY = day(2026, 10, 27);
 
-describe('W-09 — what Confirm from the email may save', () => {
+/** An old link, signed the way the email signed them before 30-10-2026. */
+const key = () => crypto.createHmac('sha256', config.jwt.secret).update(AUDIENCE).digest();
+const oldLink = (payload, expiresIn = '72h') => jwt.sign(payload, key(), { expiresIn, audience: AUDIENCE });
+
+describe('W-09 — what the Confirm dialog is prefilled with', () => {
   test('the values are exactly the suggestions the email showed', () => {
     assert.deepEqual(confirmValues(ready), {
       doj: '2026-10-21', is_experienced: true, rm_name: 'Chhavi Verma',
@@ -42,82 +50,116 @@ describe('W-09 — what Confirm from the email may save', () => {
     });
   });
 
-  test('a joiner with everything suggested and nothing past due can be confirmed', () => {
-    assert.equal(emailConfirmBlocker(ready, TODAY), null);
+  test('a joiner with everything suggested and nothing past due needs no hint', () => {
+    assert.equal(emailReviewHint(ready, TODAY), null);
   });
 
-  test('anything missing sends HR to PEA instead', () => {
-    assert.match(emailConfirmBlocker({ ...ready, suggested_is_experienced: null }, TODAY), /Fresher or experienced/);
-    assert.match(emailConfirmBlocker({ ...ready, suggested_pl_email: null }, TODAY), /project leader/);
-    assert.match(emailConfirmBlocker({ ...ready, suggested_rm_email: null }, TODAY), /reporting manager/);
-    assert.match(emailConfirmBlocker({ ...ready, suggested_rm_name: null }, TODAY), /reporting manager/);
-    assert.match(emailConfirmBlocker({ ...ready, suggested_doj: null }, TODAY), /account creation date/);
+  test('anything missing is named, with what to do in the dialog', () => {
+    assert.match(emailReviewHint({ ...ready, suggested_is_experienced: null }, TODAY), /Fresher or experienced .* after pressing Review/);
+    assert.match(emailReviewHint({ ...ready, suggested_pl_email: null }, TODAY), /project leader/);
+    assert.match(emailReviewHint({ ...ready, suggested_rm_email: null }, TODAY), /reporting manager/);
+    assert.match(emailReviewHint({ ...ready, suggested_rm_name: null }, TODAY), /reporting manager/);
+    assert.match(emailReviewHint({ ...ready, suggested_doj: null }, TODAY), /account creation date/);
   });
 
-  test('evaluations already past due need a choice on the screen, so not from the email', () => {
+  test('evaluations already past due are named — the dialog asks what to do with them', () => {
     // A fresher's first evaluation falls due about 30 days in.
     const late = { ...ready, suggested_is_experienced: false, suggested_doj: '2026-08-01' };
-    assert.match(emailConfirmBlocker(late, TODAY), /past due/);
-  });
-
-  test('the fingerprint changes when any saved value changes', () => {
-    const fp = fingerprint(ready);
-    assert.equal(fingerprint({ ...ready }), fp);
-    assert.notEqual(fingerprint({ ...ready, suggested_doj: '2026-10-22' }), fp);
-    assert.notEqual(fingerprint({ ...ready, suggested_is_experienced: false }), fp);
-    assert.notEqual(fingerprint({ ...ready, suggested_pl_email: 'other@aapnainfotech.com' }), fp);
+    assert.match(emailReviewHint(late, TODAY), /past due/);
   });
 });
 
-describe('W-09 — the signed link', () => {
-  test('a link verifies and says which joiner and which action', () => {
-    const t = signAction({ candidateId: 42, action: 'confirm', fp: 'abc', to: 'hr2@aapnainfotech.com' });
-    const p = verifyAction(t);
+describe('30-10-2026 — the links open New joiners, behind sign-in', () => {
+  test('Confirm and Not confirm open that joiner on New joiners, marked as from the email', () => {
+    const links = actionLinks(ready, { today: TODAY, base: 'https://pea.example/' });
+    assert.equal(links.confirmUrl, 'https://pea.example/new-joiners?joiner=42&action=confirm&via=email');
+    assert.equal(links.dismissUrl, 'https://pea.example/new-joiners?joiner=42&action=dismiss&via=email');
+    assert.equal(links.hint, null);
+  });
+
+  test('the links carry no secret — no token, nothing signed', () => {
+    const { confirmUrl, dismissUrl } = actionLinks(ready, { today: TODAY, base: 'https://pea.example' });
+    for (const url of [confirmUrl, dismissUrl]) {
+      assert.doesNotMatch(url, /joiner-action/);
+      assert.deepEqual([...new URL(url).searchParams.keys()], ['joiner', 'action', 'via']);
+    }
+  });
+
+  test('every joiner gets both buttons — with something missing, Confirm says what (D-1)', () => {
+    const missing = actionLinks({ ...ready, suggested_pl_email: null }, { today: TODAY, base: 'https://pea.example' });
+    assert.ok(missing.confirmUrl);
+    assert.ok(missing.dismissUrl);
+    assert.match(missing.hint, /project leader/);
+  });
+
+  test('without a frontend address the link is a path on this host', () => {
+    assert.equal(joinerLink('', 7, 'dismiss'), '/new-joiners?joiner=7&action=dismiss&via=email');
+  });
+});
+
+describe('30-10-2026 — links sent before the change', () => {
+  let server;
+  let root;
+  const front = String(config.frontendUrl || '').replace(/\/+$/, '');
+
+  before(async () => {
+    server = app.listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    root = `http://127.0.0.1:${server.address().port}/api`;
+  });
+  after(() => new Promise((resolve) => server.close(resolve)));
+
+  test('an old link still reads, for the redirect', () => {
+    const p = verifyAction(oldLink({ cid: '42', act: 'confirm', fp: 'abc', to: 'hr2@aapnainfotech.com' }));
     assert.equal(p.cid, '42');
     assert.equal(p.act, 'confirm');
-    assert.equal(p.fp, 'abc');
-    assert.equal(p.to, 'hr2@aapnainfotech.com');
   });
 
-  test('it expires after the stated hours', () => {
-    const t = signAction({ candidateId: 1, action: 'dismiss', fp: 'x', to: '' });
-    const { exp, iat } = jwt.decode(t);
-    assert.equal(exp - iat, LINK_HOURS * 3600);
-  });
-
-  test('an expired link is refused with 410 and says how long links last', () => {
-    // Signed with the real derived key, so only the expiry can fail it.
-    const key = crypto.createHmac('sha256', config.jwt.secret).update(AUDIENCE).digest();
-    const expired = jwt.sign({ cid: '1', act: 'confirm', fp: 'x', to: '' }, key, { expiresIn: -10, audience: AUDIENCE });
-    assert.throws(() => verifyAction(expired), (e) => e.statusCode === 410 && /72 hours/.test(e.message));
-  });
-
-  test('a sign-in token — signed with JWT_SECRET itself — is not a valid link', () => {
-    const login = jwt.sign({ cid: '1', act: 'confirm', fp: 'x' }, config.jwt.secret, { audience: AUDIENCE });
+  test('an expired, forged or sign-in token is not read', () => {
+    assert.throws(() => verifyAction(oldLink({ cid: '1', act: 'confirm' }, -10)), (e) => e.statusCode === 410);
+    const login = jwt.sign({ cid: '1', act: 'confirm' }, config.jwt.secret, { audience: AUDIENCE });
     assert.throws(() => verifyAction(login), (e) => e.statusCode === 400);
-  });
-
-  test('a tampered link is refused', () => {
-    const t = signAction({ candidateId: 7, action: 'dismiss', fp: 'x', to: '' });
-    const [h, , s] = t.split('.');
-    const forged = Buffer.from(JSON.stringify({ cid: '8', act: 'confirm', fp: 'x', aud: AUDIENCE })).toString('base64url');
+    const [h, , s] = oldLink({ cid: '7', act: 'dismiss' }).split('.');
+    const forged = Buffer.from(JSON.stringify({ cid: '8', act: 'confirm', aud: AUDIENCE })).toString('base64url');
     assert.throws(() => verifyAction(`${h}.${forged}.${s}`), (e) => e.statusCode === 400);
   });
 
-  test('only Confirm and Not confirm exist', () => {
-    assert.throws(() => signAction({ candidateId: 1, action: 'delete', fp: 'x', to: '' }));
+  test('opening one only redirects to that joiner on New joiners', async () => {
+    const res = await fetch(`${root}/joiner-action/${oldLink({ cid: '42', act: 'dismiss', fp: 'x', to: '' })}`, { redirect: 'manual' });
+    assert.equal(res.status, 302);
+    assert.equal(res.headers.get('location'), `${front}/new-joiners?joiner=42&action=dismiss&via=email`);
   });
 
-  test('Not confirm is always offered; Confirm only when nothing needs a choice', () => {
-    const ok = actionLinks(ready, { today: TODAY, to: 'hr2@aapnainfotech.com', base: 'https://pea.example/' });
-    assert.match(ok.confirmUrl, /^https:\/\/pea\.example\/api\/joiner-action\//);
-    assert.match(ok.dismissUrl, /^https:\/\/pea\.example\/api\/joiner-action\//);
-    assert.equal(ok.blocker, null);
+  test('the old page\'s button does nothing either — it redirects too', async () => {
+    const res = await fetch(`${root}/joiner-action/${oldLink({ cid: '42', act: 'confirm', fp: 'x', to: '' })}`, { method: 'POST', redirect: 'manual' });
+    assert.equal(res.status, 303);
+    assert.equal(res.headers.get('location'), `${front}/new-joiners?joiner=42&action=confirm&via=email`);
+  });
 
-    const blocked = actionLinks({ ...ready, suggested_pl_email: null }, { today: TODAY, to: 'x', base: 'https://pea.example' });
-    assert.equal(blocked.confirmUrl, null);
-    assert.ok(blocked.dismissUrl);
-    assert.match(blocked.blocker, /project leader/);
+  test('an expired or broken link opens the New joiners list', async () => {
+    for (const token of [oldLink({ cid: '42', act: 'confirm' }, -10), 'not-a-link']) {
+      const res = await fetch(`${root}/joiner-action/${token}`, { redirect: 'manual' });
+      assert.equal(res.status, 302);
+      assert.equal(res.headers.get('location'), `${front}/new-joiners`);
+    }
+  });
+
+  test('looking up, confirming or removing a joiner needs a sign-in', async () => {
+    assert.equal((await fetch(`${root}/intake/joiners/42`)).status, 401);
+    assert.equal((await fetch(`${root}/intake/joiners/42/accept`, { method: 'POST' })).status, 401);
+    assert.equal((await fetch(`${root}/intake/joiners/42/dismiss`, { method: 'POST' })).status, 401);
+  });
+});
+
+describe('30-10-2026 (D-5) — the history says the email was used', () => {
+  test('Not confirm from the email is recorded as "opened from the review email"', () => {
+    assert.equal(dismissReason('Not a new joiner', 'email'), 'Not a new joiner (opened from the review email)');
+  });
+
+  test('from the screen itself, or with anything else in `via`, the reason is as before', () => {
+    assert.equal(dismissReason('Not a new joiner'), 'Not a new joiner');
+    assert.equal(dismissReason('Not a new joiner', 'elsewhere'), 'Not a new joiner');
+    assert.equal(dismissReason('  '), 'No reason given');
   });
 });
 
@@ -130,24 +172,36 @@ describe('W-09 — the review email', () => {
   const render = (joiners) => compile(TEMPLATE_DEFS.joiners_waiting, buildVars(null, {
     joiners, newCount: 1, headline: 'Microsoft 365 found 1 new joiner.', today: '27-10-2026',
   })).body;
+  const confirmUrl = 'https://x/new-joiners?joiner=1&action=confirm&via=email';
+  const dismissUrl = 'https://x/new-joiners?joiner=1&action=dismiss&via=email';
 
   test('sent to the review mailbox, each joiner has Confirm and Not confirm', () => {
-    const body = render([{ ...base, actions: { confirmUrl: 'https://x/api/joiner-action/c', dismissUrl: 'https://x/api/joiner-action/d', blocker: null } }]);
-    assert.match(body, /href="https:\/\/x\/api\/joiner-action\/c"[^>]*>Confirm</);
-    assert.match(body, /href="https:\/\/x\/api\/joiner-action\/d"[^>]*>Not confirm</);
+    const body = render([{ ...base, actions: { confirmUrl, dismissUrl, hint: null } }]);
+    assert.match(body, /href="https:\/\/x\/new-joiners\?joiner=1&amp;action=confirm&amp;via=email"[^>]*>Confirm</);
+    assert.match(body, /href="https:\/\/x\/new-joiners\?joiner=1&amp;action=dismiss&amp;via=email"[^>]*>Not confirm</);
     assert.match(body, /Account created 20-10-2026/);
   });
 
-  test('a joiner who needs a choice gets Not confirm and "review in PEA", never Confirm', () => {
-    const body = render([{ ...base, actions: { confirmUrl: null, dismissUrl: 'https://x/d', blocker: 'The project leader is missing' } }]);
+  test('a joiner with something missing gets Review, Not confirm and the hint — no "review in PEA"', () => {
+    const hint = 'The project leader is missing — add them after pressing Review';
+    const body = render([{ ...base, actions: { confirmUrl, dismissUrl, hint } }]);
+    assert.match(body, />Review</);
     assert.doesNotMatch(body, />Confirm</);
     assert.match(body, />Not confirm</);
-    assert.match(body, /The project leader is missing — <a [^>]*>review in PEA/);
+    assert.match(body, /The project leader is missing — add them after pressing Review/);
+    assert.doesNotMatch(body, /review in PEA/);
+  });
+
+  test('the email says the buttons open PEA and may ask for a sign-in', () => {
+    const body = render([{ ...base, actions: { confirmUrl, dismissUrl, hint: null } }]);
+    assert.match(body, /opens New joiners in PEA/);
+    assert.match(body, /sign in if asked/);
+    assert.doesNotMatch(body, /opens a page with one button/);
   });
 
   test('without links (no review mailbox) the table is as before, with no buttons', () => {
     const body = render([base]);
-    assert.doesNotMatch(body, /joiner-action/);
+    assert.doesNotMatch(body, /action=confirm/);
     assert.match(body, /Joining date \(suggested\)/);
   });
 });
