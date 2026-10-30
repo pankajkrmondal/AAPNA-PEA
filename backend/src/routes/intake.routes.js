@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   inbox,
   syncProblems,
+  getJoiner,
   scan,
   acceptJoiner,
   dismissJoiner,
@@ -25,6 +26,8 @@ router.use(authenticate);
 // Read-only: any signed-in user with the module may see what is waiting.
 router.get('/inbox', joiners, inbox);
 router.get('/sync-problems', joiners, syncProblems);
+// 30-10-2026 — one joiner, for a review email link the inbox list does not show.
+router.get('/joiners/:id', joiners, getJoiner);
 router.get('/rm-pl-map', rmPlMap, listRmPlMap);
 
 // Everything that changes the roster needs hr-tier or above. Accepting a joiner

@@ -110,6 +110,8 @@ const TAKES_OFF_INBOX = Object.freeze(['contractor', 'system_mailbox', 'excluded
 
 /** Who a candidate was reviewed by when the scan, not a person, took them off. */
 const SYNC_ACTOR = 'azure-sync';
+/** 30-10-2026 (D-5) — added to the history when HR acted from the review email. */
+export const FROM_REVIEW_EMAIL = 'opened from the review email';
 
 /**
  * Should this account be offered to HR as a new joiner?
@@ -835,7 +837,10 @@ export async function notifyJoinersWaiting({ reason = 'arrived', newIds = [] } =
     .map((c) => {
       const row = joinerReviewRow(c, words, today, isNew, tz);
       if (reviewTo.length) {
-        row.actions = actionLinks(serialiseCandidate(c, words), { today, to: reviewTo.join(';'), base });
+        // 30-10-2026 — the links open New joiners behind sign-in, so the
+        // mailbox is no longer carried in them to name the actor. It was:
+        //   actionLinks(serialiseCandidate(c, words), { today, to: reviewTo.join(';'), base })
+        row.actions = actionLinks(serialiseCandidate(c, words), { today, base });
       }
       return row;
     })
@@ -1065,6 +1070,31 @@ export function serialiseCandidate(c, words = {}) {
     track_word: track.matched,
   };
 }
+
+/**
+ * One joiner, whatever has happened to them. 30-10-2026 — for a review email
+ * link to a joiner the inbox list does not show: already confirmed or removed
+ * (the screen says by whom and when), or waiting beyond its first 100 rows.
+ *
+ * @param {string} id - pea_joiner_candidates.id
+ * @returns {Promise<object>} serialised, with status, reviewed_by and reviewed_at
+ * @throws {AppError} 404 when there is no such joiner
+ */
+export async function getCandidate(id) {
+  const gone = () => new AppError('This joiner is no longer in the inbox', 404);
+  if (!/^\d+$/.test(String(id ?? ''))) throw gone();
+  const candidate = await prisma.pea_joiner_candidates.findUnique({ where: { id: BigInt(id) } });
+  if (!candidate) throw gone();
+
+  let words = {};
+  try {
+    words = await titleWordRules();
+  } catch (err) {
+    logger.warn(`New Joiner Inbox: could not read the designation words: ${err.message}`);
+  }
+  return serialiseCandidate(candidate, words);
+}
+
 /* H1 (07-10-2026) — before the designation suggestion, kept for reference:
 function serialiseCandidate(c) {
   return {
@@ -1135,6 +1165,10 @@ export async function acceptCandidate(id, input, actor) {
 
   const employee = await createEmployee(payload, actor, 'azure');
 
+  // 30-10-2026 (D-5) — the screen says when it was opened from the review
+  // email, so the history can say so too.
+  const fromEmail = input.via === 'email';
+
   const reviewed = { status: 'accepted', employee_id: employee.id, reviewed_by: actor, reviewed_at: new Date() };
 
   await prisma.$transaction([
@@ -1146,7 +1180,8 @@ export async function acceptCandidate(id, input, actor) {
       data: {
         employee_id: employee.id,
         field_name: '*',
-        new_value: describeCorrections(candidate, payload),
+        // 30-10-2026 (D-5) — was: new_value: describeCorrections(candidate, payload),
+        new_value: describeCorrections(candidate, payload) + (fromEmail ? ' Opened from the review email.' : ''),
         changed_by: actor,
         change_source: 'azure',
       },
@@ -1171,7 +1206,7 @@ export async function acceptCandidate(id, input, actor) {
     }
   }
 
-  logger.info(`Joiner accepted by ${actor}: ${payload.full_name} <${payload.office_email}>`);
+  logger.info(`Joiner accepted by ${actor}${fromEmail ? ' (from the review email)' : ''}: ${payload.full_name} <${payload.office_email}>`);
   return employee;
 }
 
@@ -1209,13 +1244,24 @@ function describeCorrections(candidate, payload) {
 }
 
 /**
+ * The reason a removed joiner is recorded with. Pure.
+ * @param {string} reason - HR's words; blank is "No reason given"
+ * @param {string} [via] - 'email' when opened from the review email (D-5)
+ * @returns {string}
+ */
+export function dismissReason(reason, via) {
+  return (String(reason || '').trim() || 'No reason given') + (via === 'email' ? ` (${FROM_REVIEW_EMAIL})` : '');
+}
+
+/**
  * Take a detected account off the list.
  * @param {bigint|number|string} id
  * @param {string} reason
  * @param {string} actor
+ * @param {{via?: string}} [opts] - via 'email': opened from the review email (D-5, 30-10-2026)
  * @returns {Promise<object>}
  */
-export async function dismissCandidate(id, reason, actor) {
+export async function dismissCandidate(id, reason, actor, { via } = {}) {
   const candidateId = BigInt(id);
   const candidate = await prisma.pea_joiner_candidates.findUnique({ where: { id: candidateId } });
 
@@ -1228,7 +1274,8 @@ export async function dismissCandidate(id, reason, actor) {
     where: { id: candidateId },
     data: {
       status: 'dismissed',
-      dismissed_reason: String(reason || '').trim() || 'No reason given',
+      // D-5 — was: dismissed_reason: String(reason || '').trim() || 'No reason given',
+      dismissed_reason: dismissReason(reason, via),
       reviewed_by: actor,
       reviewed_at: new Date(),
     },

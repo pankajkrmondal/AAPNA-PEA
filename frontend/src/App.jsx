@@ -27,6 +27,7 @@ import api, { unwrap, TOKEN_KEY } from './api.js';
 import {
   MODULES, NESTED_MODULES, ROLE_LABEL, SETTINGS_MODULES, canUse, gateOf, homePath, initialsOf, isAdminTier, signOut, useCurrentUser,
 } from './auth.js';
+import { loginPathFor } from './returnTo.js';
 import NotificationBell from './components/NotificationBell.jsx';
 import ThemeToggle from './components/ThemeToggle.jsx';
 import AdminPortalIcon from './components/AdminPortalIcon.jsx';
@@ -282,7 +283,10 @@ function Shell({ module, children }) {
 
 /** @param {{module?: string}} props - the Module Access key this screen needs */
 function Protected({ module, children }) {
-  if (!signedIn()) return <Navigate to="/login" replace />;
+  const location = useLocation();
+  // 30-10-2026 — the login page remembers this address, so a review email
+  // link opens its joiner after sign-in. It was: <Navigate to="/login" replace />
+  if (!signedIn()) return <Navigate to={loginPathFor(location.pathname + location.search)} replace />;
   return <Shell module={module}>{children}</Shell>;
 }
 
@@ -293,7 +297,8 @@ function Protected({ module, children }) {
  */
 function AdminPortal() {
   const user = useCurrentUser();
-  if (!signedIn()) return <Navigate to="/login" replace />;
+  // 30-10-2026 — as Protected. It was: <Navigate to="/login" replace />
+  if (!signedIn()) return <Navigate to={loginPathFor('/admin')} replace />;
   if (!isAdminTier(user.role)) return <Navigate to={homePath(user)} replace />;
   return (
     <AdminLayout user={user}>

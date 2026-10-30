@@ -7,6 +7,7 @@
  *     the login page rather than a wall of failed requests
  */
 import axios from 'axios';
+import { loginPathFor } from './returnTo.js';
 
 const api = axios.create({
   baseURL: import.meta.env.VITE_API_URL || '/api',
@@ -28,7 +29,12 @@ api.interceptors.response.use(
     if (err.response?.status === 401 && !err.config?.url?.includes('/auth/login')) {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
-      if (window.location.pathname !== '/login') window.location.href = '/login';
+      // 30-10-2026 — back to this page after signing in again, so a review
+      // email link opened with an expired session still opens its joiner.
+      // It was: window.location.href = '/login';
+      if (window.location.pathname !== '/login') {
+        window.location.href = loginPathFor(window.location.pathname + window.location.search);
+      }
     }
     // Surface the server's message rather than axios's generic one.
     // In useMutation callbacks write `(err) => { message.error(err.friendlyMessage); }`

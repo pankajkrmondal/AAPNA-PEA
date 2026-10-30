@@ -1,9 +1,10 @@
 import { useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { Form, Input, Button, Alert } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import api, { TOKEN_KEY, USER_KEY } from '../api.js';
 import { homePath } from '../auth.js';
+import { safeNext } from '../returnTo.js';
 import AuthShell from '../components/AuthShell.jsx';
 import Turnstile from '../components/Turnstile.jsx';
 
@@ -13,6 +14,9 @@ const TURNSTILE_SITE_KEY = import.meta.env.VITE_TURNSTILE_SITE_KEY;
 
 export default function Login() {
   const navigate = useNavigate();
+  // 30-10-2026 — the page that sent them here (a review email link), if any.
+  const [params] = useSearchParams();
+  const next = safeNext(params.get('next'));
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [turnstileToken, setTurnstileToken] = useState('');
@@ -32,7 +36,8 @@ export default function Login() {
       localStorage.setItem(TOKEN_KEY, token);
       localStorage.setItem(USER_KEY, JSON.stringify(user));
       // The first module this account can open — the dashboard may be switched off.
-      navigate(homePath(user));
+      // 30-10-2026 — or back to the page they opened. It was: navigate(homePath(user));
+      navigate(next ?? homePath(user));
     } catch (err) {
       setError(err.friendlyMessage);
       // The token was spent on this attempt; get a fresh one for the next.
@@ -43,7 +48,11 @@ export default function Login() {
   };
 
   return (
-    <AuthShell title="Welcome back" subtitle="Sign in to manage probation evaluations">
+    <AuthShell
+      title="Welcome back"
+      // 30-10-2026 — opened from a link (the review email), say they go on to it.
+      subtitle={next ? 'Sign in to continue to the page you opened' : 'Sign in to manage probation evaluations'}
+    >
       {error && <Alert type="error" message={error} showIcon style={{ marginBottom: 16 }} />}
 
       <Form layout="vertical" onFinish={onFinish} requiredMark={false} autoComplete="off">
