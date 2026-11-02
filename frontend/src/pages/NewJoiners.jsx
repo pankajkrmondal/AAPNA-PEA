@@ -122,7 +122,7 @@ export default function NewJoiners() {
   // U8 — choosing a manager by name fills their email and suggests the project leader.
   const { onPickManager, plNote, clearPlNote } = useManagerPick(form);
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['intake-inbox'],
     queryFn: () => api.get('/intake/inbox').then(unwrap),
   });
@@ -539,8 +539,17 @@ export default function NewJoiners() {
           loading={isLoading}
           pagination={false}
           dataSource={data?.joiners || []}
+          // D3 — a failed load said "No new accounts waiting", as if the inbox were empty.
           locale={{
-            emptyText: (
+            emptyText: isError ? (
+              <Alert
+                type="error"
+                showIcon
+                message="Could not load new joiners"
+                description={error.friendlyMessage}
+                action={<Button onClick={() => refetch()}>Try again</Button>}
+              />
+            ) : (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description="No new accounts waiting. Run a scan to check Microsoft 365."

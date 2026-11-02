@@ -87,7 +87,7 @@ export default function Employees() {
     order: sort?.order,
   };
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['employees', search, type, state, rm, sort?.field, sort?.order, page],
     queryFn: () =>
       api
@@ -354,17 +354,20 @@ export default function Employees() {
       </div>
 
       <Card className="pea-card" size="small">
-        <Space wrap style={{ marginBottom: 12 }}>
+        <Space wrap className="pea-fit-row" style={{ marginBottom: 12 }}>
           <Input
             placeholder="Search name, email or manager"
             prefix={<SearchOutlined />}
             allowClear
-            style={{ width: 280 }}
+            // D4 — the maxWidth keeps the filters inside the card on a phone; at a
+            // fixed 280px the box ran past the card, and past a 390px screen once
+            // a scrollbar took its share.
+            style={{ width: 280, maxWidth: '100%' }}
             value={searchText}
             // U7 — was: onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             onChange={(e) => setSearchText(e.target.value)}
           />
-          <Select placeholder="Type" allowClear style={{ width: 150 }} onChange={(v) => { setType(v); setPage(1); }}>
+          <Select placeholder="Type" allowClear style={{ width: 150, maxWidth: '100%' }} onChange={(v) => { setType(v); setPage(1); }}>
             <Option value="fresher">Fresher</Option>
             <Option value="experienced">Experienced</Option>
           </Select>
@@ -372,7 +375,7 @@ export default function Employees() {
           <Select
             placeholder="Status"
             allowClear
-            style={{ width: 200 }}
+            style={{ width: 200, maxWidth: '100%' }}
             value={state}
             options={STATE_OPTIONS}
             onChange={(v) => { setState(v); setPage(1); }}
@@ -383,7 +386,7 @@ export default function Employees() {
             allowClear
             showSearch
             optionFilterProp="label"
-            style={{ minWidth: 220 }}
+            style={{ minWidth: 220, maxWidth: '100%' }}
             popupMatchSelectWidth={false}
             value={rm}
             options={managerOptions}
@@ -408,6 +411,21 @@ export default function Employees() {
           loading={isLoading}
           dataSource={data?.data || []}
           columns={columns}
+          // D4 — without it the columns widened the whole page on a phone; now
+          // the table scrolls inside its card, as the other lists do.
+          scroll={{ x: 'max-content' }}
+          // D3 — a failed load showed the table's "No data", as if nobody were listed.
+          locale={isError ? {
+            emptyText: (
+              <Alert
+                type="error"
+                showIcon
+                message="Could not load Commandos"
+                description={error.friendlyMessage}
+                action={<Button onClick={() => refetch()}>Try again</Button>}
+              />
+            ),
+          } : undefined}
           // U6 — one handler for a page turn and a column sort. The pager had
           // its own `onChange: setPage`, which is commented out below.
           onChange={onTableChange}

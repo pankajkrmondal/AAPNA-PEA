@@ -548,14 +548,26 @@ export default function AdminDashboard({ me }) {
               </Space>
             </div>
 
-            <Table
-              rowKey="id"
-              loading={users.isLoading}
-              dataSource={filtered}
-              columns={columns}
-              scroll={{ x: 980 }}
-              pagination={{ pageSize: 10, showSizeChanger: false }}
-            />
+            {/* D3 — a failed load said "No data", as if there were no users. */}
+            {users.isError ? (
+              <Alert
+                type="error"
+                showIcon
+                style={{ margin: 16 }}
+                message="Could not load users"
+                description={users.error.friendlyMessage}
+                action={<Button onClick={() => users.refetch()}>Try again</Button>}
+              />
+            ) : (
+              <Table
+                rowKey="id"
+                loading={users.isLoading}
+                dataSource={filtered}
+                columns={columns}
+                scroll={{ x: 980 }}
+                pagination={{ pageSize: 10, showSizeChanger: false }}
+              />
+            )}
           </Card>
         </>
       )}
@@ -565,7 +577,9 @@ export default function AdminDashboard({ me }) {
         <Row gutter={[20, 20]}>
           <Col xs={24} md={8}>
             <Card className="pea-admin-card" title={<span className="pea-select-title">Select User</span>} styles={{ body: { padding: 0 } }}>
-              {hrUsers.length === 0 ? (
+              {users.isError ? (
+                <Alert type="error" showIcon style={{ margin: 16 }} message="Could not load users" description={users.error.friendlyMessage} />
+              ) : hrUsers.length === 0 ? (
                 <Empty style={{ padding: 32 }} description={users.isLoading ? 'Loading…' : 'No HR users yet — add one in User Management'} />
               ) : (
                 <div className="pea-mod-users">

@@ -2650,12 +2650,37 @@ html.theme-transition *::after {
 
   .pea-hide-sm { display: none; }
   .pea-top-btn.ant-btn { padding: 0 9px; }
+  /* D4 — the module title did not shrink, so at 390px it pushed the account
+     chip ~20px past the right edge (the header clips, so it was cut off). The
+     title now gives way and ends in "…"; the controls keep their size. */
+  .pea-header-title {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 17px;
+  }
+  /* D4 — a wrapping row of filters: each one at most the row's width, so a
+     fixed-width box cannot run past its card. */
+  .pea-fit-row,
+  .pea-fit-row > .ant-space-item { max-width: 100%; }
+  .pea-header > * { flex-shrink: 0; }
+  .pea-header > .pea-header-title,
+  .pea-header > .pea-crumbs { flex-shrink: 1; }
   .pea-admin-topbar { padding: 8px 14px; }
   .pea-admin-sub,
   .pea-admin-sep,
   .pea-admin-left > .pea-brand-mark { display: none; }
   .pea-admin-main { padding-inline: 14px; }
   .pea-admin-chip { padding: 0 4px; }
+}
+
+/* D4 — a phone (390px) leaves the header ~300px beside the collapsed menu:
+   tighter gaps, so the title keeps a few letters. */
+@media (max-width: 480px) {
+  /* Doubled class: board.css loads later and sets 8px / 10px with !important. */
+  .pea-header.pea-header { gap: 4px !important; padding: 0 8px !important; }
 }
 
 /* ── Resource trends (R-06) ──────────────────────────────────────────────
