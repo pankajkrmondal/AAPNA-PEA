@@ -1,12 +1,13 @@
 # Admin guide
 
-**For:** PEA admins. **Version:** October 2026.
+**For:** PEA admins. **Version:** 3, October 2026.
 
 As an admin you can do everything an HR user can (see the [HR guide](01-HR-GUIDE.md)), on every screen, whatever module access says. You also:
 - look after the **HR accounts** and decide which screens each HR user sees;
 - **change settings** and **email templates**;
 - run the **Excel import**;
 - read **Sent emails**, the log of every email PEA has sent;
+- choose who receives the **new joiner review email** (hr2@);
 - **delete** a Commando created by mistake.
 
 Super Admins (see the [Super Admin guide](03-SUPERADMIN-GUIDE.md)) also look after admins.
@@ -19,8 +20,9 @@ Super Admins (see the [Super Admin guide](03-SUPERADMIN-GUIDE.md)) also look aft
 5. [Email templates](#5-email-templates)
 6. [Upload Excel](#6-upload-excel)
 7. [Sent emails](#7-sent-emails)
-8. [Deleting a Commando](#8-deleting-a-commando)
-9. [Housekeeping checklist](#9-housekeeping-checklist)
+8. [The new joiner review email (hr2@)](#8-the-new-joiner-review-email-hr2)
+9. [Deleting a Commando](#9-deleting-a-commando)
+10. [Housekeeping checklist](#10-housekeeping-checklist)
 
 ---
 
@@ -30,7 +32,7 @@ Click **Admin Portal** in the top bar. It has two tabs, **User Management** and 
 ![The Admin Portal](images/admin-01-user-management.jpg)
 
 ## 2. Users
-**User Management** shows counts (**Total Users**, **Active**, **Inactive**, **Admins**) and the list of accounts with their username, role, status, created date and last sign-in. Search by name or email, and filter by role and status. **Export CSV** downloads every account.
+**User Management** shows counts (**Total Users**, **Active**, **Inactive**, **Admins**) and the list of accounts with their username, role, status, created date and last sign-in. Search by name or email, and filter by role and status. **Export CSV** downloads every account as a list you can open in Excel.
 
 **Add a user**
 1. Click **Add User**.
@@ -75,14 +77,14 @@ Click **Admin Portal** in the top bar. It has two tabs, **User Management** and 
 - An HR user with every module off sees "No modules are enabled for your account".
 
 ## 4. Settings
-**Settings** is read-only for HR; only admins can change it. Each setting saves on its own, applies straight away, and needs no restart. Changes to the important ones (marked as such) are announced to every admin through the bell.
+**Settings** is read-only for HR; only admins can change it. Each setting saves on its own and applies straight away. Changes to the important ones (marked as such) are announced to every admin through the bell.
 
 ![Settings](images/admin-03-settings.jpg)
 
 ### Email
 | Setting | What it does |
 |---|---|
-| **Pause all email** | Normally **off**. On (emergency only): nothing leaves PEA; emails are logged as "would have sent". The top bar then shows **No email is being sent** to everyone |
+| **Pause all email** | Normally **off**. On (emergency only): nothing leaves PEA; emails are listed in **Sent emails** as "would have sent". The top bar then shows **No email is being sent** to everyone |
 | **CC on evaluation emails** | Copied on every evaluation request and reminder, alongside the project leader |
 | **HR notification recipients** | Receive "evaluation submitted", "probation extended", and the deadline digest |
 | **"Report to IT" recipients** | Where **Report to IT** corrections go. Needed before Report to IT works in production |
@@ -95,7 +97,7 @@ Click **Admin Portal** in the top bar. It has two tabs, **User Management** and 
 | **Form link valid for (days)** | 30 | How long a manager's form link works after it is sent |
 | **Reminders per evaluation** | 2 | At most 2; 0 turns reminders off |
 | **Reminder days after sending** | 2,4 | First reminder 2 days after the evaluation email, the second 4 days after |
-| **Daily email time** | 0 11 * * * (11:00 IST) | When evaluation emails and reminders go out each day. `0 11 * * *` means every day at 11:00; `30 10 * * *` would be 10:30 |
+| **Daily email time** | 11:00 IST | When evaluation emails and reminders go out each day. The box writes the time as minutes, then hour, then `* * *`: 11:00 is `0 11 * * *`, and 10:30 would be `30 10 * * *` |
 
 ### Probation
 | Setting | Default | What it does |
@@ -110,14 +112,14 @@ Click **Admin Portal** in the top bar. It has two tabs, **User Management** and 
 |---|---|
 | **Nightly Microsoft 365 check** / **Daily Microsoft 365 check time** | Whether the daily check runs, and when (09:00 IST by default, two hours before the evaluation emails). **Scan now** works either way |
 | **Look back for new accounts (days)** | How far back the check looks for new accounts (45 by default) |
-| **Joiner email domains** | Only accounts on these domains are joiners (aapnainfotech.com, mera.work, karyakeeper.com) |
-| **Contractor list** / **Leaders list** | The Microsoft 365 groups used to leave contract staff out and to suggest each joiner's project leader. Change only if IT changes the groups |
+| **Joiner email domains** | Only email addresses ending in one of these are treated as joiners (aapnainfotech.com, mera.work, karyakeeper.com) |
+| **Contractor list** / **Leaders list** | The Microsoft 365 groups PEA uses to leave contract staff out and to suggest each joiner's project leader. Change only if IT tells you the groups have changed |
 | **Never offer these as joiners** / **System mailboxes** | Addresses the check always leaves out |
-| **New accounts with no manager in Microsoft 365** | **leave_out**: they wait until IT sets a manager (the screen names them). **show**: they appear with the manager marked "Missing" |
+| **New accounts with no manager in Microsoft 365** | **Leave out**: they wait until IT sets a manager (the screen names them). **Show**: they appear with the manager marked "Missing" |
 | **Designation words that suggest Fresher / Experienced** | Words in the job title that pre-select the track. Only a suggestion; HR always confirms |
-| **Send the new joiner review email to** | **hr2@aapnainfotech.com** by default. The daily "new joiners waiting" email goes only here, with Confirm / Not confirm buttons. Anyone who can read this mailbox can confirm a joiner, so keep it to the HR mailbox. Blank: it goes to every admin and HR user, without buttons |
+| **Send the new joiner review email to** | **hr2@aapnainfotech.com** by default. The daily "new joiners waiting" email goes only here, with Confirm (or Review) and Not confirm buttons. The buttons open PEA, so acting on them needs a PEA sign-in (section 8). Blank: it goes to every admin and HR user, without buttons |
 | **Let the scan update names and emails** | Overwrites unlocked names and office emails with Microsoft 365's. Do a **Test run** first |
-| **Hold evaluations when Microsoft 365 says someone has left** | On (default): evaluations stop the moment an account is disabled and unlicensed, before HR confirms |
+| **Hold evaluations when Microsoft 365 says someone has left** | On (default): evaluations stop as soon as IT switches the account off, before HR confirms |
 | **Email HR when the Microsoft 365 check goes wrong** | On (default): HR is told once about each problem (check failed, joiner with no manager) |
 | **Show the manual pause button** | Off by default. Switch on for long leave (sabbatical, maternity), when the account stays active |
 
@@ -147,9 +149,9 @@ Click **Admin Portal** in the top bar. It has two tabs, **User Management** and 
 ![Email templates](images/admin-04-email-templates.jpg)
 
 **To change one:**
-1. Pick the email from the list (or search for it). Edit the **Subject** and the body in **Editor** (or **HTML Code** if you know HTML).
-2. Insert the details PEA fills in (the Commando's name, the due date, the form button…) with the **+** buttons above the editor, such as **+employee_name** or **+form_button**. In the text they appear in double braces, `{{employee_name}}`; keep them exactly as written.
-3. Check **Live Preview**, which fills the email with sample data. PEA refuses to save an email that has lost a required link (for example the form button on an evaluation request), or that uses an unknown placeholder.
+1. Pick the email from the list (or search for it). Edit the **Subject** and the body in **Editor**. Leave the **HTML Code** tab to the PEA team.
+2. Insert the details PEA fills in (the Commando's name, the due date, the form button…) with the **+** buttons above the editor, such as **+employee_name** or **+form_button**. In the text they appear as `{{employee_name}}`. Don't retype or change them; use the **+** buttons instead.
+3. Check **Live Preview**, which fills the email with sample data. PEA refuses to save an email that has lost a required link (for example the form button on an evaluation request), or that uses a detail PEA does not know.
 4. Click **Save changes**. The AAPNA logo, green header and footer are added automatically.
 
 **Reset to default** brings back the original wording. A wrong template goes to every manager who receives that email, so always check the preview first.
@@ -160,7 +162,7 @@ Click **Admin Portal** in the top bar. It has two tabs, **User Management** and 
 ![Upload Excel](images/admin-05-upload-excel.jpg)
 
 1. **Download template**, fill it in (Sheet1: one row per Commando; Sheet2, optional: the ratings). The old master workbook works too.
-2. **Choose file** (.xlsx, .xls or .xlsm, up to 10 MB).
+2. **Choose file** (any Excel file, up to 10 MB).
 3. **Check file** reads every row and shows: rows read, ready, **refused** (with the reason for each), freshers and experienced, already decided, decision needed, and **which managers will be emailed** an evaluation at the next daily send. Fix refused rows in the file and check again.
 4. **Trial import** goes through the whole import without saving: how many would be added, how many are already in PEA, and anything that would fail.
 5. **Import** (admins only) asks you to confirm, then adds the Commandos with their evaluations and ratings.
@@ -176,12 +178,30 @@ Good to know:
 
 ![Sent emails](images/admin-06-sent-emails.jpg)
 
-## 8. Deleting a Commando
+## 8. The new joiner review email (hr2@)
+When the Microsoft 365 check finds new joiners, and once a day at the daily email time while anyone is still waiting, PEA emails **hr2@aapnainfotech.com**. The email has a row per joiner: their name and email, what will be saved (account creation date, the date evaluations are counted from, fresher or experienced, manager, project leader), and two buttons.
+
+![The new joiner review email](images/hr2-01-joiner-review-email.jpg)
+
+| Button | What happens |
+|---|---|
+| **Confirm** | Opens PEA on **New joiners** with this joiner's **Confirm** window already open and filled in. Check the details, then click **Add and schedule**: the person becomes a Commando and their evaluations are scheduled |
+| **Review** (instead of Confirm) | Something must be filled in or chosen first. The line under the buttons says what, such as "Fresher or experienced is not known", or evaluations already past due. Opens the same **Confirm** window: fill in what is missing, then click **Add and schedule** |
+| **Not confirm** | Opens PEA on **New joiners** with this joiner's row highlighted and **Remove from the inbox?** already open on it. Click **OK** to remove the account from the list. Use it for accounts that are not new joiners. No evaluation is scheduled, and the account does not come back unless its Microsoft 365 account changes |
+
+- If you are not signed in to PEA, it asks you to sign in first, then opens the joiner straight away.
+- The buttons never act on their own: they only open PEA. Nothing is saved until you click **Add and schedule** or **OK**. **Cancel** leaves the joiner waiting.
+- Reading the hr2@ mailbox is not enough: you need a PEA account, as an Admin, a Super Admin, or an HR user with **New joiners** switched on (section 3). A forwarded email gives nobody access.
+- PEA records who acted. A confirmed joiner's change history names you and says "Opened from the review email".
+- If the joiner is no longer waiting (someone has already confirmed or removed them), PEA opens **New joiners** and says who did it, and when.
+- Who receives this email is set in **Settings → New joiners → Send the new joiner review email to** (section 4).
+
+## 9. Deleting a Commando
 Only for demo and test records, or someone added by mistake. **More → Delete…** on the Commando's page, type their full name to confirm, and **Delete permanently**. Every evaluation, rating and the change history go with them, and other admins are notified.
 
 If the person really left, use **More → Mark as left…** instead, which keeps their history.
 
-## 9. Housekeeping checklist
+## 10. Housekeeping checklist
 Monthly, or when the HR team changes:
 - [ ] People who left the HR team: **deactivate** their PEA account.
 - [ ] New HR team members: create an **HR** account and set their **module access**.

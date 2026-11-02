@@ -59,7 +59,7 @@ export default function ForgotPassword() {
         <Form.Item
           name="identifier"
           label="Username or email"
-          rules={[{ required: true, message: 'Please enter your username or email' }]}
+          rules={[{ required: true, whitespace: true, message: 'Please enter your username or email' }]}
         >
           <Input size="large" prefix={<UserOutlined />} autoFocus autoComplete="username" />
         </Form.Item>

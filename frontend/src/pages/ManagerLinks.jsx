@@ -376,7 +376,18 @@ function ManagerTeamTab() {
           dataSource={links.data || []}
           pagination={{ pageSize: 15, hideOnSinglePage: true }}
           scroll={{ x: 800 }}
-          locale={{ emptyText: 'No links issued yet' }}
+          // D3 — a failed load said "No links issued yet", as if none had been.
+          locale={{
+            emptyText: links.isError ? (
+              <Alert
+                type="error"
+                showIcon
+                message="Could not load issued links"
+                description={links.error.friendlyMessage}
+                action={!setupMissing && <Button onClick={() => links.refetch()}>Try again</Button>}
+              />
+            ) : 'No links issued yet',
+          }}
           columns={[
             {
               title: 'Manager',
