@@ -1206,10 +1206,16 @@ export async function recordDecision(id, input = {}, actor) {
   const meta = await prisma.$transaction(async (tx) => {
     const cycles = await tx.pea_evaluation_cycles.findMany({
       where: { employee_id: employeeId },
-      select: { is_extension: true },
+      select: { is_extension: true, status: true },
     });
+    // 17-11-2026 — the manager's form had already scheduled the extension for
+    // this "Extend" decision; HR re-recording it scheduled a second one (a
+    // duplicate E5 for employee 9). An extension evaluation still open means
+    // the decision is already scheduled, so recording it again adds nothing.
+    const alreadyScheduled = isExtendDecision(decision) &&
+      cycles.some((c) => c.is_extension && !['completed', 'skipped'].includes(c.status));
     const left = extensionsLeft(cycles);
-    if (decision && !allowedDecisions(left).includes(decision)) {
+    if (decision && !alreadyScheduled && !allowedDecisions(left).includes(decision)) {
       throw new AppError(
         left === 0
           ? 'This probation has already been extended to the 8-month limit, so it can only be confirmed or not confirmed.'
@@ -1238,7 +1244,9 @@ export async function recordDecision(id, input = {}, actor) {
     let closedEvaluations = 0;
     let withdrawn = 0;
 
-    if (isExtendDecision(decision)) {
+    if (alreadyScheduled) {
+      // Nothing to add — see the note on alreadyScheduled above.
+    } else if (isExtendDecision(decision)) {
       // B3 — choosing "Extend" in Edit used to stop here, with nothing scheduled.
       extensionCycles = await generateExtensionCycles(employeeId, decision, tx);
     } else if (decision) {
